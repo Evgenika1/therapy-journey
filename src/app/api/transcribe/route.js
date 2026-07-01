@@ -26,12 +26,19 @@ export async function POST(req) {
     const { upload_url } = await uploadRes.json();
 
     // 2. Create transcription job
+    // Use browser language if provided, otherwise fall back to Russian (primary user language)
+    const lang = formData.get('language') || 'ru';
+    // AssemblyAI supported codes: en, ru, fr, de, es, it, pt, nl, hi, ja, zh, fi, ko, pl, uk
+    const SUPPORTED = ['en','ru','fr','de','es','it','pt','nl','hi','ja','zh','fi','ko','pl','uk'];
+    const langCode = SUPPORTED.includes(lang) ? lang : 'ru';
+    console.log('[transcribe] language from browser:', lang, '→ using:', langCode);
+
     const transcriptRes = await fetch('https://api.assemblyai.com/v2/transcript', {
       method: 'POST',
       headers: HEADERS,
       body: JSON.stringify({
         audio_url: upload_url,
-        language_detection: true,
+        language_code: langCode,
       }),
     });
     if (!transcriptRes.ok) {

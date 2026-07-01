@@ -1,26 +1,26 @@
 'use client';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
 
 const NAV = [
-  { href: '/',              label: 'Home'         },
-  { href: '/sessions',      label: 'Sessions'     },
-  { href: '/emotions',      label: 'Emotions'     },
-  { href: '/diary',         label: 'Diary'        },
-  { href: '/progress',      label: 'Progress'     },
-  { href: '/next-session',  label: 'Next Session' },
-  { href: '/homework',      label: 'Homework'     },
-  { href: '/journals',      label: 'Journals'     },
-  { href: '/ai-chat',       label: 'AI Chat'      },
-  { href: '/account',       label: 'Account'      },
+  { href: '/',             label: 'Dashboard'    },
+  { href: '/sessions',     label: 'Sessions'     },
+  { href: '/next-session', label: 'Next Session' },
+  { href: '/homework',     label: 'Homework'     },
+  { href: '/ai-chat',      label: 'AI Chat'      },
+  { href: '/diary',        label: 'Diary'        },
+  { href: '/journals',     label: 'Journals'     },
+  { href: '/emotions',     label: 'Emotions'     },
+  { href: '/progress',     label: 'Progress'     },
 ];
 
 export default function AppLayout({ children }) {
-  const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL: A, NAV_ACTIVE: ABG, isDark, toggleTheme } = useTheme();
+  const { BG, SURFACE, BORDER, MUTED, isDark, toggleTheme } = useTheme();
   const { supabase, user } = useAuth();
   const pathname = usePathname();
+  const router = useRouter();
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -29,27 +29,43 @@ export default function AppLayout({ children }) {
   return (
     <div style={{ display: 'flex', height: '100vh', background: BG, fontFamily: '"Plus Jakarta Sans", sans-serif', overflow: 'hidden' }}>
       {/* Sidebar */}
-      <nav style={{ width: 220, flexShrink: 0, background: SURFACE, borderRight: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', padding: '24px 0', overflowY: 'auto' }}>
+      <nav style={{ width: 220, flexShrink: 0, background: SURFACE, borderRight: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
         {/* Logo */}
-        <div style={{ padding: '0 20px 24px', borderBottom: `1px solid ${BORDER}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 34, height: 34, borderRadius: 10, background: A, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ fontFamily: '"Shippori Mincho", serif', fontSize: 16, color: '#fff', fontWeight: 400 }}>見</span>
-            </div>
-            <div>
-              <p style={{ fontSize: 15, fontWeight: 600, color: TEXT, margin: 0, lineHeight: 1 }}>Miru</p>
-              <p style={{ fontSize: 11, color: MUTED, margin: '2px 0 0' }}>therapy journal</p>
-            </div>
-          </div>
+        <div style={{ padding: '20px 20px 16px', display: 'flex', alignItems: 'center' }}>
+          <span style={{
+            fontSize: 22,
+            fontWeight: 700,
+            letterSpacing: '-0.02em',
+            color: '#1C1C1C',
+            fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+            display: 'flex',
+            alignItems: 'center',
+          }}>
+            miru
+            <svg style={{ marginLeft: 3, marginBottom: 8 }} width="7" height="7" viewBox="0 0 7 7" fill="none">
+              <ellipse cx="3.5" cy="3.5" rx="3" ry="2.2" stroke="#E8785A" strokeWidth="1.2" fill="none"/>
+              <circle cx="3.5" cy="3.5" r="1.1" fill="#E8785A"/>
+            </svg>
+          </span>
         </div>
 
         {/* Nav links */}
-        <div style={{ flex: 1, padding: '16px 10px' }}>
-          {NAV.map(({ href, label, icon }) => {
-            const active = pathname === href || (href !== '/' && pathname.startsWith(href));
+        <div style={{ flex: 1, padding: '8px 0' }}>
+          {NAV.map(({ href, label }) => {
+            const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
             return (
               <Link key={href} href={href}
-                style={{ display: 'block', padding: '9px 12px', borderRadius: 10, marginBottom: 2, textDecoration: 'none', background: active ? ABG : 'transparent', color: active ? A : MUTED, fontWeight: active ? 500 : 400, fontSize: 14, transition: 'background 0.12s' }}>
+                style={{
+                  display: 'block',
+                  padding: '9px 20px',
+                  paddingLeft: active ? 17 : 20,
+                  textDecoration: 'none',
+                  borderLeft: active ? '3px solid #E8785A' : '3px solid transparent',
+                  color: active ? '#E8785A' : '#1C1C1C',
+                  fontWeight: active ? 600 : 400,
+                  fontSize: 14,
+                  transition: 'color 0.12s',
+                }}>
                 {label}
               </Link>
             );
@@ -57,23 +73,23 @@ export default function AppLayout({ children }) {
         </div>
 
         {/* Bottom */}
-        <div style={{ padding: '16px 10px 0', borderTop: `1px solid ${BORDER}` }}>
-          {user && (
-            <div style={{ padding: '8px 12px 12px', marginBottom: 4 }}>
-              <p style={{ fontSize: 11, color: MUTED, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</p>
-            </div>
-          )}
+        <div style={{ padding: '12px 0', borderTop: `1px solid ${BORDER}` }}>
           <button onClick={toggleTheme}
-            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, background: 'none', border: 'none', cursor: 'pointer', color: MUTED, fontSize: 14, width: '100%' }}>
-            <span style={{ fontSize: 16, width: 20, textAlign: 'center' }}>{isDark ? '☀️' : '🌙'}</span>
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', paddingLeft: 20, background: 'none', border: 'none', borderLeft: '3px solid transparent', cursor: 'pointer', color: '#1C1C1C', fontSize: 14, width: '100%' }}>
+            <span style={{ fontSize: 15 }}>{isDark ? '☀️' : '🌙'}</span>
             {isDark ? 'Light mode' : 'Dark mode'}
           </button>
           {user && (
-            <button onClick={signOut}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, background: 'none', border: 'none', cursor: 'pointer', color: MUTED, fontSize: 14, width: '100%', marginTop: 2 }}>
-              <span style={{ fontSize: 16, width: 20, textAlign: 'center' }}>↪</span>
-              Sign out
-            </button>
+            <>
+              <div style={{ padding: '4px 20px 8px' }}>
+                <p style={{ fontSize: 11, color: MUTED, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</p>
+              </div>
+              <button onClick={signOut}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', background: 'none', border: 'none', borderLeft: '3px solid transparent', cursor: 'pointer', color: '#1C1C1C', fontSize: 14, width: '100%' }}>
+                <span style={{ fontSize: 15 }}>↪</span>
+                Sign out
+              </button>
+            </>
           )}
         </div>
       </nav>

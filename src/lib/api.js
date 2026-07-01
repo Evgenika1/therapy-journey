@@ -21,7 +21,6 @@ export const sessions = {
     const { data, error } = await supabase
       .from('sessions')
       .select('*')
-      .is('deleted_at', null)
       .order('created_at', { ascending: false });
     if (error) throw toError(error);
     return data;
