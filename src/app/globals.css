@@ -1,45 +1,18 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600;700&family=Courier+Prime:wght@400;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --color-bg:      #F5F0EA;
-  --color-card:    #FFFFFF;
-  --color-orange:  #F07040;
-  --color-yellow:  #F5C842;
-  --color-yellow2: #E8A820;
-  --color-cream:   #EDE6DC;
-  --color-text:    #2C1A0E;
-  --color-muted:   #A09080;
-}
-
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
-body {
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: 'DM Sans', sans-serif;
-  -webkit-font-smoothing: antialiased;
-}
-
-.font-serif-display {
-  font-family: 'DM Serif Display', Georgia, serif;
-}
-
-.font-mono-courier {
-  font-family: 'Courier Prime', monospace;
-}
-
-/* Smooth scrolling */
 html {
   scroll-behavior: smooth;
 }
 
-/* Remove tap highlight on mobile */
-* {
-  -webkit-tap-highlight-color: transparent;
+body {
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
 }

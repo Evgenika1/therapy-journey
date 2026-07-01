@@ -1,120 +1,124 @@
 'use client';
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
+import AppLayout from '@/components/AppLayout';
+import { useAuth } from '@/components/AuthProvider';
+import { useTheme } from '@/lib/ThemeContext';
+import { diary as diaryApi } from '@/lib/api';
 
-export default function Diary() {
-  const [newEntry, setNewEntry] = useState('');
+const MOODS = ['😞','😟','😐','🙂','😊'];
+
+export default function DiaryPage() {
+  const { supabase } = useAuth();
+  const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL: A } = useTheme();
   const [entries, setEntries] = useState([]);
+  const [content, setContent] = useState('');
+  const [mood,    setMood]    = useState(null);
+  const [saving,  setSaving]  = useState(false);
   const [loading, setLoading] = useState(true);
+  const [editId,  setEditId]  = useState(null);
+  const [editContent, setEditContent] = useState('');
 
   useEffect(() => {
-    loadEntries();
-  }, []);
+    if (!supabase) return;
+    diaryApi.list(supabase).then(d => { setEntries(d); setLoading(false); }).catch(() => setLoading(false));
+  }, [supabase]);
 
-  async function loadEntries() {
-    const { data } = await supabase
-      .from('diary_entries')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (data) setEntries(data);
-    setLoading(false);
+  async function save() {
+    if (!content.trim()) return;
+    setSaving(true);
+    try {
+      const entry = await diaryApi.save(supabase, { content, mood });
+      setEntries(e => [entry, ...e]);
+      setContent(''); setMood(null);
+    } finally { setSaving(false); }
   }
 
-  async function addEntry() {
-    if (!newEntry.trim()) return;
-    const { data } = await supabase
-      .from('diary_entries')
-      .insert([{ content: newEntry, mood: '🙂', user_id: 'eva' }])
-      .select();
-    if (data) setEntries([data[0], ...entries]);
-    setNewEntry('');
+  async function saveEdit(id) {
+    try {
+      const updated = await diaryApi.update(supabase, id, { content: editContent });
+      setEntries(e => e.map(x => x.id === id ? { ...x, content: editContent } : x));
+      setEditId(null);
+    } catch (err) { console.error(err?.message); }
+  }
+
+  async function del(id) {
+    if (!confirm('Delete this entry?')) return;
+    await diaryApi.delete(supabase, id);
+    setEntries(e => e.filter(x => x.id !== id));
   }
 
   return (
-    <div style={{background:'#F5F0EA',minHeight:'100vh',fontFamily:'DM Sans,sans-serif'}}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 32px',background:'rgba(255,255,255,0.8)',borderBottom:'0.5px solid rgba(240,112,64,0.2)'}}>
-        <div style={{display:'flex',alignItems:'center',gap:10}}>
-          <div style={{width:32,height:32,borderRadius:'50%',background:'#F07040',display:'flex',alignItems:'center',justifyContent:'center'}}>
-            <span style={{fontSize:11,fontWeight:700,color:'white'}}>tj</span>
-          </div>
-          <span style={{fontSize:12,letterSpacing:'3px',color:'#2C1A0E'}}>T H E R A P Y ™</span>
-        </div>
-        <div style={{display:'flex',gap:3,background:'rgba(245,200,66,0.15)',borderRadius:999,padding:3}}>
-          {[['Dashboard','/'],['Sessions','/sessions'],['Progress','/progress'],['Diary','/diary']].map(([l,h],i)=>(
-            <Link key={l} href={h} style={{borderRadius:999,padding:'6px 16px',fontSize:11,background:i===3?'#F5C842':'transparent',color:i===3?'#2C1A0E':'#A09080',fontWeight:i===3?600:400,textDecoration:'none'}}>{l}</Link>
-          ))}
-        </div>
-        <div style={{width:32,height:32,borderRadius:'50%',background:'#F07040',display:'flex',alignItems:'center',justifyContent:'center'}}>
-          <span style={{fontSize:11,fontWeight:600,color:'white'}}>E</span>
-        </div>
-      </div>
-
-      <div style={{maxWidth:900,margin:'0 auto',padding:'32px'}}>
-        <p style={{fontSize:10,letterSpacing:'1px',color:'#A09080',marginBottom:6}}>Artifact ID 004</p>
-        <h1 style={{fontSize:36,fontWeight:300,color:'#2C1A0E',marginBottom:28}}>My <strong style={{fontWeight:700}}>Diary</strong></h1>
-
-        <div style={{display:'grid',gridTemplateColumns:'1fr 300px',gap:24}}>
-          <div>
-            <div style={{background:'white',borderRadius:20,padding:24,boxShadow:'0 2px 12px rgba(44,26,14,0.06)',marginBottom:20}}>
-              <p style={{fontSize:10,letterSpacing:'1.5px',color:'#A09080',marginBottom:12}}>NEW ENTRY</p>
-              <textarea
-                value={newEntry}
-                onChange={e=>setNewEntry(e.target.value)}
-                placeholder="What's on your mind today..."
-                style={{width:'100%',height:100,border:'1px dashed rgba(245,200,66,0.5)',borderRadius:12,padding:14,fontSize:14,color:'#2C1A0E',resize:'none',outline:'none',fontFamily:'DM Sans,sans-serif',background:'rgba(245,200,66,0.03)',marginBottom:12}}
-              />
-              <button onClick={addEntry} style={{background:'#F07040',color:'white',border:'none',borderRadius:12,padding:'12px 24px',fontSize:13,fontWeight:600,cursor:'pointer'}}>
-                SAVE ENTRY ✓
-              </button>
-            </div>
-
-            {loading ? (
-              <p style={{color:'#A09080',fontSize:13}}>Loading...</p>
-            ) : entries.length === 0 ? (
-              <div style={{background:'white',borderRadius:20,padding:32,textAlign:'center',boxShadow:'0 2px 12px rgba(44,26,14,0.06)'}}>
-                <p style={{fontSize:32,marginBottom:12}}>📝</p>
-                <p style={{fontSize:14,color:'#A09080'}}>No entries yet — write your first one!</p>
-              </div>
-            ) : (
-              <div style={{display:'flex',flexDirection:'column',gap:12}}>
-                {entries.map((e,i)=>(
-                  <div key={e.id} style={{background:'white',borderRadius:20,padding:22,boxShadow:'0 2px 10px rgba(44,26,14,0.06)',borderLeft:`3px solid ${i===0?'#F07040':'#F5C842'}`}}>
-                    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-                      <span style={{fontSize:20}}>{e.mood}</span>
-                      <div>
-                        <p style={{fontSize:12,fontWeight:600,color:'#2C1A0E'}}>{new Date(e.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</p>
-                        <p style={{fontSize:10,color:'#A09080'}}>↳ {new Date(e.created_at).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</p>
-                      </div>
-                    </div>
-                    <p style={{fontSize:14,color:'#2C1A0E',lineHeight:1.6,fontWeight:300}}>{e.content}</p>
-                  </div>
-                ))}
-              </div>
-            )}
+    <AppLayout>
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, background: BG, fontFamily: '"Plus Jakarta Sans", sans-serif', color: TEXT, paddingBottom: 60 }}>
+        <div style={{ padding: 32, maxWidth: 740, margin: '0 auto' }}>
+          <div style={{ marginBottom: 32 }}>
+            <h1 style={{ fontFamily: '"Fraunces", serif', fontSize: 32, fontWeight: 300, color: TEXT, margin: '0 0 4px' }}>Diary</h1>
+            <p style={{ fontSize: 15, color: MUTED, margin: 0 }}>A private space for your thoughts</p>
           </div>
 
-          <div style={{display:'flex',flexDirection:'column',gap:16}}>
-            <div style={{background:'white',borderRadius:20,padding:22,boxShadow:'0 2px 10px rgba(44,26,14,0.06)'}}>
-              <p style={{fontSize:13,fontWeight:700,color:'#2C1A0E',marginBottom:16}}>This month</p>
-              {[
-                {label:'Entries',value:entries.length,accent:'#F07040'},
-                {label:'Avg mood',value:'7.2',accent:'#F5C842'},
-                {label:'Streak',value:'4 days',accent:'#F07040'},
-              ].map(s=>(
-                <div key={s.label} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 0',borderBottom:'0.5px solid rgba(44,26,14,0.06)'}}>
-                  <span style={{fontSize:13,color:'#A09080'}}>{s.label}</span>
-                  <span style={{fontSize:15,fontWeight:700,color:s.accent}}>{s.value}</span>
-                </div>
+          {/* New entry */}
+          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 24, marginBottom: 28 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              {MOODS.map((e, i) => (
+                <button key={i} onClick={() => setMood(i === mood ? null : i)}
+                  style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${mood === i ? A : BORDER}`, background: mood === i ? A + '18' : 'transparent', fontSize: 18, cursor: 'pointer' }}>
+                  {e}
+                </button>
               ))}
             </div>
-            <div style={{background:'linear-gradient(135deg,#F5C842,#F07040)',borderRadius:20,padding:22}}>
-              <p style={{fontSize:11,color:'rgba(255,255,255,0.8)',marginBottom:8}}>Latest AI insight</p>
-              <p style={{fontSize:13,color:'white',lineHeight:1.6,fontStyle:'italic'}}>"Your entries show growing self-awareness."</p>
+            <textarea value={content} onChange={e => setContent(e.target.value)}
+              placeholder="What's on your mind today?"
+              style={{ width: '100%', boxSizing: 'border-box', minHeight: 120, padding: '12px 16px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 15, resize: 'vertical', outline: 'none', fontFamily: 'inherit', lineHeight: 1.7 }} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+              <button onClick={save} disabled={!content.trim() || saving}
+                style={{ padding: '10px 28px', borderRadius: 10, border: 'none', background: content.trim() ? A : BORDER, color: '#fff', fontSize: 14, fontWeight: 500, cursor: content.trim() ? 'pointer' : 'default' }}>
+                {saving ? 'Saving…' : 'Save Entry'}
+              </button>
             </div>
+          </div>
+
+          {/* Entries */}
+          {loading && <p style={{ color: MUTED }}>Loading…</p>}
+          {!loading && entries.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '60px 0' }}>
+              <p style={{ fontFamily: '"Fraunces", serif', fontSize: 26, fontWeight: 300, color: TEXT, margin: '0 0 8px' }}>Nothing here yet</p>
+              <p style={{ fontSize: 15, color: MUTED }}>Write your first diary entry above.</p>
+            </div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {entries.map(entry => (
+              <div key={entry.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 14, padding: 22 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {entry.mood != null && <span style={{ fontSize: 20 }}>{MOODS[entry.mood]}</span>}
+                    <span style={{ fontSize: 12, color: MUTED }}>{new Date(entry.created_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => { setEditId(entry.id); setEditContent(entry.content || ''); }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: MUTED, padding: '4px 8px' }}>✏️</button>
+                    <button onClick={() => del(entry.id)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: MUTED, padding: '4px 8px' }}>🗑️</button>
+                  </div>
+                </div>
+                {editId === entry.id ? (
+                  <div>
+                    <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
+                      style={{ width: '100%', boxSizing: 'border-box', minHeight: 100, padding: '10px 14px', borderRadius: 10, border: `1px solid ${A}`, background: BG, color: TEXT, fontSize: 14, resize: 'vertical', outline: 'none', fontFamily: 'inherit' }} />
+                    <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                      <button onClick={() => setEditId(null)}
+                        style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+                      <button onClick={() => saveEdit(entry.id)}
+                        style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: A, color: '#fff', fontSize: 13, cursor: 'pointer' }}>Save</button>
+                    </div>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 15, color: TEXT, margin: 0, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{entry.content}</p>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }
