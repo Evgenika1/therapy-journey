@@ -4,7 +4,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
-import { sessions as sessionsApi, emotions as emotionsApi } from '@/lib/api';
+import { sessions as sessionsApi, emotions as emotionsApi, aiChats, homework as homeworkApi } from '@/lib/api';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const SESSION_MOODS = [
@@ -60,6 +60,8 @@ function SessionsPageInner() {
   const [activeTab,       setActiveTab]       = useState('summary');
   const [sessionNotes,    setSessionNotes]    = useState('');
   const [savingNotes,     setSavingNotes]     = useState(false);
+  const [analysing,       setAnalysing]       = useState(false);
+  const [analyseError,    setAnalyseError]    = useState('');
 
   // recording modal
   const [showModal,          setShowModal]          = useState(false);
@@ -84,6 +86,7 @@ function SessionsPageInner() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput,    setChatInput]    = useState('');
   const [chatLoading,  setChatLoading]  = useState(false);
+  const [sessionChatId, setSessionChatId] = useState(null);
   const chatBottomRef = useRef(null);
 
   const timerRef       = useRef(null);
@@ -91,6 +94,84 @@ function SessionsPageInner() {
   const chunksRef      = useRef([]);
   const recognitionRef = useRef(null);
   const finalTextRef   = useRef('');
+  const assemblyRef    = useRef(null);
+
+  // ── AssemblyAI realtime transcription (live captions during recording) ───────
+  function resampleTo16k(float32, inputRate) {
+    if (inputRate === 16000) return float32;
+    const ratio = inputRate / 16000;
+    const out = new Float32Array(Math.floor(float32.length / ratio));
+    for (let i = 0; i < out.length; i++) out[i] = float32[Math.floor(i * ratio)];
+    return out;
+  }
+
+  function pcm16Encode(float32) {
+    const buf = new ArrayBuffer(float32.length * 2);
+    const view = new DataView(buf);
+    for (let i = 0; i < float32.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32[i]));
+      view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    }
+    return buf;
+  }
+
+  async function startAssemblyRealtime(stream) {
+    try {
+      const res = await fetch('/api/transcribe/token', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.token) throw new Error(data.error || 'No realtime token');
+
+      const ws = new WebSocket(`wss://streaming.assemblyai.com/v3/ws?sample_rate=16000&encoding=pcm_s16le&token=${data.token}`);
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('AssemblyAI connect timeout')), 5000);
+        ws.onopen  = () => { clearTimeout(timeout); resolve(); };
+        ws.onerror = () => { clearTimeout(timeout); reject(new Error('AssemblyAI connect error')); };
+      });
+
+      ws.onmessage = (e) => {
+        let msg;
+        try { msg = JSON.parse(e.data); } catch { return; }
+        if (msg.type !== 'Turn') return;
+        if (msg.end_of_turn) {
+          finalTextRef.current += (msg.transcript || '') + ' ';
+          setLiveTranscript(finalTextRef.current);
+        } else {
+          setLiveTranscript(finalTextRef.current + (msg.transcript || ''));
+        }
+      };
+      ws.onerror = (e) => console.warn('[AssemblyAI]', e?.message || e);
+
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+      const silentGain = audioCtx.createGain();
+      silentGain.gain.value = 0;
+      processor.onaudioprocess = (e) => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        const resampled = resampleTo16k(e.inputBuffer.getChannelData(0), audioCtx.sampleRate);
+        ws.send(pcm16Encode(resampled));
+      };
+      source.connect(processor);
+      processor.connect(silentGain);
+      silentGain.connect(audioCtx.destination);
+
+      assemblyRef.current = { ws, audioCtx, source, processor };
+      return true;
+    } catch (err) {
+      console.warn('[AssemblyAI realtime] falling back to browser speech recognition:', err.message);
+      return false;
+    }
+  }
+
+  function stopAssemblyRealtime() {
+    const a = assemblyRef.current;
+    if (!a) return;
+    try { if (a.ws.readyState === WebSocket.OPEN) a.ws.send(JSON.stringify({ type: 'Terminate' })); } catch(_) {}
+    try { a.ws.close(); } catch(_) {}
+    try { a.processor.disconnect(); a.source.disconnect(); } catch(_) {}
+    try { a.audioCtx.close(); } catch(_) {}
+    assemblyRef.current = null;
+  }
 
   // ── load sessions ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -103,7 +184,8 @@ function SessionsPageInner() {
   // ── auto-open record modal from URL param ────────────────────────────────────
   useEffect(() => {
     if (searchParams.get('record') === 'true') {
-      openRecordModal();
+      const preMoodParam = searchParams.get('preMood');
+      openRecordModal(preMoodParam !== null ? Number(preMoodParam) : undefined);
       router.replace('/sessions');
     }
   }, [searchParams]);
@@ -119,7 +201,20 @@ function SessionsPageInner() {
     setActiveTab('summary');
     setSessionNotes(s.notes || '');
     setChatMessages([]);
+    setSessionChatId(null);
   }
+
+  // ── load persisted chat for selected session ─────────────────────────────────
+  useEffect(() => {
+    if (!supabase || !selectedSession) return;
+    let cancelled = false;
+    aiChats.forSession(supabase, selectedSession.id).then(chat => {
+      if (cancelled || !chat) return;
+      setSessionChatId(chat.id);
+      setChatMessages(Array.isArray(chat.messages) ? chat.messages : []);
+    }).catch(e => console.error('[Sessions] load chat:', e?.message));
+    return () => { cancelled = true; };
+  }, [supabase, selectedSession?.id]);
 
   // ── filtered sessions ─────────────────────────────────────────────────────────
   const filtered = sessions.filter(s => {
@@ -132,21 +227,31 @@ function SessionsPageInner() {
   const grouped = groupSessions(filtered);
 
   // ── recording ────────────────────────────────────────────────────────────────
-  function openRecordModal() {
+  function openRecordModal(preMoodIntensity) {
     setShowModal(true);
-    setShowPreMood(true);
-    setPreRecordMoodIdx(null);
     setSpeechError('');
     setTranscript('');
     setRecNotes('');
     setLiveTranscript('');
     finalTextRef.current = '';
     chunksRef.current = [];
+    // preMoodIntensity is set when navigating here from the Dashboard, which
+    // already saved the "before" mood — skip re-asking/re-saving it here.
+    if (typeof preMoodIntensity === 'number') {
+      const idx = SESSION_MOODS.findIndex(m => m.intensity === preMoodIntensity);
+      setPreRecordMoodIdx(idx >= 0 ? idx : null);
+      setShowPreMood(false);
+      startRecording();
+    } else {
+      setShowPreMood(true);
+      setPreRecordMoodIdx(null);
+    }
   }
 
   function closeModal() {
     if (isCapturing) stopRecording();
     if (recognitionRef.current) { recognitionRef.current.onend = null; try { recognitionRef.current.stop(); } catch(_) {} recognitionRef.current = null; }
+    stopAssemblyRealtime();
     clearInterval(timerRef.current);
     setShowModal(false); setIsCapturing(false); setIsTranscribing(false); setIsReview(false);
     setSeconds(0); setTranscript(''); setRecNotes(''); setSaved(false);
@@ -173,23 +278,26 @@ function SessionsPageInner() {
     try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
     catch { setSpeechError('Microphone access denied.'); return; }
 
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SR) {
-      const recognition = new SR();
-      recognition.continuous = true; recognition.interimResults = true; recognition.lang = navigator.language;
-      recognition.onresult = (e) => {
-        let interim = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const t = e.results[i][0].transcript;
-          if (e.results[i].isFinal) finalTextRef.current += t + ' ';
-          else interim += t;
-        }
-        setLiveTranscript(finalTextRef.current + interim);
-      };
-      recognition.onerror = (e) => { if (e.error !== 'aborted' && e.error !== 'no-speech') console.warn('[Speech]', e.error); };
-      recognition.onend = () => { if (mediaRef.current) { try { recognition.start(); } catch(_) {} } };
-      recognition.start();
-      recognitionRef.current = recognition;
+    const realtimeOk = await startAssemblyRealtime(stream);
+    if (!realtimeOk) {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SR) {
+        const recognition = new SR();
+        recognition.continuous = true; recognition.interimResults = true; recognition.lang = navigator.language;
+        recognition.onresult = (e) => {
+          let interim = '';
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const t = e.results[i][0].transcript;
+            if (e.results[i].isFinal) finalTextRef.current += t + ' ';
+            else interim += t;
+          }
+          setLiveTranscript(finalTextRef.current + interim);
+        };
+        recognition.onerror = (e) => { if (e.error !== 'aborted' && e.error !== 'no-speech') console.warn('[Speech]', e.error); };
+        recognition.onend = () => { if (mediaRef.current) { try { recognition.start(); } catch(_) {} } };
+        recognition.start();
+        recognitionRef.current = recognition;
+      }
     }
 
     const mimeType = getSupportedMimeType();
@@ -206,6 +314,7 @@ function SessionsPageInner() {
     clearInterval(timerRef.current);
     setIsCapturing(false);
     if (recognitionRef.current) { recognitionRef.current.onend = null; try { recognitionRef.current.stop(); } catch(_) {} recognitionRef.current = null; }
+    stopAssemblyRealtime();
     if (!mediaRef.current) return;
 
     await new Promise(resolve => { mediaRef.current.onstop = resolve; mediaRef.current.stop(); });
@@ -273,6 +382,43 @@ function SessionsPageInner() {
     } finally { setSaving(false); }
   }
 
+  // ── analyse session ──────────────────────────────────────────────────────────
+  async function analyseSession() {
+    if (!selectedSession || analysing) return;
+    setAnalysing(true); setAnalyseError('');
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: selectedSession.transcript, notes: selectedSession.notes }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      // Save to Supabase
+      const updated = await sessionsApi.update(supabase, selectedSession.id, { ai_analysis: JSON.stringify(data.analysis) });
+      const withAI = { ...selectedSession, ai_analysis: JSON.stringify(data.analysis) };
+      setSelectedSession(withAI);
+      setSessions(list => list.map(s => s.id === selectedSession.id ? { ...s, ai_analysis: JSON.stringify(data.analysis) } : s));
+
+      if (data.analysis?.action) {
+        try {
+          const existing = await homeworkApi.forSession(supabase, selectedSession.id);
+          if (!existing) {
+            await homeworkApi.save(supabase, {
+              title:       data.analysis.action.slice(0, 120),
+              description: `Auto-created from AI analysis of "${selectedSession.title || 'this session'}".`,
+              session_id:  selectedSession.id,
+              due_date:    null,
+            });
+          }
+        } catch (e) { console.error('[Sessions] auto-homework:', e?.message); }
+      }
+    } catch (err) {
+      console.error('[analyse]', err);
+      setAnalyseError(err.message);
+    } finally { setAnalysing(false); }
+  }
+
   // ── notes save ───────────────────────────────────────────────────────────────
   async function saveNotes() {
     if (!selectedSession || !user) return;
@@ -288,9 +434,14 @@ function SessionsPageInner() {
   // ── delete session ───────────────────────────────────────────────────────────
   async function deleteSession(s) {
     if (!confirm(`Delete "${s.title || 'this session'}"?`)) return;
-    await sessionsApi.delete(supabase, s.id);
-    setSessions(list => list.filter(x => x.id !== s.id));
-    if (selectedSession?.id === s.id) setSelectedSession(null);
+    try {
+      await sessionsApi.delete(supabase, s.id);
+      setSessions(list => list.filter(x => x.id !== s.id));
+      if (selectedSession?.id === s.id) setSelectedSession(null);
+    } catch (err) {
+      console.error('[Sessions] delete error:', err?.message, err?.code);
+      alert('Failed to delete: ' + (err?.message || 'unknown error'));
+    }
   }
 
   // ── AI chat ──────────────────────────────────────────────────────────────────
@@ -312,7 +463,19 @@ function SessionsPageInner() {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setChatMessages([...next, { role: 'assistant', content: data.content }]);
+      const final = [...next, { role: 'assistant', content: data.content }];
+      setChatMessages(final);
+
+      if (selectedSession) {
+        try {
+          if (!sessionChatId) {
+            const chat = await aiChats.create(supabase, selectedSession.title || 'Session chat', final, selectedSession.id);
+            setSessionChatId(chat.id);
+          } else {
+            await aiChats.update(supabase, sessionChatId, final);
+          }
+        } catch (e) { console.error('[Sessions] save chat:', e?.message); }
+      }
     } catch(err) {
       setChatMessages([...next, { role: 'assistant', content: '⚠ ' + err.message }]);
     } finally { setChatLoading(false); }
@@ -455,7 +618,7 @@ function SessionsPageInner() {
               ↑ Import
             </button>
             <button onClick={openRecordModal}
-              style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', background: A, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+              style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', background: '#C4687A', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="3.5" fill="white" opacity="0.35"/><circle cx="5" cy="5" r="2" fill="white"/></svg>
               Record
             </button>
@@ -476,13 +639,13 @@ function SessionsPageInner() {
                       onMouseEnter={e => { if (selectedSession?.id !== s.id) e.currentTarget.style.background = BG; }}
                       onMouseLeave={e => { if (selectedSession?.id !== s.id) e.currentTarget.style.background = 'transparent'; }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                        {s.ai_analysis && (
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#8B5CF6', flexShrink: 0 }} />
+                        )}
                         <p style={{ fontSize: 12, fontWeight: 500, color: selectedSession?.id === s.id ? A : TEXT, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                           {s.title || 'Untitled'}
                         </p>
-                        {s.ai_analysis && (
-                          <span style={{ fontSize: 9, fontWeight: 600, color: '#8B5CF6', background: '#8B5CF615', padding: '1px 5px', borderRadius: 4, marginLeft: 6, flexShrink: 0 }}>AI</span>
-                        )}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <p style={{ fontSize: 11, color: MUTED, margin: 0 }}>
@@ -558,9 +721,12 @@ function SessionsPageInner() {
                   if (!ai) return (
                     <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 14 }}>
                       <p style={{ fontSize: 15, color: MUTED, margin: 0, textAlign: 'center' }}>No AI analysis yet</p>
-                      <button style={{ padding: '11px 28px', borderRadius: 12, border: 'none', background: A, color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
-                        ✦ Analyse
+                      {analyseError && <p style={{ fontSize: 12, color: '#DC2626', margin: 0, textAlign: 'center' }}>{analyseError}</p>}
+                      <button onClick={analyseSession} disabled={analysing || !selectedSession?.transcript}
+                        style={{ padding: '11px 28px', borderRadius: 12, border: 'none', background: selectedSession?.transcript ? A : BORDER, color: '#fff', fontSize: 14, fontWeight: 500, cursor: selectedSession?.transcript ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {analysing ? '⏳ Analysing…' : '✦ Analyse'}
                       </button>
+                      {!selectedSession?.transcript && <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>Session needs a transcript to analyse</p>}
                     </div>
                   );
                   return (
@@ -609,11 +775,11 @@ function SessionsPageInner() {
         {/* ── RIGHT COLUMN ────────────────────────────────────────────────────── */}
         <div style={{ width: 320, flexShrink: 0, borderLeft: `1px solid ${BORDER}`, background: SURFACE, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* Header */}
-          <div style={{ padding: '16px 16px 12px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: TEXT, margin: 0 }}>Session AI</p>
-            <button onClick={() => setChatMessages([])}
+          <div style={{ padding: '0 16px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <p style={{ padding: '13px 4px', fontSize: 13, fontWeight: 600, color: A, margin: 0 }}>Chat</p>
+            <button onClick={() => { setChatMessages([]); setSessionChatId(null); }}
               style={{ fontSize: 12, color: MUTED, background: 'transparent', border: `1px solid ${BORDER}`, borderRadius: 7, padding: '4px 10px', cursor: 'pointer' }}>
-              + New chat
+              + New
             </button>
           </div>
 

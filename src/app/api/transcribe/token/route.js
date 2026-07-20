@@ -2,13 +2,8 @@ import { NextResponse } from 'next/server';
 
 export async function POST() {
   try {
-    const res = await fetch('https://api.assemblyai.com/v2/realtime/token', {
-      method: 'POST',
-      headers: {
-        authorization: process.env.ASSEMBLYAI_API_KEY,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ expires_in: 3600 }),
+    const res = await fetch('https://streaming.assemblyai.com/v3/token?expires_in_seconds=600', {
+      headers: { authorization: process.env.ASSEMBLYAI_API_KEY },
     });
     if (!res.ok) {
       const err = await res.text();

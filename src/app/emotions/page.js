@@ -19,12 +19,12 @@ function closestMoodIdx(intensity) {
 }
 
 const EMOTION_CATEGORIES = {
-  Joy:     { emotions: ['Happy','Excited','Grateful','Content','Hopeful'],      color: '#F59E0B' },
-  Sadness: { emotions: ['Sad','Lonely','Grief','Hopeless','Disappointed'],      color: '#3B82F6' },
-  Anxiety: { emotions: ['Anxious','Worried','Stressed','Overwhelmed','Panic'],  color: '#F97316' },
-  Anger:   { emotions: ['Angry','Frustrated','Irritated','Resentful','Bitter'], color: '#EF4444' },
-  Fear:    { emotions: ['Afraid','Scared','Vulnerable','Insecure','Threatened'],color: '#8B5CF6' },
-  Calm:    { emotions: ['Calm','Peaceful','Relaxed','Safe','Grounded'],         color: '#10B981' },
+  Joy:     { emotions: ['excited','grateful','proud','hopeful','playful'],      color: '#F59E0B' },
+  Sadness: { emotions: ['lonely','disappointed','empty','hurt','melancholic'],  color: '#3B82F6' },
+  Anxiety: { emotions: ['worried','nervous','overwhelmed','restless','tense'],  color: '#F97316' },
+  Anger:   { emotions: ['frustrated','irritated','resentful','furious'],        color: '#EF4444' },
+  Fear:    { emotions: ['scared','insecure','threatened','panicked'],           color: '#8B5CF6' },
+  Calm:    { emotions: ['safe','grounded','peaceful','relaxed','content'],      color: '#10B981' },
 };
 
 function Heatmap({ logs }) {
@@ -158,8 +158,8 @@ export default function EmotionsPage() {
   const { BG, BORDER, MUTED, SURFACE, CORAL: A, NAV_ACTIVE: ABG, H1: TEXT } = useTheme();
   const [logs,        setLogs]        = useState([]);
   const [logging,     setLogging]     = useState(false);
-  const [selectedCat, setSelectedCat] = useState(null);
-  const [selectedEmo, setSelectedEmo] = useState(null);
+  const [selectedCat,  setSelectedCat]  = useState(null);
+  const [selectedEmos, setSelectedEmos] = useState([]);
   const [intensity,   setIntensity]   = useState(5);
   const [saving,  setSaving]  = useState(false);
   const [loading, setLoading] = useState(true);
@@ -185,13 +185,17 @@ export default function EmotionsPage() {
     } catch (err) { console.error('[Emotions] delete:', err?.message); }
   }, [supabase]);
 
+  function toggleEmo(emo) {
+    setSelectedEmos(prev => prev.includes(emo) ? prev.filter(e => e !== emo) : [...prev, emo]);
+  }
+
   async function saveLog() {
-    if (!selectedCat || !selectedEmo) return;
+    if (!selectedCat || selectedEmos.length === 0) return;
     setSaving(true);
     try {
-      const entry = await emotionsApi.save(supabase, { category: selectedCat, emotion_name: selectedEmo, intensity });
+      const entry = await emotionsApi.save(supabase, { category: selectedCat, sub_emotions: selectedEmos, intensity });
       setLogs(l => [entry, ...l]);
-      setLogging(false); setSelectedCat(null); setSelectedEmo(null); setIntensity(5);
+      setLogging(false); setSelectedCat(null); setSelectedEmos([]); setIntensity(5);
     } finally { setSaving(false); }
   }
 
@@ -215,7 +219,7 @@ export default function EmotionsPage() {
               <h1 style={{ fontFamily: '"Fraunces", serif', fontSize: 32, fontWeight: 300, color: TEXT, margin: '0 0 4px', lineHeight: 1.2 }}>Emotions</h1>
               <p style={{ fontSize: 15, color: MUTED, margin: 0 }}>Track and understand your emotional patterns</p>
             </div>
-            <button onClick={() => { setLogging(true); setSelectedCat(null); setSelectedEmo(null); setIntensity(5); }}
+            <button onClick={() => { setLogging(true); setSelectedCat(null); setSelectedEmos([]); setIntensity(5); }}
               style={{ padding: '10px 24px', borderRadius: 10, border: 'none', background: A, color: '#fff', fontSize: 15, fontWeight: 500, cursor: 'pointer', flexShrink: 0 }}>
               + Log Emotion
             </button>
@@ -291,7 +295,7 @@ export default function EmotionsPage() {
             <p style={{ fontSize: 12, fontWeight: 600, color: MUTED, margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Category</p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 22 }}>
               {Object.entries(EMOTION_CATEGORIES).map(([cat, info]) => (
-                <button key={cat} onClick={() => { setSelectedCat(cat); setSelectedEmo(null); }}
+                <button key={cat} onClick={() => { setSelectedCat(cat); setSelectedEmos([]); }}
                   style={{ padding: '12px 8px', borderRadius: 10, cursor: 'pointer', border: `1px solid ${selectedCat === cat ? info.color : BORDER}`, background: selectedCat === cat ? info.color + '12' : 'transparent', display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.12s' }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: info.color, flexShrink: 0 }} />
                   <span style={{ fontSize: 13, fontWeight: 500, color: TEXT }}>{cat}</span>
@@ -301,14 +305,19 @@ export default function EmotionsPage() {
 
             {selectedCat && (
               <>
-                <p style={{ fontSize: 12, fontWeight: 600, color: MUTED, margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Emotion</p>
+                <p style={{ fontSize: 12, fontWeight: 600, color: MUTED, margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Emotions — select all that apply</p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 22 }}>
-                  {EMOTION_CATEGORIES[selectedCat].emotions.map(emo => (
-                    <button key={emo} onClick={() => setSelectedEmo(emo)}
-                      style={{ padding: '7px 16px', borderRadius: 8, cursor: 'pointer', border: `1px solid ${selectedEmo === emo ? EMOTION_CATEGORIES[selectedCat].color : BORDER}`, background: selectedEmo === emo ? EMOTION_CATEGORIES[selectedCat].color + '12' : 'transparent', fontSize: 14, color: selectedEmo === emo ? EMOTION_CATEGORIES[selectedCat].color : MUTED, fontWeight: selectedEmo === emo ? 600 : 400 }}>
-                      {emo}
-                    </button>
-                  ))}
+                  {EMOTION_CATEGORIES[selectedCat].emotions.map(emo => {
+                    const on = selectedEmos.includes(emo);
+                    const color = EMOTION_CATEGORIES[selectedCat].color;
+                    return (
+                      <button key={emo} onClick={() => toggleEmo(emo)}
+                        style={{ padding: '7px 14px', borderRadius: 8, cursor: 'pointer', border: `1px solid ${on ? color : BORDER}`, background: on ? color + '12' : 'transparent', fontSize: 14, color: on ? color : MUTED, fontWeight: on ? 600 : 400, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 13 }}>{on ? '✓' : '+'}</span>
+                        {emo}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <p style={{ fontSize: 12, fontWeight: 600, color: MUTED, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Intensity — {intensity}/10</p>
@@ -319,9 +328,9 @@ export default function EmotionsPage() {
 
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setLogging(false)} style={{ flex: 1, padding: '10px', borderRadius: 10, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 15, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={saveLog} disabled={!selectedCat || !selectedEmo || saving}
-                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: A, color: '#fff', fontSize: 15, fontWeight: 500, cursor: 'pointer', opacity: (!selectedCat || !selectedEmo) ? 0.5 : 1 }}>
-                {saving ? 'Saving…' : 'Log Emotion'}
+              <button onClick={saveLog} disabled={!selectedCat || selectedEmos.length === 0 || saving}
+                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: A, color: '#fff', fontSize: 15, fontWeight: 500, cursor: 'pointer', opacity: (!selectedCat || selectedEmos.length === 0) ? 0.5 : 1 }}>
+                {saving ? 'Saving…' : selectedEmos.length > 1 ? `Log ${selectedEmos.length} Emotions` : 'Log Emotion'}
               </button>
             </div>
           </div>
