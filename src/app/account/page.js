@@ -68,13 +68,10 @@ export default function AccountPage() {
     }
     setLoadingDelete(true);
     setDeleteMsg(null);
-    // Sign out first, then the user record deletion requires a server-side call
-    // For now we sign out and show a message to contact support for full deletion
     const { error } = await supabase.rpc('delete_user');
+    setLoadingDelete(false);
     if (error) {
-      // Fallback: just sign out
-      await supabase.auth.signOut();
-      router.replace('/auth');
+      setDeleteMsg({ err: true, text: `Could not delete account: ${error.message}. Your data was not removed — please contact support.` });
       return;
     }
     await supabase.auth.signOut();

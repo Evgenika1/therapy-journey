@@ -64,15 +64,17 @@ export default function HomePage() {
   }, [supabase]);
 
   async function handleStartRecording() {
+    let preMoodQuery = '';
     if (moodBefore !== null && user && supabase) {
       try {
         await emotionsApi.save(supabase, {
           category: 'Session', emotion_name: 'Before',
           intensity: MOOD_INTENSITIES[moodBefore], session_tag: 'before',
         });
+        preMoodQuery = `&preMood=${MOOD_INTENSITIES[moodBefore]}`;
       } catch (e) { console.error('[Dashboard] mood save:', e?.message); }
     }
-    router.push('/sessions?record=true');
+    router.push(`/sessions?record=true${preMoodQuery}`);
   }
 
   const STAT_CARDS = [

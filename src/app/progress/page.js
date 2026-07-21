@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
-import { sessions as sessionsApi, emotions as emotionsApi } from '@/lib/api';
+import { sessions as sessionsApi } from '@/lib/api';
 
 const MOOD_EMOJIS = ['😞','😟','😐','🙂','😊'];
 function moodEmoji(intensity) {
@@ -25,7 +25,7 @@ export default function ProgressPage() {
     if (!supabase) return;
     Promise.all([
       sessionsApi.stats(supabase),
-      emotionsApi.sessionPairs(supabase),
+      sessionsApi.moodPairs(supabase),
     ]).then(([s, pairs]) => {
       setStats(s);
       setSessionPairs(pairs);
@@ -77,16 +77,16 @@ export default function ProgressPage() {
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {sessionPairs.map(p => {
-                const pct = Math.min(100, Math.max(0, (p.after.intensity / 10) * 100));
+                const pct = Math.min(100, Math.max(0, (p.after / 10) * 100));
                 const positive = p.diff >= 0;
                 return (
-                  <div key={p.day} style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 18px' }}>
+                  <div key={p.id} style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 18px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                       <span style={{ fontSize: 13, color: MUTED }}>{new Date(p.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 18 }}>{moodEmoji(p.before.intensity)}</span>
+                        <span style={{ fontSize: 18 }}>{moodEmoji(p.before)}</span>
                         <span style={{ fontSize: 12, color: MUTED }}>→</span>
-                        <span style={{ fontSize: 18 }}>{moodEmoji(p.after.intensity)}</span>
+                        <span style={{ fontSize: 18 }}>{moodEmoji(p.after)}</span>
                         <span style={{ fontSize: 13, fontWeight: 600, color: positive ? '#15803D' : '#DC2626', minWidth: 36, textAlign: 'right' }}>
                           {positive ? '+' : ''}{p.diff}
                         </span>

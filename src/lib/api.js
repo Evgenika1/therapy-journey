@@ -3,6 +3,23 @@
  * Data is protected by Supabase row-level security and server-side encryption at rest.
  */
 
+// Normalizes an emotion_logs row into the shape the UI expects:
+// `category`, `emotion_name` (display string) and a `sub_emotions` array.
+// Handles both the new format (emotion = category, sub_emotions = [...])
+// and the legacy format (emotion = "Category:emotion", no sub_emotions).
+function normalizeEmotion(e) {
+  const raw  = e.emotion ?? '';
+  const subs = Array.isArray(e.sub_emotions) ? e.sub_emotions : [];
+  let category, emotion_name;
+  if (raw.includes(':')) {
+    [category, emotion_name] = raw.split(':');
+  } else {
+    category     = raw || null;
+    emotion_name = subs.length ? subs.join(', ') : (raw || null);
+  }
+  return { ...e, category, emotion_name, sub_emotions: subs };
+}
+
 function toError(supabaseError) {
   const msg = supabaseError?.message
     || supabaseError?.details
@@ -21,6 +38,7 @@ export const sessions = {
     const { data, error } = await supabase
       .from('sessions')
       .select('*')
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
     if (error) throw toError(error);
     return data;
@@ -47,10 +65,12 @@ export const sessions = {
   },
 
   async update(supabase, id, fields) {
+    const { data: { user } } = await supabase.auth.getUser();
     const { data, error } = await supabase
       .from('sessions')
       .update(fields)
       .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single();
     if (error) throw toError(error);
@@ -58,17 +78,20 @@ export const sessions = {
   },
 
   async delete(supabase, id) {
+    const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase
       .from('sessions')
       .update({ deleted_at: new Date().toISOString() })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('user_id', user.id);
     if (error) throw toError(error);
   },
 
   async stats(supabase) {
     const { data, error } = await supabase
       .from('sessions')
-      .select('mood_before, mood_after, ai_analysis');
+      .select('mood_before, mood_after, ai_analysis')
+      .is('deleted_at', null);
     if (error) throw toError(error);
     const total = data.length;
     const withMood = data.filter(s => s.mood_before != null && s.mood_after != null);
@@ -77,6 +100,24 @@ export const sessions = {
       : null;
     const breakthroughs = data.filter(s => s.ai_analysis).length;
     return { total, avgLift, breakthroughs };
+  },
+
+  async moodPairs(supabase) {
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('id, created_at, mood_before, mood_after')
+      .is('deleted_at', null)
+      .not('mood_before', 'is', null)
+      .not('mood_after', 'is', null)
+      .order('created_at', { ascending: false });
+    if (error) throw toError(error);
+    return data.map(s => ({
+      id:     s.id,
+      day:    s.created_at?.slice(0, 10),
+      before: s.mood_before,
+      after:  s.mood_after,
+      diff:   s.mood_after - s.mood_before,
+    }));
   },
 };
 
@@ -103,6 +144,7 @@ export const diary = {
   },
 
   async update(supabase, id, fields) {
+    const { data: { user } } = await supabase.auth.getUser();
     const updates = {};
     if (fields.mood    !== undefined) updates.mood    = fields.mood;
     if (fields.content !== undefined) updates.content = fields.content;
@@ -110,6 +152,7 @@ export const diary = {
       .from('diary_entries')
       .update(updates)
       .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single();
     if (error) throw toError(error);
@@ -117,7 +160,8 @@ export const diary = {
   },
 
   async delete(supabase, id) {
-    const { error } = await supabase.from('diary_entries').delete().eq('id', id);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('diary_entries').delete().eq('id', id).eq('user_id', user.id);
     if (error) throw toError(error);
   },
 };
@@ -130,76 +174,41 @@ export const emotions = {
       .select('*')
       .order('created_at', { ascending: false });
     if (error) throw toError(error);
-    return data.map(e => {
-      const raw = e.emotion ?? '';
-      const [cat, emo] = raw.includes(':') ? raw.split(':') : [null, raw];
-      return {
-        ...e,
-        category:     cat  || e.category     || null,
-        emotion_name: emo  || e.emotion_name || null,
-      };
-    });
+    return data.map(normalizeEmotion);
   },
 
   async save(supabase, log) {
     const { data: { user } } = await supabase.auth.getUser();
-    const emotionValue = log.category && log.emotion_name
-      ? `${log.category}:${log.emotion_name}`
-      : (log.emotion_name || log.category || null);
+    const subEmotions = Array.isArray(log.sub_emotions) ? log.sub_emotions : [];
+    // New multi-select rows store the category in `emotion` and the list in
+    // `sub_emotions`. Legacy single-emotion callers (e.g. Session Before/After)
+    // still pass emotion_name and keep the old "Category:emotion" encoding.
+    const emotionValue = subEmotions.length
+      ? (log.category || null)
+      : (log.category && log.emotion_name
+          ? `${log.category}:${log.emotion_name}`
+          : (log.emotion_name || log.category || null));
+
     const insert = {
-      user_id:   user.id,
-      intensity: log.intensity,
-      emotion:   emotionValue,
+      user_id:      user.id,
+      intensity:    log.intensity,
+      emotion:      emotionValue,
+      sub_emotions: subEmotions,
     };
     if (log.session_tag) insert.session_tag = log.session_tag;
-    const { data, error } = await supabase
-      .from('emotion_logs')
-      .insert(insert)
-      .select()
-      .single();
+
+    let { data, error } = await supabase.from('emotion_logs').insert(insert).select().single();
+    // Graceful fallback if migration 013 (sub_emotions column) hasn't run yet.
+    if (error && (error.code === '42703' || error.code === 'PGRST204')) {
+      delete insert.sub_emotions;
+      ({ data, error } = await supabase.from('emotion_logs').insert(insert).select().single());
+    }
     if (error) throw toError(error);
-    return { ...data, category: log.category, emotion_name: log.emotion_name };
-  },
-
-  async todaySession(supabase) {
-    const today = new Date().toISOString().slice(0, 10);
-    const { data, error } = await supabase
-      .from('emotion_logs')
-      .select('*')
-      .not('session_tag', 'is', null)
-      .gte('created_at', `${today}T00:00:00.000Z`)
-      .lt('created_at', `${today}T23:59:59.999Z`);
-    if (error) {
-      if (error.code === '42703' || error.code === 'PGRST204') return [];
-      throw toError(error);
-    }
-    return data;
-  },
-
-  async sessionPairs(supabase) {
-    const { data, error } = await supabase
-      .from('emotion_logs')
-      .select('*')
-      .not('session_tag', 'is', null)
-      .order('created_at', { ascending: false });
-    if (error) {
-      if (error.code === '42703' || error.code === 'PGRST204') return [];
-      throw toError(error);
-    }
-    const byDay = {};
-    for (const e of data) {
-      const day = e.created_at?.slice(0, 10);
-      if (!day) continue;
-      if (!byDay[day]) byDay[day] = {};
-      if (e.session_tag === 'before' || e.session_tag === 'after') byDay[day][e.session_tag] = e;
-    }
-    return Object.entries(byDay)
-      .filter(([, v]) => v.before && v.after)
-      .map(([day, v]) => ({ day, before: v.before, after: v.after, diff: v.after.intensity - v.before.intensity }))
-      .sort((a, b) => b.day.localeCompare(a.day));
+    return normalizeEmotion({ ...data, sub_emotions: data.sub_emotions ?? subEmotions });
   },
 
   async update(supabase, id, fields) {
+    const { data: { user } } = await supabase.auth.getUser();
     const updates = {};
     if (fields.intensity !== undefined) updates.intensity = fields.intensity;
     if (fields.emotion   !== undefined) updates.emotion   = fields.emotion;
@@ -207,6 +216,7 @@ export const emotions = {
       .from('emotion_logs')
       .update(updates)
       .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single();
     if (error) throw toError(error);
@@ -214,13 +224,24 @@ export const emotions = {
   },
 
   async delete(supabase, id) {
-    const { error } = await supabase.from('emotion_logs').delete().eq('id', id);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('emotion_logs').delete().eq('id', id).eq('user_id', user.id);
     if (error) throw toError(error);
   },
 };
 
 // ─── Homework ─────────────────────────────────────────────────────────────────
 export const homework = {
+  async forSession(supabase, sessionId) {
+    const { data, error } = await supabase
+      .from('homework')
+      .select('id')
+      .eq('session_id', sessionId)
+      .limit(1);
+    if (error) throw toError(error);
+    return data?.[0] ?? null;
+  },
+
   async list(supabase) {
     const { data, error } = await supabase
       .from('homework')
@@ -253,6 +274,7 @@ export const homework = {
   },
 
   async update(supabase, id, fields) {
+    const { data: { user } } = await supabase.auth.getUser();
     const updates = {};
     if (fields.completed   !== undefined) updates.completed       = fields.completed;
     if (fields.due_date    !== undefined) updates.due_date        = fields.due_date;
@@ -263,6 +285,7 @@ export const homework = {
       .from('homework')
       .update(updates)
       .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single();
     if (error) throw toError(error);
@@ -274,7 +297,8 @@ export const homework = {
   },
 
   async delete(supabase, id) {
-    const { error } = await supabase.from('homework').delete().eq('id', id);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('homework').delete().eq('id', id).eq('user_id', user.id);
     if (error) throw toError(error);
   },
 };
@@ -301,7 +325,8 @@ export const journals = {
   },
 
   async delete(supabase, id) {
-    const { error } = await supabase.from('journal_entries').delete().eq('id', id);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('journal_entries').delete().eq('id', id).eq('user_id', user.id);
     if (error) throw toError(error);
   },
 };
@@ -330,7 +355,8 @@ export const customJournals = {
   },
 
   async delete(supabase, id) {
-    const { error } = await supabase.from('custom_journal_types').delete().eq('id', id);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('custom_journal_types').delete().eq('id', id).eq('user_id', user.id);
     if (error) throw toError(error);
   },
 };
@@ -362,6 +388,7 @@ export const topics = {
   },
 
   async update(supabase, id, fields) {
+    const { data: { user } } = await supabase.auth.getUser();
     const updates = {};
     if (fields.checked !== undefined) updates.checked = fields.checked;
     if (fields.text    !== undefined) updates.text    = fields.text;
@@ -369,6 +396,7 @@ export const topics = {
       .from('next_session_topics')
       .update(updates)
       .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single();
     if (error) throw toError(error);
@@ -376,7 +404,8 @@ export const topics = {
   },
 
   async delete(supabase, id) {
-    const { error } = await supabase.from('next_session_topics').delete().eq('id', id);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('next_session_topics').delete().eq('id', id).eq('user_id', user.id);
     if (error) throw toError(error);
   },
 };
@@ -392,22 +421,36 @@ export const aiChats = {
     return data;
   },
 
-  async create(supabase, title, messages) {
+  async create(supabase, title, messages, sessionId = null) {
     const { data: { user } } = await supabase.auth.getUser();
     const { data, error } = await supabase
       .from('ai_chats')
-      .insert({ user_id: user.id, title, messages })
+      .insert({ user_id: user.id, title, messages, session_id: sessionId })
       .select()
       .single();
     if (error) throw toError(error);
     return data;
   },
 
+  async forSession(supabase, sessionId) {
+    const { data, error } = await supabase
+      .from('ai_chats')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw toError(error);
+    return data;
+  },
+
   async update(supabase, id, messages) {
+    const { data: { user } } = await supabase.auth.getUser();
     const { data, error } = await supabase
       .from('ai_chats')
       .update({ messages, updated_at: new Date().toISOString() })
       .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single();
     if (error) throw toError(error);
@@ -415,30 +458,8 @@ export const aiChats = {
   },
 
   async delete(supabase, id) {
-    const { error } = await supabase.from('ai_chats').delete().eq('id', id);
-    if (error) throw toError(error);
-  },
-};
-
-// ─── User Settings ────────────────────────────────────────────────────────────
-export const userSettings = {
-  async get(supabase) {
-    const { data, error } = await supabase
-      .from('user_settings')
-      .select('settings')
-      .single();
-    if (error && error.code !== 'PGRST116') throw toError(error);
-    return data?.settings ?? {};
-  },
-
-  async set(supabase, key, value) {
-    const current = await userSettings.get(supabase).catch(() => ({}));
-    const updated = { ...current, [key]: value };
     const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase
-      .from('user_settings')
-      .upsert({ user_id: user.id, settings: updated }, { onConflict: 'user_id' });
+    const { error } = await supabase.from('ai_chats').delete().eq('id', id).eq('user_id', user.id);
     if (error) throw toError(error);
-    return updated;
   },
 };

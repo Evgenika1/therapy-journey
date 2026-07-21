@@ -28,7 +28,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (loading) return;
-    const pub = pathname === '/auth' || pathname === '/privacy';
+    const pub = pathname === '/auth';
     if (!user && !pub) router.replace('/auth');
     if (user && pathname === '/auth') router.replace('/');
   }, [user, loading, pathname, router]);
