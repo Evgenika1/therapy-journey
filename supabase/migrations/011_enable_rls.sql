@@ -29,14 +29,15 @@ BEGIN
     EXECUTE format('DROP POLICY IF EXISTS "update_own_%1$s" ON public.%1$I', t);
     EXECUTE format('DROP POLICY IF EXISTS "delete_own_%1$s" ON public.%1$I', t);
 
+    -- user_id is stored as text in this schema, so cast both sides to text
     EXECUTE format(
-      'CREATE POLICY "select_own_%1$s" ON public.%1$I FOR SELECT USING (auth.uid() = user_id)', t);
+      'CREATE POLICY "select_own_%1$s" ON public.%1$I FOR SELECT USING (auth.uid()::text = user_id::text)', t);
     EXECUTE format(
-      'CREATE POLICY "insert_own_%1$s" ON public.%1$I FOR INSERT WITH CHECK (auth.uid() = user_id)', t);
+      'CREATE POLICY "insert_own_%1$s" ON public.%1$I FOR INSERT WITH CHECK (auth.uid()::text = user_id::text)', t);
     EXECUTE format(
-      'CREATE POLICY "update_own_%1$s" ON public.%1$I FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id)', t);
+      'CREATE POLICY "update_own_%1$s" ON public.%1$I FOR UPDATE USING (auth.uid()::text = user_id::text) WITH CHECK (auth.uid()::text = user_id::text)', t);
     EXECUTE format(
-      'CREATE POLICY "delete_own_%1$s" ON public.%1$I FOR DELETE USING (auth.uid() = user_id)', t);
+      'CREATE POLICY "delete_own_%1$s" ON public.%1$I FOR DELETE USING (auth.uid()::text = user_id::text)', t);
   END LOOP;
 END $$;
 
