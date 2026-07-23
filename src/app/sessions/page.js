@@ -21,6 +21,40 @@ function fmt(s) {
   return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
 }
 
+// Silence detection. Whole-file mean RMS is the WRONG statistic — long therapy
+// pauses dilute it below any threshold, so real speech reads as silent. Instead
+// we look at the loudest ~1s window: if any second reaches speech-level energy,
+// the recording is not silent. We only skip transcription when the windowed RMS
+// AND the sample peak both indicate silence, so a genuinely quiet-but-real
+// recording is never dropped — a false skip loses data, a false pass merely
+// costs one API round-trip that returns empty.
+const SPEECH_WINDOW_RMS  = 0.02;  // loudest ~1s window must reach this to be "speech"
+const SILENCE_PEAK_FLOOR = 0.05;  // ...and no sample exceeds this → truly silent
+
+// Known ASR hallucination artifacts (subtitle-credit boilerplate) that speech
+// models emit on silence — last-resort filter for anything that slips through.
+const HALLUCINATION_PATTERNS = [
+  /редактор\s+субтитров/i,
+  /корректор\s+[А-ЯA-Z]\./i,
+  /продолжение\s+следует/i,
+  /субтитры?\s+(сделал|создавал|делал|подготовил|редактировал|правил)/i,
+  /спасибо\s+за\s+просмотр/i,
+  /подписывайтесь/i,
+  /dimatorzok/i,
+  /amara\.org/i,
+  /thanks?\s+for\s+watching/i,
+  /subtitles?\s+by/i,
+  /please\s+subscribe/i,
+];
+function stripHallucinations(text) {
+  if (!text) return '';
+  const kept = text
+    .split(/(?<=[.!?\n])\s+/)
+    .map(s => s.trim())
+    .filter(s => s && !HALLUCINATION_PATTERNS.some(re => re.test(s)));
+  return kept.join(' ').trim();
+}
+
 function getSupportedMimeType() {
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
   return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
@@ -331,8 +365,45 @@ function SessionsPageInner() {
       setIsReview(true); return;
     }
 
-    const liveText = finalTextRef.current.trim();
+    const liveText = stripHallucinations(finalTextRef.current.trim());
     if (liveText) setTranscript(liveText);
+
+    // [diag] + Fix 1: measure the ACTUAL recorded audio level (RMS) to detect
+    // near-silence, which makes ASR hallucinate subtitle-credit boilerplate.
+    let loudestWindowRms = null, peak = 0;
+    try {
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      const decoded = await ac.decodeAudioData(await audioBlob.arrayBuffer());
+      const ch = decoded.getChannelData(0);
+      // Loudest ~1s window: robust to long pauses that would dilute a whole-file mean.
+      const win = Math.max(1, Math.floor(decoded.sampleRate));
+      loudestWindowRms = 0;
+      for (let start = 0; start < ch.length; start += win) {
+        const end = Math.min(start + win, ch.length);
+        let sumSq = 0;
+        for (let i = start; i < end; i++) { const a = Math.abs(ch[i]); sumSq += a * a; if (a > peak) peak = a; }
+        const wRms = Math.sqrt(sumSq / (end - start));
+        if (wRms > loudestWindowRms) loudestWindowRms = wRms;
+      }
+      const head = Array.from(ch.slice(0, Math.min(ch.length, decoded.sampleRate * 2)))
+        .filter((_, i) => i % 2000 === 0).map(v => v.toFixed(3)).join(',');
+      const silent = loudestWindowRms < SPEECH_WINDOW_RMS && peak < SILENCE_PEAK_FLOOR;
+      console.log('[Recording][diag] duration:', decoded.duration.toFixed(1), 's · sampleRate:', decoded.sampleRate,
+        '· loudestWindowRMS:', loudestWindowRms.toFixed(5), '· peak:', peak.toFixed(4),
+        silent ? '→ SILENT (skipping transcription)' : '→ contains audio');
+      console.log('[Recording][diag] first ~2s waveform samples:', head);
+      ac.close();
+    } catch (e) { console.log('[Recording][diag] audio analysis failed:', e.message); }
+
+    // Silence guard — skip /api/transcribe only when BOTH signals agree it's silent.
+    if (loudestWindowRms !== null && loudestWindowRms < SPEECH_WINDOW_RMS && peak < SILENCE_PEAK_FLOOR) {
+      console.log('[Recording][diag] loudestWindowRMS', loudestWindowRms.toFixed(5), '<', SPEECH_WINDOW_RMS,
+        '&& peak', peak.toFixed(4), '<', SILENCE_PEAK_FLOOR, '→ silent, not transcribing');
+      setTranscript('');
+      setSpeechError('No speech detected — the recording was silent. You can type manually.');
+      setIsReview(true);
+      return;
+    }
 
     setIsTranscribing(true);
     try {
@@ -343,11 +414,23 @@ function SessionsPageInner() {
       const res = await fetch('/api/transcribe', { method: 'POST', body: form });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setTranscript(data.text || liveText || '');
+      // Fix 3: filter known hallucination phrases from the batch result too
+      const batchText = stripHallucinations(data.text || '');
+      // The realtime stream is English-only (AssemblyAI Universal-Streaming has
+      // no Russian support), so liveText is phonetic garbage for our audio and
+      // must never be persisted — only the batch result is trustworthy.
+      const finalText = batchText || '';
+      console.log('[Recording][diag] BATCH raw(' + (data.text || '').length + ')→clean(' + batchText.length + ')',
+        JSON.stringify(batchText.slice(0, 100)),
+        '| LIVE(' + liveText.length + ', discarded) | SAVING:', batchText ? 'BATCH' : 'EMPTY');
+      setTranscript(finalText);
+      if (!finalText) setSpeechError('No speech detected in the recording.');
     } catch (err) {
       console.error('[transcribe]', err);
       setSpeechError('Transcription error: ' + err.message);
-      if (liveText) setTranscript(liveText);
+      // Clear rather than fall back to liveText (English-only stream = garbage),
+      // and clear explicitly to undo the pre-fill above while the batch ran.
+      setTranscript('');
     } finally {
       setIsTranscribing(false); setIsReview(true);
     }

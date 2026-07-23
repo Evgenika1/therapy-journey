@@ -5,6 +5,31 @@ export const maxDuration = 300; // 5 minutes — needed for long recordings
 const API_KEY = process.env.ASSEMBLYAI_API_KEY;
 const HEADERS = { authorization: API_KEY, 'content-type': 'application/json' };
 
+// Last-resort server-side filter for ASR hallucination boilerplate (subtitle
+// credits) that speech models emit on near-silent audio.
+const HALLUCINATION_PATTERNS = [
+  /редактор\s+субтитров/i,
+  /корректор\s+[А-ЯA-Z]\./i,
+  /продолжение\s+следует/i,
+  /субтитры?\s+(сделал|создавал|делал|подготовил|редактировал|правил)/i,
+  /спасибо\s+за\s+просмотр/i,
+  /подписывайтесь/i,
+  /dimatorzok/i,
+  /amara\.org/i,
+  /thanks?\s+for\s+watching/i,
+  /subtitles?\s+by/i,
+  /please\s+subscribe/i,
+];
+function stripHallucinations(text) {
+  if (!text) return '';
+  return text
+    .split(/(?<=[.!?\n])\s+/)
+    .map(s => s.trim())
+    .filter(s => s && !HALLUCINATION_PATTERNS.some(re => re.test(s)))
+    .join(' ')
+    .trim();
+}
+
 export async function POST(req) {
   try {
     const formData = await req.formData();
@@ -39,6 +64,9 @@ export async function POST(req) {
       body: JSON.stringify({
         audio_url: upload_url,
         language_code: langCode,
+        // Fix 2: reject audio that is less than 40% speech — AssemblyAI's
+        // built-in guard against transcribing (and hallucinating on) silence.
+        speech_threshold: 0.4,
       }),
     });
     if (!transcriptRes.ok) {
@@ -57,6 +85,13 @@ export async function POST(req) {
       console.log('[transcribe] poll', i, 'status:', transcript.status, 'text_length:', transcript.text?.length ?? 0);
       if (transcript.status === 'completed') break;
       if (transcript.status === 'error') {
+        // Fix 2: speech_threshold rejection means "not enough speech" — treat as
+        // no-speech (empty), not a hard error, so the UI degrades gracefully.
+        const msg = (transcript.error || '').toLowerCase();
+        if (msg.includes('speech') || msg.includes('threshold') || msg.includes('audio duration')) {
+          console.log('[transcribe] rejected (insufficient speech):', transcript.error);
+          return NextResponse.json({ text: '', utterances: [], language_code: null, noSpeech: true });
+        }
         return NextResponse.json({ error: transcript.error }, { status: 500 });
       }
     }
@@ -65,9 +100,13 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Transcription timed out' }, { status: 500 });
     }
 
-    console.log('[transcribe] done. language:', transcript.language_code, 'text:', transcript.text?.slice(0, 200));
+    // Fix 3: strip any hallucination boilerplate that still slipped through
+    const cleanText = stripHallucinations(transcript.text || '');
+    console.log('[transcribe] done. language:', transcript.language_code,
+      'raw_len:', transcript.text?.length ?? 0, 'clean_len:', cleanText.length,
+      'text:', cleanText.slice(0, 200));
     return NextResponse.json({
-      text: transcript.text || '',
+      text: cleanText,
       utterances: transcript.utterances || [],
       language_code: transcript.language_code || null,
     });
