@@ -21,6 +21,26 @@ function fmt(s) {
   return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
 }
 
+// "10:32 AM"
+function fmtTime(iso) {
+  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+// "23 sec" / "5 min" / "5 min 12 sec"
+function fmtDuration(sec) {
+  if (!sec) return '';
+  if (sec < 60) return `${sec} sec`;
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return s ? `${m} min ${s} sec` : `${m} min`;
+}
+
+const CHAT_SUGGESTIONS = [
+  'What emotions came up in my last session?',
+  'Summarize the key themes across my sessions',
+  'What patterns do you notice in my progress?',
+  'What should I focus on for next session?',
+];
+
 // Silence detection. Whole-file mean RMS is the WRONG statistic — long therapy
 // pauses dilute it below any threshold, so real speech reads as silent. Instead
 // we look at the loudest ~1s window: if any second reaches speech-level energy,
@@ -121,6 +141,7 @@ function SessionsPageInner() {
   const [chatInput,    setChatInput]    = useState('');
   const [chatLoading,  setChatLoading]  = useState(false);
   const [sessionChatId, setSessionChatId] = useState(null);
+  const [attachContext, setAttachContext] = useState(true);
   const chatBottomRef = useRef(null);
 
   const timerRef       = useRef(null);
@@ -536,7 +557,8 @@ function SessionsPageInner() {
     setChatMessages(next);
     setChatLoading(true);
     try {
-      const systemPrompt = selectedSession?.transcript
+      const includeCtx = attachContext && selectedSession?.transcript;
+      const systemPrompt = includeCtx
         ? `You are a compassionate AI therapy companion. The user is reviewing a therapy session.\n\nSession transcript:\n"${selectedSession.transcript.slice(0, 3000)}"\n\nBe concise, warm, and insightful.`
         : 'You are a compassionate AI therapy companion. Be concise, warm, and insightful.';
       const res = await fetch('/api/chat', {
@@ -684,7 +706,7 @@ function SessionsPageInner() {
         )}
 
         {/* ── LEFT COLUMN ─────────────────────────────────────────────────────── */}
-        <div style={{ width: 280, flexShrink: 0, borderRight: `1px solid ${BORDER}`, background: SURFACE, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ width: 340, flexShrink: 0, borderRight: `1px solid ${BORDER}`, background: SURFACE, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* Search */}
           <div style={{ padding: '16px 14px 10px' }}>
             <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
@@ -715,34 +737,35 @@ function SessionsPageInner() {
             {[['TODAY', grouped.TODAY], ['THIS WEEK', grouped.THIS_WEEK], ['EARLIER', grouped.EARLIER]].map(([label, list]) => (
               list.length > 0 && (
                 <div key={label}>
-                  <p style={{ fontSize: 10, fontWeight: 600, color: MUTED, margin: '14px 6px 6px', textTransform: 'uppercase', letterSpacing: '0.09em' }}>{label}</p>
-                  {list.map(s => (
-                    <div key={s.id} onClick={() => selectSession(s)}
-                      style={{ padding: '10px 10px', borderRadius: 10, marginBottom: 2, cursor: 'pointer', background: selectedSession?.id === s.id ? A + '15' : 'transparent', border: `1px solid ${selectedSession?.id === s.id ? A + '40' : 'transparent'}`, transition: 'background 0.1s' }}
-                      onMouseEnter={e => { if (selectedSession?.id !== s.id) e.currentTarget.style.background = BG; }}
-                      onMouseLeave={e => { if (selectedSession?.id !== s.id) e.currentTarget.style.background = 'transparent'; }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                        {s.ai_analysis && (
-                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#8B5CF6', flexShrink: 0 }} />
+                  <p style={{ fontSize: 10, fontWeight: 700, color: MUTED, margin: '18px 6px 8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{label}</p>
+                  {list.map(s => {
+                    const active = selectedSession?.id === s.id;
+                    return (
+                      <div key={s.id} onClick={() => selectSession(s)}
+                        style={{ padding: '12px 14px', borderRadius: 12, marginBottom: 8, cursor: 'pointer', background: active ? A + '12' : BG, border: `1px solid ${active ? A + '55' : BORDER}`, transition: 'border-color 0.12s, background 0.12s' }}
+                        onMouseEnter={e => { if (!active) e.currentTarget.style.borderColor = A + '40'; }}
+                        onMouseLeave={e => { if (!active) e.currentTarget.style.borderColor = BORDER; }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                          {s.ai_analysis && (
+                            <div title="AI analysis available" style={{ width: 6, height: 6, borderRadius: '50%', background: '#8B5CF6', flexShrink: 0 }} />
+                          )}
+                          <p style={{ fontSize: 14, fontWeight: 600, color: active ? A : TEXT, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                            {s.title || 'Untitled'}
+                          </p>
+                        </div>
+                        <p style={{ fontSize: 11.5, color: MUTED, margin: '0 0 6px', fontWeight: 500 }}>
+                          {fmtTime(s.created_at)}
+                          {s.duration ? ` · ${fmtDuration(s.duration)}` : ''}
+                        </p>
+                        {s.transcript && (
+                          <p style={{ fontSize: 12, color: MUTED, margin: 0, lineHeight: 1.5, opacity: 0.85, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            {s.transcript}
+                          </p>
                         )}
-                        <p style={{ fontSize: 12, fontWeight: 500, color: selectedSession?.id === s.id ? A : TEXT, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                          {s.title || 'Untitled'}
-                        </p>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <p style={{ fontSize: 11, color: MUTED, margin: 0 }}>
-                          {new Date(s.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          {s.duration ? ` · ${fmt(s.duration)}` : ''}
-                        </p>
-                      </div>
-                      {s.transcript && (
-                        <p style={{ fontSize: 11, color: MUTED, margin: '4px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: 0.8 }}>
-                          {s.transcript.slice(0, 60)}…
-                        </p>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )
             ))}
@@ -857,28 +880,38 @@ function SessionsPageInner() {
 
         {/* ── RIGHT COLUMN ────────────────────────────────────────────────────── */}
         <div style={{ width: 320, flexShrink: 0, borderLeft: `1px solid ${BORDER}`, background: SURFACE, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {/* Header */}
-          <div style={{ padding: '0 16px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <p style={{ padding: '13px 4px', fontSize: 13, fontWeight: 600, color: A, margin: 0 }}>Chat</p>
+          {/* Header — New chat */}
+          <div style={{ padding: '12px 14px', borderBottom: `1px solid ${BORDER}` }}>
             <button onClick={() => { setChatMessages([]); setSessionChatId(null); }}
-              style={{ fontSize: 12, color: MUTED, background: 'transparent', border: `1px solid ${BORDER}`, borderRadius: 7, padding: '4px 10px', cursor: 'pointer' }}>
-              + New
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px 0', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: A, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = A + '55'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = BORDER}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={A} strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              New chat
             </button>
           </div>
 
           {/* Messages */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '16px 14px' }}>
             {chatMessages.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '32px 0' }}>
-                <p style={{ fontSize: 13, color: MUTED, margin: '0 0 16px', lineHeight: 1.6 }}>
-                  {selectedSession ? `Ask me about "${selectedSession.title || 'this session'}"` : 'Select a session, then ask me anything about it.'}
+              <div style={{ padding: '8px 2px' }}>
+                <p style={{ fontSize: 13, color: TEXT, fontWeight: 600, margin: '0 0 4px' }}>
+                  {selectedSession ? `Ask about "${selectedSession.title || 'this session'}"` : 'Ask about your sessions'}
                 </p>
-                {selectedSession && (
-                  <button onClick={() => sendChat('What was my key insight today?')}
-                    style={{ padding: '8px 14px', borderRadius: 10, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 12, cursor: 'pointer', textAlign: 'left', width: '100%' }}>
-                    💡 What was my key insight today?
-                  </button>
-                )}
+                <p style={{ fontSize: 12, color: MUTED, margin: '0 0 16px', lineHeight: 1.6 }}>
+                  Try one of these to get started:
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {CHAT_SUGGESTIONS.map(q => (
+                    <button key={q} onClick={() => sendChat(q)} disabled={chatLoading}
+                      style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 13px', borderRadius: 11, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 12.5, lineHeight: 1.4, cursor: 'pointer', textAlign: 'left' }}
+                      onMouseEnter={e => e.currentTarget.style.borderColor = A + '55'}
+                      onMouseLeave={e => e.currentTarget.style.borderColor = BORDER}>
+                      <span style={{ fontSize: 14, flexShrink: 0 }}>✦</span>
+                      <span>{q}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -906,6 +939,24 @@ function SessionsPageInner() {
 
           {/* Input */}
           <div style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER}` }}>
+            {/* Add-context chip */}
+            <div style={{ marginBottom: 8 }}>
+              {selectedSession ? (
+                <button onClick={() => setAttachContext(v => !v)}
+                  title={attachContext ? 'Session transcript is attached as context — click to detach' : 'Click to attach this session as context'}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%', padding: '5px 10px', borderRadius: 8, border: `1px solid ${attachContext ? A + '55' : BORDER}`, background: attachContext ? A + '12' : BG, color: attachContext ? A : MUTED, fontSize: 11.5, fontWeight: 500, cursor: 'pointer' }}>
+                  <span style={{ flexShrink: 0 }}>{attachContext ? '📎' : '＋'}</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {attachContext ? (selectedSession.title || 'This session') : 'Add context'}
+                  </span>
+                  {attachContext && <span style={{ flexShrink: 0, opacity: 0.7 }}>✕</span>}
+                </button>
+              ) : (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 8, border: `1px dashed ${BORDER}`, color: MUTED, fontSize: 11.5 }}>
+                  ＋ Add context — select a session
+                </span>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input value={chatInput} onChange={e => setChatInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendChat()}
