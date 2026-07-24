@@ -687,7 +687,7 @@ function SessionsPageInner() {
           {showModal ? (
             /* ── EMBEDDED RECORDING SECTION (replaces the old modal overlay) ─────── */
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', justifyContent: 'center', padding: 28 }}>
-              <div style={{ width: '100%', maxWidth: 560, height: 'fit-content', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32 }}>
+              <div style={{ width: '100%', maxWidth: isReview ? 720 : 560, height: 'fit-content', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32 }}>
                 {/* Pre-mood */}
                 {showPreMood && !isCapturing && (
                   <>
@@ -763,7 +763,7 @@ function SessionsPageInner() {
                     {speechError && <p style={{ fontSize: 12, color: A, margin: '0 0 6px' }}>{speechError}</p>}
                     <textarea value={transcript} onChange={e => setTranscript(e.target.value)}
                       placeholder="No transcript — you can type manually"
-                      style={{ width: '100%', boxSizing: 'border-box', minHeight: 110, padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 13, resize: 'vertical', outline: 'none', fontFamily: 'inherit', lineHeight: 1.7, marginBottom: 12 }} />
+                      style={{ width: '100%', boxSizing: 'border-box', minHeight: 240, padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 13, resize: 'vertical', outline: 'none', fontFamily: 'inherit', lineHeight: 1.7, marginBottom: 12 }} />
 
                     <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Notes</p>
                     <textarea value={recNotes} onChange={e => setRecNotes(e.target.value)}
