@@ -14,19 +14,31 @@ export async function POST(req) {
       return NextResponse.json({ error: 'No transcript to analyse' }, { status: 400 });
     }
 
-    const prompt = `You are a compassionate therapy session analyst. Analyse the following therapy session transcript and return a JSON object with exactly these four fields:
+    const prompt = `You are a compassionate, thorough therapy session analyst. Analyse the ENTIRE therapy session transcript below — it may be long and cover many distinct topics discussed at different points. Do NOT focus only on the opening topic; read through to the end and give every major topic equal attention.
 
-- "overview": 2-3 sentence summary of the session (what was discussed)
-- "key_theme": the main psychological theme or pattern that emerged (1-2 sentences)
-- "breakthrough": any insight, realisation or emotional shift the client experienced (1-2 sentences, or null if none)
-- "action": a concrete next step or practice the client could try (1-2 sentences)
+Return a JSON object with EXACTLY these fields. Use arrays where indicated; return an empty array [] (or null for string fields) when a section genuinely has nothing.
 
-IMPORTANT: Always respond in the SAME language as the transcript. If the transcript is in Russian — respond in Russian. If in English — respond in English. If mixed — use the dominant language of the transcript. This rule applies to ALL fields: overview, key_theme, breakthrough, action.
+- "topics_covered": array of strings — EVERY distinct topic discussed, one short line each, in the order they arose
+- "overview": array of strings — a 2-3 sentence summary for EACH major topic (one array item per topic)
+- "key_theme": string or null — the single connecting psychological pattern across topics, if one exists (1-2 sentences)
+- "breakthroughs": array of strings — each insight, realisation, or emotional shift reached (one per item; empty array if none)
+- "emotions_identified": array of strings — named emotions with brief context, e.g. "envy — toward a friend's new relationship"
+- "action_items": array of strings — concrete next steps or practices, ideally one per relevant topic
+- "patterns_triggers": array of strings — recurring behavioural or emotional patterns and their triggers
+- "continuity_notes": array of strings — anything connecting to previous sessions or earlier topics
+- "for_next_session": array of strings — explicitly deferred threads or unresolved questions
+- "emotional_intensity_markers": array of strings — the moment(s) of highest emotional charge, each with a brief quote or paraphrase of what was happening
 
-Respond ONLY with valid JSON. No markdown, no explanation.
+IMPORTANT: Always respond in the SAME language as the transcript. If the transcript is in Russian — respond in Russian. If in English — respond in English. If mixed — use the dominant language. This applies to ALL fields and all array items.
+
+Base every item strictly on what is actually in the transcript. Do not invent topics, emotions, or breakthroughs that are not supported by the text.
+
+Respond ONLY with valid JSON. No markdown, no explanation, no code fences.
 
 Transcript:
-${transcript.slice(0, 6000)}${notes ? `\n\nSession notes:\n${notes}` : ''}`;
+${transcript}
+
+${notes ? `Session notes:\n${notes}` : ''}`;
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -37,7 +49,9 @@ ${transcript.slice(0, 6000)}${notes ? `\n\nSession notes:\n${notes}` : ''}`;
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 512,
+        // 10-section analysis over a full-length transcript needs real output
+        // headroom; 512 truncated multi-topic summaries mid-JSON.
+        max_tokens: 4096,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
