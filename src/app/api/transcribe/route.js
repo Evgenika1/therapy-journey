@@ -30,6 +30,39 @@ function stripHallucinations(text) {
     .trim();
 }
 
+// One create-job + poll attempt against an already-uploaded audio_url. Returns a
+// tagged result so the caller can decide whether to retry (e.g. on an
+// intermittent transcoding failure) without re-running the whole POST.
+async function transcribeOnce(upload_url, langCode) {
+  const transcriptRes = await fetch('https://api.assemblyai.com/v2/transcript', {
+    method: 'POST',
+    headers: HEADERS,
+    body: JSON.stringify({
+      audio_url: upload_url,
+      language_code: langCode,
+      // Speaker diarization — returns per-speaker `utterances` so the
+      // transcript can be rendered as a dialogue instead of one paragraph.
+      speaker_labels: true,
+    }),
+  });
+  if (!transcriptRes.ok) {
+    const err = await transcriptRes.text();
+    return { kind: 'create_failed', error: `Transcript create failed: ${err}` };
+  }
+  const { id } = await transcriptRes.json();
+  console.log('[transcribe] job created, id:', id);
+
+  for (let i = 0; i < 150; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const pollRes = await fetch(`https://api.assemblyai.com/v2/transcript/${id}`, { headers: HEADERS });
+    const transcript = await pollRes.json();
+    console.log('[transcribe] poll', i, 'status:', transcript.status, 'text_length:', transcript.text?.length ?? 0);
+    if (transcript.status === 'completed') return { kind: 'completed', transcript };
+    if (transcript.status === 'error')     return { kind: 'error', transcript };
+  }
+  return { kind: 'timeout' };
+}
+
 export async function POST(req) {
   try {
     const formData = await req.formData();
@@ -58,56 +91,64 @@ export async function POST(req) {
     const langCode = SUPPORTED.includes(lang) ? lang : 'ru';
     console.log('[transcribe] language from browser:', lang, '→ using:', langCode);
 
-    const transcriptRes = await fetch('https://api.assemblyai.com/v2/transcript', {
-      method: 'POST',
-      headers: HEADERS,
-      body: JSON.stringify({
-        audio_url: upload_url,
-        language_code: langCode,
-        // Fix 2: reject audio that is less than 40% speech — AssemblyAI's
-        // built-in guard against transcribing (and hallucinating on) silence.
-        speech_threshold: 0.4,
-      }),
-    });
-    if (!transcriptRes.ok) {
-      const err = await transcriptRes.text();
-      return NextResponse.json({ error: `Transcript create failed: ${err}` }, { status: 500 });
-    }
-    const { id } = await transcriptRes.json();
-    console.log('[transcribe] job created, id:', id);
-
-    // 3. Poll until completed
-    let transcript;
-    for (let i = 0; i < 150; i++) {
-      await new Promise(r => setTimeout(r, 2000));
-      const pollRes = await fetch(`https://api.assemblyai.com/v2/transcript/${id}`, { headers: HEADERS });
-      transcript = await pollRes.json();
-      console.log('[transcribe] poll', i, 'status:', transcript.status, 'text_length:', transcript.text?.length ?? 0);
-      if (transcript.status === 'completed') break;
-      if (transcript.status === 'error') {
-        // Fix 2: speech_threshold rejection means "not enough speech" — treat as
-        // no-speech (empty), not a hard error, so the UI degrades gracefully.
-        const msg = (transcript.error || '').toLowerCase();
-        if (msg.includes('speech') || msg.includes('threshold') || msg.includes('audio duration')) {
-          console.log('[transcribe] rejected (insufficient speech):', transcript.error);
-          return NextResponse.json({ text: '', utterances: [], language_code: null, noSpeech: true });
-        }
-        return NextResponse.json({ error: transcript.error }, { status: 500 });
+    // 3. Create + poll, retrying ONCE on a transcoding failure. AssemblyAI's
+    // transcoder intermittently fails to probe MediaRecorder's streamed WebM
+    // containers ("File type application/octet-stream (data) … unsupported")
+    // even for a valid-size blob; a second attempt on the same upload_url
+    // recovers the transient case (and confirms a genuinely-bad container if it
+    // fails again).
+    let result = await transcribeOnce(upload_url, langCode);
+    if (result.kind === 'error') {
+      const msg = (result.transcript.error || '').toLowerCase();
+      if (msg.includes('transcoding') || msg.includes('unsupported')) {
+        console.log('[transcribe] transcoding failed, retrying once:', result.transcript.error);
+        result = await transcribeOnce(upload_url, langCode);
       }
     }
 
-    if (!transcript || transcript.status !== 'completed') {
+    if (result.kind === 'create_failed') {
+      return NextResponse.json({ error: result.error }, { status: 500 });
+    }
+    if (result.kind === 'timeout') {
       return NextResponse.json({ error: 'Transcription timed out' }, { status: 500 });
     }
+    if (result.kind === 'error') {
+      // Fix 2: speech_threshold rejection means "not enough speech" — treat as
+      // no-speech (empty), not a hard error, so the UI degrades gracefully.
+      const msg = (result.transcript.error || '').toLowerCase();
+      if (msg.includes('speech') || msg.includes('threshold') || msg.includes('audio duration')) {
+        console.log('[transcribe] rejected (insufficient speech):', result.transcript.error);
+        return NextResponse.json({ text: '', utterances: [], language_code: null, noSpeech: true });
+      }
+      return NextResponse.json({ error: result.transcript.error }, { status: 500 });
+    }
+    const transcript = result.transcript; // kind === 'completed'
 
-    // Fix 3: strip any hallucination boilerplate that still slipped through
-    const cleanText = stripHallucinations(transcript.text || '');
+    // Diarization: format each utterance as a "[<speaker> <m:ss>] text" block so
+    // the client can render per-utterance timestamped dialogue turns. Hallucination
+    // boilerplate is stripped PER-UTTERANCE so the block separators (\n\n) survive
+    // (stripHallucinations collapses newlines). Fall back to flat text when
+    // diarization produced no utterances (short/near-silent audio).
+    const utterances = transcript.utterances || [];
+    const fmtMs = ms => { const s = Math.floor((ms || 0) / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+    let cleanText;
+    if (utterances.length > 0) {
+      cleanText = utterances
+        .map(u => {
+          const t = stripHallucinations(u.text || '');
+          return t ? `[${u.speaker} ${fmtMs(u.start)}] ${t}` : '';
+        })
+        .filter(Boolean)
+        .join('\n\n');
+    } else {
+      cleanText = stripHallucinations(transcript.text || '');
+    }
     console.log('[transcribe] done. language:', transcript.language_code,
       'raw_len:', transcript.text?.length ?? 0, 'clean_len:', cleanText.length,
-      'text:', cleanText.slice(0, 200));
+      'utterances:', utterances.length, 'text:', cleanText.slice(0, 200));
     return NextResponse.json({
       text: cleanText,
-      utterances: transcript.utterances || [],
+      utterances,
       language_code: transcript.language_code || null,
     });
   } catch (err) {
