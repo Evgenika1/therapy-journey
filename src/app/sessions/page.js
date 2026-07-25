@@ -693,10 +693,10 @@ function SessionsPageInner() {
                   <>
                     <p style={{ fontFamily: '"Fraunces", serif', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>How are you feeling?</p>
                     <p style={{ fontSize: 13, color: MUTED, margin: '0 0 24px' }}>Before starting the session</p>
-                    <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginBottom: 28 }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center', marginBottom: 28 }}>
                       {SESSION_MOODS.map((m, i) => (
                         <button key={i} onClick={() => setPreRecordMoodIdx(i)}
-                          style={{ width: 48, height: 48, borderRadius: 12, border: `2px solid ${preRecordMoodIdx === i ? A : BORDER}`, background: preRecordMoodIdx === i ? A + '18' : 'transparent', fontSize: 24, cursor: 'pointer' }}>
+                          style={{ width: 48, height: 48, boxSizing: 'border-box', flexShrink: 0, borderRadius: 12, border: `2px solid ${preRecordMoodIdx === i ? A : BORDER}`, background: preRecordMoodIdx === i ? A + '18' : 'transparent', fontSize: 24, cursor: 'pointer' }}>
                           {m.emoji}
                         </button>
                       ))}
@@ -744,10 +744,10 @@ function SessionsPageInner() {
                     {!postMoodSaved && (
                       <div style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
                         <p style={{ fontSize: 13, fontWeight: 500, color: TEXT, margin: '0 0 10px' }}>How do you feel now?</p>
-                        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
                           {SESSION_MOODS.map((m, i) => (
                             <button key={i} onClick={() => setPostRecordMoodIdx(i)}
-                              style={{ width: 38, height: 38, borderRadius: 9, border: `2px solid ${postRecordMoodIdx === i ? A : BORDER}`, background: postRecordMoodIdx === i ? A + '18' : 'transparent', fontSize: 20, cursor: 'pointer' }}>
+                              style={{ width: 38, height: 38, boxSizing: 'border-box', flexShrink: 0, borderRadius: 9, border: `2px solid ${postRecordMoodIdx === i ? A : BORDER}`, background: postRecordMoodIdx === i ? A + '18' : 'transparent', fontSize: 20, cursor: 'pointer' }}>
                               {m.emoji}
                             </button>
                           ))}
