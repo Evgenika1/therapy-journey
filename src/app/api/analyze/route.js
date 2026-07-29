@@ -2,6 +2,20 @@ import { NextResponse } from 'next/server';
 
 export const maxDuration = 60;
 
+// Detect the transcript's dominant script and return an explicit, forceful
+// language directive. Haiku inconsistently honours the "respond in the same
+// language" instruction against the English-dominant prompt (field names,
+// "Speaker A:" prefixes), so we name the language when it's clearly Russian and
+// otherwise hard-forbid translating to English.
+function languageDirective(text) {
+  const cyr = (text.match(/[а-яё]/gi) || []).length;
+  const lat = (text.match(/[a-z]/gi) || []).length;
+  if (cyr > lat) {
+    return 'CRITICAL: The transcript is in Russian. Write the ENTIRE JSON — every field value and every array item — in Russian. Do NOT use English for any value.';
+  }
+  return 'CRITICAL: Write the ENTIRE JSON — every field value and every array item — in the SAME language as the transcript above. Do NOT translate it into English.';
+}
+
 export async function POST(req) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey || apiKey === 'placeholder') {
@@ -38,7 +52,9 @@ Respond ONLY with valid JSON. No markdown, no explanation, no code fences.
 Transcript:
 ${transcript}
 
-${notes ? `Session notes:\n${notes}` : ''}`;
+${notes ? `Session notes:\n${notes}` : ''}
+
+${languageDirective(transcript)}`;
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

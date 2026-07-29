@@ -869,6 +869,13 @@ function SessionsPageInner() {
                   const hasVal = v => Array.isArray(v) ? v.length > 0 : (v != null && String(v).trim() !== '');
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
+                        {analyseError && <span style={{ fontSize: 12, color: '#DC2626' }}>{analyseError}</span>}
+                        <button onClick={analyseSession} disabled={analysing}
+                          style={{ padding: '6px 14px', borderRadius: 9, border: `1px solid ${BORDER}`, background: 'transparent', color: analysing ? MUTED : A, fontSize: 12.5, fontWeight: 500, cursor: analysing ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {analysing ? '⏳ Re-analysing…' : '↻ Re-analyze'}
+                        </button>
+                      </div>
                       {SECTIONS.filter(({ key }) => hasVal(ai[key])).map(({ key, label, color }) => (
                         <div key={key} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${color}`, borderRadius: 12, padding: '16px 18px' }}>
                           <p style={{ fontSize: 10, fontWeight: 700, color, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{label}</p>
