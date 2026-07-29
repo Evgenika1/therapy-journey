@@ -33,16 +33,18 @@ function stripHallucinations(text) {
 // One create-job + poll attempt against an already-uploaded audio_url. Returns a
 // tagged result so the caller can decide whether to retry (e.g. on an
 // intermittent transcoding failure) without re-running the whole POST.
-async function transcribeOnce(upload_url, langCode) {
+// langConfig is spread into the request — either { language_detection: true, … }
+// (auto-detect the spoken language) or { language_code: 'ru' } (forced fallback).
+async function transcribeOnce(upload_url, langConfig) {
   const transcriptRes = await fetch('https://api.assemblyai.com/v2/transcript', {
     method: 'POST',
     headers: HEADERS,
     body: JSON.stringify({
       audio_url: upload_url,
-      language_code: langCode,
       // Speaker diarization — returns per-speaker `utterances` so the
       // transcript can be rendered as a dialogue instead of one paragraph.
       speaker_labels: true,
+      ...langConfig,
     }),
   });
   if (!transcriptRes.ok) {
@@ -83,26 +85,23 @@ export async function POST(req) {
     }
     const { upload_url } = await uploadRes.json();
 
-    // 2. Create transcription job
-    // Use browser language if provided, otherwise fall back to Russian (primary user language)
-    const lang = formData.get('language') || 'ru';
-    // AssemblyAI supported codes: en, ru, fr, de, es, it, pt, nl, hi, ja, zh, fi, ko, pl, uk
-    const SUPPORTED = ['en','ru','fr','de','es','it','pt','nl','hi','ja','zh','fi','ko','pl','uk'];
-    const langCode = SUPPORTED.includes(lang) ? lang : 'ru';
-    console.log('[transcribe] language from browser:', lang, '→ using:', langCode);
-
-    // 3. Create + poll, retrying ONCE on a transcoding failure. AssemblyAI's
-    // transcoder intermittently fails to probe MediaRecorder's streamed WebM
-    // containers ("File type application/octet-stream (data) … unsupported")
-    // even for a valid-size blob; a second attempt on the same upload_url
-    // recovers the transient case (and confirms a genuinely-bad container if it
-    // fails again).
-    let result = await transcribeOnce(upload_url, langCode);
+    // 2 + 3. Create + poll. Auto-detect the spoken language (users record in
+    // different languages; forcing 'ru' on non-Russian audio made AssemblyAI
+    // hallucinate Russian). language_confidence_threshold makes AssemblyAI error
+    // out when it can't confidently detect a language, so we fall back to forced
+    // Russian — the app's primary language. The same retry also recovers the
+    // intermittent transcoding failure on MediaRecorder's streamed WebM.
+    let result = await transcribeOnce(upload_url, {
+      language_detection: true,
+      language_confidence_threshold: 0.4,
+    });
     if (result.kind === 'error') {
       const msg = (result.transcript.error || '').toLowerCase();
-      if (msg.includes('transcoding') || msg.includes('unsupported')) {
-        console.log('[transcribe] transcoding failed, retrying once:', result.transcript.error);
-        result = await transcribeOnce(upload_url, langCode);
+      const detectFailed = msg.includes('language') || msg.includes('detect') || msg.includes('confidence');
+      const transcodingFailed = msg.includes('transcoding') || msg.includes('unsupported');
+      if (detectFailed || transcodingFailed) {
+        console.log('[transcribe] auto-detect/transcoding failed, retrying with forced ru:', result.transcript.error);
+        result = await transcribeOnce(upload_url, { language_code: 'ru' });
       }
     }
 
