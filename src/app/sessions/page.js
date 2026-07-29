@@ -34,6 +34,14 @@ function fmtDuration(sec) {
   return s ? `${m} min ${s} sec` : `${m} min`;
 }
 
+// Display title. Untitled sessions derive their name from created_at (the DB
+// timestamp) — NOT the browser clock — so the date can't drift if the local
+// machine's clock is wrong.
+function sessionTitle(s) {
+  if (s?.title) return s.title;
+  return s?.created_at ? `Session ${new Date(s.created_at).toLocaleDateString()}` : 'Untitled';
+}
+
 const CHAT_SUGGESTIONS = {
   en: [
     'What emotions came up in my last session?',
@@ -483,7 +491,7 @@ function SessionsPageInner() {
     try {
       console.log('[Sessions] saving, transcript length:', transcript?.length);
       const result = await sessionsApi.save(supabase, {
-        title:    recNotes.slice(0, 60) || `Session ${new Date().toLocaleDateString()}`,
+        title:    recNotes.slice(0, 60) || null, // untitled → derive from created_at at display (sessionTitle)
         transcript, notes: recNotes, duration: seconds,
         mood_before: preRecordMoodIdx  !== null ? SESSION_MOODS[preRecordMoodIdx].intensity  : null,
         mood_after:  postRecordMoodIdx !== null ? SESSION_MOODS[postRecordMoodIdx].intensity : null,
@@ -661,7 +669,7 @@ function SessionsPageInner() {
                             <div title="AI analysis available" style={{ width: 6, height: 6, borderRadius: '50%', background: '#8B5CF6', flexShrink: 0 }} />
                           )}
                           <p style={{ fontSize: 14, fontWeight: 600, color: active ? A : TEXT, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                            {s.title || 'Untitled'}
+                            {sessionTitle(s)}
                           </p>
                         </div>
                         <p style={{ fontSize: 11.5, color: MUTED, margin: '0 0 6px', fontWeight: 500 }}>
@@ -794,7 +802,7 @@ function SessionsPageInner() {
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <h2 style={{ fontSize: 20, fontWeight: 600, color: TEXT, margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {selectedSession.title || 'Untitled session'}
+                      {sessionTitle(selectedSession)}
                     </h2>
                     <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>
                       {new Date(selectedSession.created_at).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
