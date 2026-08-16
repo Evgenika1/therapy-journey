@@ -159,32 +159,46 @@ function stripSpeakerMarkers(text) {
 // destination, so it cannot alter the recorded signal. Uses requestAnimationFrame
 // (not setInterval, so it doesn't touch the recording timer) and lives in its own
 // component so the ~60fps updates don't re-render the whole page.
-function AudioLevelMeter({ stream, A, MUTED, TEXT }) {
+function AudioLevelMeter({ stream, source, A, MUTED, TEXT }) {
   const [bars, setBars] = useState(() => new Array(9).fill(0));
+  const [silentTooLong, setSilentTooLong] = useState(false);
+  const silentSinceRef = useRef(null);
   useEffect(() => {
     if (!stream) return;
+    silentSinceRef.current = null;
+    setSilentTooLong(false);
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const source = ctx.createMediaStreamSource(stream);
+    const src = ctx.createMediaStreamSource(stream);
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 64; // tiny — 32 bins
-    source.connect(analyser); // passive tap — analyser is NOT connected onward
+    src.connect(analyser); // passive tap — analyser is NOT connected onward
     const data = new Uint8Array(analyser.frequencyBinCount);
     let raf;
     const tick = () => {
       analyser.getByteFrequencyData(data);
-      setBars(Array.from({ length: 9 }, (_, i) => data[i * 2] / 255));
+      const next = Array.from({ length: 9 }, (_, i) => data[i * 2] / 255);
+      setBars(next);
+      // Warn if the level has been near-zero continuously for > 10s.
+      const active = next.some(b => b > 0.08);
+      const now = performance.now();
+      if (active) silentSinceRef.current = null;
+      else if (silentSinceRef.current == null) silentSinceRef.current = now;
+      setSilentTooLong(!active && silentSinceRef.current != null && now - silentSinceRef.current > 10000);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(raf);
-      try { source.disconnect(); } catch {}
+      try { src.disconnect(); } catch {}
       try { ctx.close(); } catch {}
     };
   }, [stream]);
   const active = bars.some(b => b > 0.08);
+  const warning = source === 'tab'
+    ? '⚠️ Звук не поступает — проверьте, что включён доступ к звуку вкладки'
+    : '⚠️ Микрофон не слышит звук — проверьте, что выбран правильный микрофон';
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, width: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 40 }}>
         {bars.map((b, i) => (
           <div key={i} style={{ width: 5, height: Math.max(6, b * 40), background: A, borderRadius: 3, transition: 'height 0.06s linear' }} />
@@ -194,6 +208,9 @@ function AudioLevelMeter({ stream, A, MUTED, TEXT }) {
         <div style={{ width: 7, height: 7, borderRadius: '50%', background: active ? A : MUTED, transition: 'background 0.2s' }} />
         <span style={{ fontSize: 12.5, color: active ? TEXT : MUTED, fontWeight: 500 }}>{active ? 'Hearing your voice' : 'Listening…'}</span>
       </div>
+      {silentTooLong && (
+        <p style={{ fontSize: 12.5, color: '#DC2626', fontWeight: 500, margin: 0, textAlign: 'center', lineHeight: 1.5 }}>{warning}</p>
+      )}
     </div>
   );
 }
@@ -248,6 +265,9 @@ function SessionsPageInner() {
   const [saved,              setSaved]              = useState(false);
   const [showPreMood,        setShowPreMood]        = useState(false);
   const [preRecordMoodIdx,   setPreRecordMoodIdx]   = useState(null);
+  const [captureSource,      setCaptureSource]      = useState('mic'); // 'mic' | 'tab'
+  const [micDevices,         setMicDevices]         = useState([]);
+  const [selectedMicId,      setSelectedMicId]      = useState('');
   const [postRecordMoodIdx,  setPostRecordMoodIdx]  = useState(null);
   const [postMoodSaved,      setPostMoodSaved]      = useState(false);
   const [savingMood,         setSavingMood]         = useState(false);
@@ -329,12 +349,23 @@ function SessionsPageInner() {
   const grouped = groupSessions(filtered);
 
   // ── recording ────────────────────────────────────────────────────────────────
+  // Populate the microphone dropdown. Device labels are only exposed after mic
+  // permission has been granted at least once (first recording), so they may show
+  // as "Микрофон N" until then.
+  async function refreshMicDevices() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      setMicDevices(devices.filter(d => d.kind === 'audioinput'));
+    } catch { /* ignore — dropdown just stays empty */ }
+  }
+
   function openRecordModal(preMoodIntensity) {
     setShowModal(true);
     setSpeechError('');
     setTranscript('');
     setRecNotes('');
     chunksRef.current = [];
+    refreshMicDevices();
     // preMoodIntensity is set when navigating here from the Dashboard, which
     // already saved the "before" mood — skip re-asking/re-saving it here.
     if (typeof preMoodIntensity === 'number') {
@@ -382,17 +413,34 @@ function SessionsPageInner() {
 
     let stream;
     try {
-      // Audio-processing constraints tuned for the built-in mic: echoCancellation
-      // and noiseSuppression OFF (Chrome's AEC distorted capture into noise, and NS
-      // gated quiet speech toward silence); autoGainControl ON to lift the quiet
-      // far-field signal.
-      stream = await navigator.mediaDevices.getUserMedia({ audio: {
-        noiseSuppression: false,
-        autoGainControl: true,
-        echoCancellation: false,
-      } });
+      if (captureSource === 'tab') {
+        // Capture tab/system audio — the correct way to record an online session
+        // (Zoom etc.) where the other person is heard through headphones/speakers
+        // and never reaches the mic. Chrome requires video:true to offer the
+        // "Share tab audio" checkbox in its picker.
+        const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        const audioTracks = display.getAudioTracks();
+        if (audioTracks.length === 0) {
+          display.getTracks().forEach(t => t.stop());
+          setSpeechError('Звук вкладки не захвачен — при выборе источника поставьте галочку «Поделиться звуком вкладки».');
+          startGuardRef.current = false; return;
+        }
+        display.getVideoTracks().forEach(t => t.stop()); // record audio only, drop video
+        stream = new MediaStream(audioTracks);
+      } else {
+        // Microphone. echoCancellation/noiseSuppression OFF (Chrome's AEC distorted
+        // the built-in mic to noise; NS gated quiet speech); autoGainControl ON to
+        // lift the quiet far-field signal. deviceId pins the chosen mic when set.
+        const audio = { noiseSuppression: false, autoGainControl: true, echoCancellation: false };
+        if (selectedMicId) audio.deviceId = { exact: selectedMicId };
+        stream = await navigator.mediaDevices.getUserMedia({ audio });
+      }
     }
-    catch { setSpeechError('Microphone access denied.'); startGuardRef.current = false; return; }
+    catch {
+      setSpeechError(captureSource === 'tab' ? 'Доступ к звуку вкладки отклонён.' : 'Microphone access denied.');
+      startGuardRef.current = false; return;
+    }
+    refreshMicDevices(); // permission is now granted → device labels are available
 
     const mimeType = getSupportedMimeType();
     const mr = new MediaRecorder(stream, mimeType ? { mimeType } : {});
@@ -709,6 +757,42 @@ function SessionsPageInner() {
                         </button>
                       ))}
                     </div>
+
+                    {/* Источник звука */}
+                    <div style={{ marginBottom: 24 }}>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Источник звука</p>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                        {[
+                          { id: 'mic', label: '🎤 Микрофон', hint: 'запись вживую' },
+                          { id: 'tab', label: '🔊 Звук вкладки', hint: 'Zoom / онлайн' },
+                        ].map(opt => {
+                          const on = captureSource === opt.id;
+                          return (
+                            <button key={opt.id} onClick={() => setCaptureSource(opt.id)}
+                              style={{ flex: 1, padding: '10px 12px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                                       border: `1.5px solid ${on ? A : BORDER}`, background: on ? A + '12' : 'transparent' }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: on ? A : TEXT }}>{opt.label}</div>
+                              <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>{opt.hint}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {captureSource === 'mic' && micDevices.length > 0 && (
+                        <select value={selectedMicId} onChange={e => setSelectedMicId(e.target.value)}
+                          style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}>
+                          <option value="">Микрофон по умолчанию</option>
+                          {micDevices.map((d, i) => (
+                            <option key={d.deviceId || i} value={d.deviceId}>{d.label || `Микрофон ${i + 1}`}</option>
+                          ))}
+                        </select>
+                      )}
+                      {captureSource === 'tab' && (
+                        <p style={{ fontSize: 11.5, color: MUTED, margin: 0, lineHeight: 1.5 }}>
+                          Откроется окно выбора — выберите вкладку со звонком и поставьте галочку «Поделиться звуком вкладки».
+                        </p>
+                      )}
+                    </div>
+
                     <div style={{ display: 'flex', gap: 10 }}>
                       <button onClick={closeModal} style={{ flex: 1, padding: 11, borderRadius: 12, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 14, cursor: 'pointer' }}>Cancel</button>
                       <button onClick={() => { setShowPreMood(false); startRecording(); }} style={{ flex: 1, padding: 11, borderRadius: 12, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 14, cursor: 'pointer' }}>Skip</button>
@@ -738,7 +822,7 @@ function SessionsPageInner() {
                       <button onClick={stopRecording} style={{ padding: '9px 20px', borderRadius: 10, border: 'none', background: '#EF4444', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>⏹ Stop</button>
                     </div>
                     <div style={{ minHeight: 90, padding: '16px 14px', borderRadius: 10, background: BG, border: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <AudioLevelMeter stream={mediaRef.current?.stream} A={A} MUTED={MUTED} TEXT={TEXT} />
+                      <AudioLevelMeter stream={mediaRef.current?.stream} source={captureSource} A={A} MUTED={MUTED} TEXT={TEXT} />
                     </div>
                     <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
                   </>
