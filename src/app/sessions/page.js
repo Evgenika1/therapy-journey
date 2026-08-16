@@ -268,6 +268,14 @@ function SessionsPageInner() {
   const [captureSource,      setCaptureSource]      = useState('mic'); // 'mic' | 'tab'
   const [micDevices,         setMicDevices]         = useState([]);
   const [selectedMicId,      setSelectedMicId]      = useState('');
+
+  // Zoom / Recall.ai notetaker
+  const [showZoom,           setShowZoom]           = useState(false);
+  const [zoomUrl,            setZoomUrl]            = useState('');
+  const [zoomConsent,        setZoomConsent]        = useState(false);
+  const [zoomBotId,          setZoomBotId]          = useState(null);
+  const [zoomStatus,         setZoomStatus]         = useState('idle'); // idle|joining|recording|processing|done|error
+  const [zoomError,          setZoomError]          = useState('');
   const [postRecordMoodIdx,  setPostRecordMoodIdx]  = useState(null);
   const [postMoodSaved,      setPostMoodSaved]      = useState(false);
   const [savingMood,         setSavingMood]         = useState(false);
@@ -533,6 +541,58 @@ function SessionsPageInner() {
     finally { setSavingMood(false); }
   }
 
+  // ── Zoom / Recall.ai notetaker ───────────────────────────────────────────────
+  async function startZoom() {
+    if (!zoomUrl.trim() || !zoomConsent) return;
+    setZoomError('');
+    // Log consent (GDPR / therapy): both parties agreed before the bot joins.
+    console.log('[Zoom] recording consent given', new Date().toISOString(), 'meeting:', zoomUrl.trim());
+    try {
+      const res = await fetch('/api/recall/start', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meeting_url: zoomUrl.trim(), user_id: user?.id }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setZoomBotId(data.bot_id);
+      setZoomStatus('joining');
+    } catch (e) { setZoomError(e.message); setZoomStatus('error'); }
+  }
+
+  function closeZoom() {
+    setShowZoom(false); setZoomUrl(''); setZoomConsent(false);
+    setZoomBotId(null); setZoomStatus('idle'); setZoomError('');
+  }
+
+  // Poll the bot until done/error. On done, save the session (upsert-dedup vs the
+  // webhook path). This is what makes it work locally where the webhook can't reach.
+  useEffect(() => {
+    if (!zoomBotId) return;
+    let cancelled = false, iv;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/recall/status?bot_id=${encodeURIComponent(zoomBotId)}`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (data.error) { clearInterval(iv); setZoomStatus('error'); setZoomError(data.error); return; }
+        setZoomStatus(data.status);
+        if (data.status === 'error') { clearInterval(iv); return; }
+        if (data.status === 'done') {
+          clearInterval(iv);
+          try {
+            const saved = await sessionsApi.saveFromRecall(supabase, { transcript: data.transcript, recall_bot_id: zoomBotId });
+            if (cancelled) return;
+            setSessions(list => list.some(s => s.id === saved.id) ? list : [saved, ...list]);
+            setSelectedSession(saved);
+          } catch (e) { if (!cancelled) setZoomError('Не удалось сохранить сессию: ' + e.message); }
+        }
+      } catch (e) { if (!cancelled) { clearInterval(iv); setZoomStatus('error'); setZoomError(e.message); } }
+    };
+    poll();
+    iv = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [zoomBotId, supabase]);
+
   async function saveSession() {
     if (!user) { setSaveError('Not signed in.'); return; }
     setSaving(true); setSaveError('');
@@ -695,6 +755,14 @@ function SessionsPageInner() {
             </button>
           </div>
 
+          {/* Record Zoom meeting (Recall.ai notetaker) */}
+          <div style={{ padding: '0 14px 12px' }}>
+            <button onClick={() => { setShowZoom(true); setSelectedSession(null); }}
+              style={{ width: '100%', padding: '8px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: A, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              🎥 Record Zoom meeting
+            </button>
+          </div>
+
           {/* Session list */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 16px' }}>
             {loading && <p style={{ fontSize: 12, color: MUTED, padding: '8px 6px' }}>Loading…</p>}
@@ -740,7 +808,65 @@ function SessionsPageInner() {
 
         {/* ── CENTER COLUMN ───────────────────────────────────────────────────── */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden', background: BG }}>
-          {showModal ? (
+          {showZoom ? (
+            /* ── RECALL / ZOOM NOTETAKER ─────────────────────────────────────────── */
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', justifyContent: 'center', padding: 28 }}>
+              <div style={{ width: '100%', maxWidth: 560, height: 'fit-content', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32 }}>
+                <p style={{ fontFamily: '"Fraunces", serif', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>Record Zoom meeting</p>
+                <p style={{ fontSize: 13, color: MUTED, margin: '0 0 24px' }}>A notetaker bot joins the call and transcribes it.</p>
+
+                {zoomStatus === 'idle' && (
+                  <>
+                    <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Zoom meeting link</p>
+                    <input value={zoomUrl} onChange={e => setZoomUrl(e.target.value)}
+                      placeholder="Paste Zoom meeting link"
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 13, outline: 'none', fontFamily: 'inherit', marginBottom: 18 }} />
+                    <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', marginBottom: 22 }}>
+                      <input type="checkbox" checked={zoomConsent} onChange={e => setZoomConsent(e.target.checked)} style={{ marginTop: 3 }} />
+                      <span style={{ fontSize: 13, color: TEXT, lineHeight: 1.5 }}>Both parties consent to recording this session.</span>
+                    </label>
+                    {zoomError && <p style={{ fontSize: 12, color: '#DC2626', margin: '0 0 12px' }}>{zoomError}</p>}
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <button onClick={closeZoom} style={{ flex: 1, padding: 11, borderRadius: 12, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+                      <button onClick={startZoom} disabled={!zoomUrl.trim() || !zoomConsent}
+                        style={{ flex: 2, padding: 11, borderRadius: 12, border: 'none', background: (zoomUrl.trim() && zoomConsent) ? A : BORDER, color: '#fff', fontSize: 14, fontWeight: 500, cursor: (zoomUrl.trim() && zoomConsent) ? 'pointer' : 'default' }}>Send Notetaker</button>
+                    </div>
+                  </>
+                )}
+
+                {['joining', 'recording', 'processing'].includes(zoomStatus) && (
+                  <div style={{ textAlign: 'center', padding: '12px 0' }}>
+                    <div style={{ width: 44, height: 44, border: `3px solid ${BORDER}`, borderTop: `3px solid ${A}`, borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 1s linear infinite' }} />
+                    <p style={{ fontSize: 15, color: TEXT, margin: '0 0 6px' }}>
+                      {zoomStatus === 'joining' ? 'Бот заходит в встречу…' : zoomStatus === 'recording' ? '🔴 Идёт запись сессии…' : 'Обработка транскрипта…'}
+                    </p>
+                    <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>Можно закрыть — сохранится автоматически.</p>
+                    <button onClick={closeZoom} style={{ marginTop: 20, padding: '8px 18px', borderRadius: 10, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>Close</button>
+                    <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+                  </div>
+                )}
+
+                {zoomStatus === 'done' && (
+                  <div style={{ textAlign: 'center', padding: '12px 0' }}>
+                    <p style={{ fontSize: 30, margin: '0 0 8px', color: '#15803D' }}>✓</p>
+                    <p style={{ fontSize: 15, color: TEXT, margin: '0 0 6px' }}>Готово — сессия сохранена.</p>
+                    <p style={{ fontSize: 12, color: MUTED, margin: '0 0 20px' }}>Транскрипт появился в списке сессий.</p>
+                    <button onClick={closeZoom} style={{ padding: '10px 22px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Done</button>
+                  </div>
+                )}
+
+                {zoomStatus === 'error' && (
+                  <div style={{ textAlign: 'center', padding: '12px 0' }}>
+                    <p style={{ fontSize: 14, color: '#DC2626', margin: '0 0 16px', lineHeight: 1.6 }}>⚠️ {zoomError || 'Что-то пошло не так.'}</p>
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                      <button onClick={closeZoom} style={{ padding: '9px 18px', borderRadius: 11, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>Close</button>
+                      <button onClick={() => { setZoomBotId(null); setZoomStatus('idle'); setZoomError(''); }} style={{ padding: '9px 18px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Try again</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : showModal ? (
             /* ── EMBEDDED RECORDING SECTION (replaces the old modal overlay) ─────── */
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', justifyContent: 'center', padding: 28 }}>
               <div style={{ width: '100%', maxWidth: isReview ? 720 : 560, height: 'fit-content', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32 }}>

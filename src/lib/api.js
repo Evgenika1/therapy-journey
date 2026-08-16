@@ -64,6 +64,27 @@ export const sessions = {
     return data;
   },
 
+  // Save a session produced by a Recall.ai bot. Upsert-ignore on recall_bot_id
+  // so this (client-poll) path and the webhook can't both create a duplicate for
+  // the same meeting, then read back whichever row won.
+  async saveFromRecall(supabase, { transcript, recall_bot_id, title = null, notes = null }) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error: upErr } = await supabase
+      .from('sessions')
+      .upsert(
+        { user_id: user.id, title, transcript: transcript || null, notes, recall_bot_id },
+        { onConflict: 'recall_bot_id', ignoreDuplicates: true },
+      );
+    if (upErr) throw toError(upErr);
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('recall_bot_id', recall_bot_id)
+      .single();
+    if (error) throw toError(error);
+    return data;
+  },
+
   async update(supabase, id, fields) {
     const { data: { user } } = await supabase.auth.getUser();
     const { data, error } = await supabase
