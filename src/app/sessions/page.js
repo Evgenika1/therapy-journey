@@ -292,6 +292,14 @@ function SessionsPageInner() {
   const [zoomStatus,         setZoomStatus]         = useState('idle'); // idle|joining|recording|processing|done|error
   const [zoomError,          setZoomError]          = useState('');
   const [zoomStopping,       setZoomStopping]       = useState(false); // "Stop & Save" pressed → waiting for transcript
+
+  // Import audio (upload a file → AssemblyAI → session)
+  const importInputRef = useRef(null);
+  const [showImport,     setShowImport]     = useState(false);
+  const [importFileName, setImportFileName] = useState('');
+  const [importStage,    setImportStage]    = useState(''); // uploading|processing|done|error
+  const [importProgress, setImportProgress] = useState(0);
+  const [importError,    setImportError]    = useState('');
   const [postRecordMoodIdx,  setPostRecordMoodIdx]  = useState(null);
   const [postMoodSaved,      setPostMoodSaved]      = useState(false);
   const [savingMood,         setSavingMood]         = useState(false);
@@ -385,6 +393,7 @@ function SessionsPageInner() {
 
   function openRecordModal(preMoodIntensity) {
     setShowModal(true);
+    setShowImport(false); setShowZoom(false);
     setSpeechError('');
     setTranscript('');
     setRecNotes('');
@@ -632,6 +641,51 @@ function SessionsPageInner() {
     } catch (e) { setZoomStatus('error'); setZoomError('Не удалось сохранить сессию: ' + e.message); }
   }
 
+  // ── Import audio (upload a recording → transcribe → session) ──────────────────
+  function pickImportFile() { importInputRef.current?.click(); }
+
+  async function handleImportFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    if (!file) return;
+    setSelectedSession(null); setShowZoom(false); setShowModal(false);
+    setShowImport(true); setImportFileName(file.name); setImportError('');
+    setImportProgress(0); setImportStage('uploading');
+
+    try {
+      const form = new FormData();
+      form.append('audio', file);
+      // XHR (not fetch) so we can show real upload progress; the server then
+      // uploads to AssemblyAI + polls, which we surface as the "processing" stage.
+      const data = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/transcribe-file');
+        xhr.upload.onprogress = ev => {
+          if (ev.lengthComputable) setImportProgress(Math.round((ev.loaded / ev.total) * 100));
+        };
+        xhr.upload.onload = () => setImportStage('processing');
+        xhr.onload = () => {
+          let body; try { body = JSON.parse(xhr.responseText); } catch { body = {}; }
+          if (xhr.status >= 200 && xhr.status < 300 && !body.error) resolve(body);
+          else reject(new Error(body.error || `HTTP ${xhr.status}`));
+        };
+        xhr.onerror = () => reject(new Error('Network error during upload'));
+        xhr.send(form);
+      });
+
+      const saved = await sessionsApi.save(supabase, { transcript: data.text || '', title: null });
+      setSessions(list => [saved, ...list]);
+      setImportStage('done');
+      setSelectedSession(saved);
+    } catch (err) {
+      setImportError(err.message); setImportStage('error');
+    }
+  }
+
+  function closeImport() {
+    setShowImport(false); setImportStage(''); setImportFileName(''); setImportError(''); setImportProgress(0);
+  }
+
   // Poll the bot until done/error. On done, save the session (upsert-dedup vs the
   // webhook path). This is what makes it work locally where the webhook can't reach.
   useEffect(() => {
@@ -818,9 +872,12 @@ function SessionsPageInner() {
           </div>
 
           {/* Import + Record */}
+          <input ref={importInputRef} type="file" accept=".mp3,.m4a,.wav,.mp4,audio/*,video/mp4"
+            onChange={handleImportFile} style={{ display: 'none' }} />
           <div style={{ padding: '0 14px 12px', display: 'flex', gap: 8 }}>
-            <button style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
-              ↑ Import
+            <button onClick={pickImportFile} title="Upload an audio file (mp3, m4a, wav, mp4)"
+              style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
+              ↑ Upload audio
             </button>
             <button onClick={openRecordModal}
               style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', background: '#C4687A', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
@@ -831,7 +888,7 @@ function SessionsPageInner() {
 
           {/* Record Zoom meeting (Recall.ai notetaker) */}
           <div style={{ padding: '0 14px 12px' }}>
-            <button onClick={() => { setShowZoom(true); setSelectedSession(null); }}
+            <button onClick={() => { setShowZoom(true); setShowImport(false); setShowModal(false); setSelectedSession(null); }}
               style={{ width: '100%', padding: '8px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: A, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
               🎥 Record online session
             </button>
@@ -882,7 +939,55 @@ function SessionsPageInner() {
 
         {/* ── CENTER COLUMN ───────────────────────────────────────────────────── */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden', background: BG }}>
-          {showZoom ? (
+          {showImport ? (
+            /* ── IMPORT AUDIO (upload → transcribe → session) ─────────────────────── */
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', justifyContent: 'center', padding: 28 }}>
+              <div style={{ width: '100%', maxWidth: 560, height: 'fit-content', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32 }}>
+                <p style={{ fontFamily: '"Fraunces", serif', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>Import audio</p>
+                <p style={{ fontSize: 13, color: MUTED, margin: '0 0 4px', wordBreak: 'break-all' }}>{importFileName}</p>
+                <p style={{ fontSize: 12, color: MUTED, margin: '0 0 24px' }}>mp3, m4a, wav, mp4 — transcribed via AssemblyAI (EU).</p>
+
+                {(importStage === 'uploading' || importStage === 'processing') && (
+                  <div style={{ textAlign: 'center', padding: '4px 0' }}>
+                    {importStage === 'uploading' ? (
+                      <>
+                        <p style={{ fontSize: 14, color: TEXT, margin: '0 0 12px' }}>Uploading… {importProgress}%</p>
+                        <div style={{ width: '100%', height: 8, borderRadius: 4, background: BORDER, overflow: 'hidden' }}>
+                          <div style={{ width: `${importProgress}%`, height: '100%', background: A, transition: 'width 0.2s' }} />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ width: 44, height: 44, border: `3px solid ${BORDER}`, borderTop: `3px solid ${A}`, borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 1s linear infinite' }} />
+                        <p style={{ fontSize: 15, color: TEXT, margin: '0 0 6px' }}>Transcribing…</p>
+                        <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>Это может занять несколько минут для длинной записи.</p>
+                      </>
+                    )}
+                    <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+                  </div>
+                )}
+
+                {importStage === 'done' && (
+                  <div style={{ textAlign: 'center', padding: '8px 0' }}>
+                    <p style={{ fontSize: 30, margin: '0 0 8px', color: '#15803D' }}>✓</p>
+                    <p style={{ fontSize: 15, color: TEXT, margin: '0 0 6px' }}>Готово — сессия создана.</p>
+                    <p style={{ fontSize: 12, color: MUTED, margin: '0 0 20px' }}>Транскрипт сохранён в список сессий.</p>
+                    <button onClick={closeImport} style={{ padding: '10px 22px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Done</button>
+                  </div>
+                )}
+
+                {importStage === 'error' && (
+                  <div style={{ textAlign: 'center', padding: '8px 0' }}>
+                    <p style={{ fontSize: 14, color: '#DC2626', margin: '0 0 16px', lineHeight: 1.6 }}>⚠️ {importError || 'Не удалось обработать файл.'}</p>
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                      <button onClick={closeImport} style={{ padding: '9px 18px', borderRadius: 11, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>Close</button>
+                      <button onClick={() => { closeImport(); pickImportFile(); }} style={{ padding: '9px 18px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Choose another file</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : showZoom ? (
             /* ── RECALL / ZOOM NOTETAKER ─────────────────────────────────────────── */
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', justifyContent: 'center', padding: 28 }}>
               <div style={{ width: '100%', maxWidth: 560, height: 'fit-content', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32 }}>
