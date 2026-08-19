@@ -159,6 +159,12 @@ function stripSpeakerMarkers(text) {
 // destination, so it cannot alter the recorded signal. Uses requestAnimationFrame
 // (not setInterval, so it doesn't touch the recording timer) and lives in its own
 // component so the ~60fps updates don't re-render the whole page.
+// Persist the active Recall bot id so a page reload / navigation doesn't lose an
+// in-progress recording: on load we re-adopt it and resume polling until the
+// transcript is saved. (On localhost there's no webhook fallback, so this is the
+// safety net.) Cleared once the session is saved, discarded, or errors out.
+const ZOOM_BOT_KEY = 'miru_zoom_bot';
+
 // Recall.ai auto-detects the meeting platform from the URL server-side; this is
 // only a light client-side check to validate the link and show which platform we
 // recognised. Any of these hosts is accepted — the URL goes to Recall unchanged.
@@ -581,12 +587,14 @@ function SessionsPageInner() {
       if (data.error) throw new Error(data.error);
       setZoomBotId(data.bot_id);
       setZoomStatus('joining');
+      try { localStorage.setItem(ZOOM_BOT_KEY, data.bot_id); } catch {}
     } catch (e) { setZoomError(e.message); setZoomStatus('error'); }
   }
 
   function closeZoom() {
     setShowZoom(false); setZoomUrl(''); setZoomConsent(false);
     setZoomBotId(null); setZoomStatus('idle'); setZoomError(''); setZoomStopping(false);
+    try { localStorage.removeItem(ZOOM_BOT_KEY); } catch {}
   }
 
   // "Stop & Save": tell the bot to leave, then let the poll below carry it through
@@ -637,6 +645,7 @@ function SessionsPageInner() {
       const saved = await sessionsApi.saveFromRecall(supabase, { transcript: data.transcript, recall_bot_id: zoomBotId });
       setSessions(list => list.some(s => s.id === saved.id) ? list : [saved, ...list]);
       setSelectedSession(saved);
+      try { localStorage.removeItem(ZOOM_BOT_KEY); } catch {}
       setZoomStatus('done');
     } catch (e) { setZoomStatus('error'); setZoomError('Не удалось сохранить сессию: ' + e.message); }
   }
@@ -696,8 +705,8 @@ function SessionsPageInner() {
         const res = await fetch(`/api/recall/status?bot_id=${encodeURIComponent(zoomBotId)}`);
         const data = await res.json();
         if (cancelled) return;
-        if (data.error) { clearInterval(iv); setZoomStatus('error'); setZoomError(data.error); return; }
-        if (data.status === 'error') { clearInterval(iv); setZoomStatus('error'); setZoomError('Recording failed on Recall.'); return; }
+        if (data.error) { clearInterval(iv); setZoomStatus('error'); setZoomError(data.error); try { localStorage.removeItem(ZOOM_BOT_KEY); } catch {} return; }
+        if (data.status === 'error') { clearInterval(iv); setZoomStatus('error'); setZoomError('Recording failed on Recall.'); try { localStorage.removeItem(ZOOM_BOT_KEY); } catch {} return; }
         if (data.status === 'done') {
           clearInterval(iv);
           setZoomStatus('saving'); // transcript ready — now actually persist it; success is NOT shown yet
@@ -706,6 +715,7 @@ function SessionsPageInner() {
             if (cancelled) return;
             setSessions(list => list.some(s => s.id === saved.id) ? list : [saved, ...list]);
             setSelectedSession(saved);
+            try { localStorage.removeItem(ZOOM_BOT_KEY); } catch {}
             setZoomStatus('done'); // ONLY now — after Supabase confirmed the row exists
           } catch (e) {
             if (!cancelled) { setZoomStatus('error'); setZoomError('Не удалось сохранить сессию: ' + e.message); }
@@ -720,6 +730,31 @@ function SessionsPageInner() {
     iv = setInterval(poll, 5000);
     return () => { cancelled = true; clearInterval(iv); };
   }, [zoomBotId, supabase]);
+
+  // Resume on load: if a recording was in progress when the page was reloaded /
+  // navigated away (bot id persisted in localStorage), or a recovery link
+  // ?recall_bot=<id> is present, re-adopt the bot so the poll above resumes and
+  // saves the transcript once it's ready. Runs once on mount.
+  useEffect(() => {
+    let botId = '';
+    try {
+      const url = new URL(window.location.href);
+      const fromLink = url.searchParams.get('recall_bot');
+      botId = fromLink || localStorage.getItem(ZOOM_BOT_KEY) || '';
+      if (fromLink) {
+        localStorage.setItem(ZOOM_BOT_KEY, fromLink);
+        url.searchParams.delete('recall_bot');
+        window.history.replaceState({}, '', url.pathname + url.search);
+      }
+    } catch {}
+    if (botId) {
+      setShowImport(false); setShowModal(false); setSelectedSession(null);
+      setShowZoom(true);
+      setZoomStatus('processing'); // neutral until the first poll reports the real status
+      setZoomBotId(botId);         // arms the poll effect above
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function saveSession() {
     if (!user) { setSaveError('Not signed in.'); return; }
