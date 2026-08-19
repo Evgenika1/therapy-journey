@@ -29,23 +29,36 @@ export async function POST(req) {
     const body = {
       meeting_url,
       bot_name: 'Miru Notetaker',
-      recording_config: { transcript: { provider: { assembly_ai_async: {} } } },
+      recording_config: { transcript: { provider: { assembly_ai_async_chunked: {} } } },
       // Carried back on the bot object so the webhook knows which user owns it.
       metadata: user_id ? { user_id: String(user_id) } : undefined,
     };
     if (webhook_url) body.webhook_url = webhook_url;
+
+    console.log('[Recall] meeting_url:', meeting_url);
+    console.log('[Recall] request body:', JSON.stringify(body));
 
     const res = await fetch(`${RECALL_BASE}/bot/`, {
       method: 'POST',
       headers: RECALL_HEADERS,
       body: JSON.stringify(body),
     });
+
+    // Read the body once as text so we can log it even when it isn't valid JSON
+    // (e.g. a 400/401 error page), then try to parse it.
+    const rawText = await res.text();
+    let data;
+    try { data = JSON.parse(rawText); } catch { data = rawText; }
+    console.log('[Recall] response status:', res.status);
+    console.log('[Recall] response data:', JSON.stringify(data));
+
     if (!res.ok) {
-      const err = await res.text();
-      console.error('[recall/start] Recall error:', res.status, err);
-      return NextResponse.json({ error: `Recall bot create failed: ${err}` }, { status: 500 });
+      return NextResponse.json({ error: `Recall bot create failed (${res.status}): ${rawText}` }, { status: 500 });
     }
-    const data = await res.json();
+    // Don't hand back an undefined bot_id — surface it as an error instead.
+    if (!data?.id) {
+      return NextResponse.json({ error: `Recall returned no bot id: ${rawText}` }, { status: 500 });
+    }
     return NextResponse.json({ bot_id: data.id });
   } catch (err) {
     console.error('[recall/start]', err);

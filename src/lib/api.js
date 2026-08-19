@@ -46,6 +46,8 @@ export const sessions = {
 
   async save(supabase, session) {
     const { data: { user } } = await supabase.auth.getUser();
+    console.log('[Save] auth user:', user?.id);
+    if (!user) throw new Error('Not signed in — cannot save session.');
     const { data, error } = await supabase
       .from('sessions')
       .insert({
@@ -58,31 +60,41 @@ export const sessions = {
         transcript:  session.transcript  || null,
         notes:       session.notes       || null,
       })
-      .select()
-      .single();
+      .select();
+    console.log('[Save] result data:', data, 'error:', error);
     if (error) throw toError(error);
-    return data;
+    if (!data || data.length === 0) throw new Error('Session not saved — no row returned (RLS blocked the insert?).');
+    return data[0];
   },
 
-  // Save a session produced by a Recall.ai bot. Upsert-ignore on recall_bot_id
-  // so this (client-poll) path and the webhook can't both create a duplicate for
-  // the same meeting, then read back whichever row won.
+  // Save a session produced by a Recall.ai bot. We dedupe MANUALLY (select then
+  // insert) rather than with `upsert({ onConflict: 'recall_bot_id' })` — that
+  // requires a unique index on recall_bot_id, and without it Postgres errors
+  // 42P10 ("no unique/exclusion constraint matching the ON CONFLICT spec") on
+  // every call. Manual dedupe works whether or not migration 015's index exists.
   async saveFromRecall(supabase, { transcript, recall_bot_id, title = null, notes = null }) {
     const { data: { user } } = await supabase.auth.getUser();
-    const { error: upErr } = await supabase
-      .from('sessions')
-      .upsert(
-        { user_id: user.id, title, transcript: transcript || null, notes, recall_bot_id },
-        { onConflict: 'recall_bot_id', ignoreDuplicates: true },
-      );
-    if (upErr) throw toError(upErr);
-    const { data, error } = await supabase
+    console.log('[Save/Recall] auth user:', user?.id, '| recall_bot_id:', recall_bot_id, '| transcript chars:', (transcript || '').length);
+    if (!user) throw new Error('Not signed in — cannot save session.');
+
+    // Already saved for this bot (e.g. a reload re-adopted it)? Return that row.
+    const { data: existing, error: exErr } = await supabase
       .from('sessions')
       .select('*')
       .eq('recall_bot_id', recall_bot_id)
-      .single();
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (exErr) throw toError(exErr);
+    if (existing) { console.log('[Save/Recall] already saved:', existing.id); return existing; }
+
+    const { data, error } = await supabase
+      .from('sessions')
+      .insert({ user_id: user.id, title, transcript: transcript || null, notes, recall_bot_id })
+      .select();
+    console.log('[Save/Recall] insert result data:', data, 'error:', error);
     if (error) throw toError(error);
-    return data;
+    if (!data || data.length === 0) throw new Error('Session not saved — no row returned (RLS blocked the insert?).');
+    return data[0];
   },
 
   async update(supabase, id, fields) {

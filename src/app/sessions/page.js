@@ -159,6 +159,21 @@ function stripSpeakerMarkers(text) {
 // destination, so it cannot alter the recorded signal. Uses requestAnimationFrame
 // (not setInterval, so it doesn't touch the recording timer) and lives in its own
 // component so the ~60fps updates don't re-render the whole page.
+// Recall.ai auto-detects the meeting platform from the URL server-side; this is
+// only a light client-side check to validate the link and show which platform we
+// recognised. Any of these hosts is accepted — the URL goes to Recall unchanged.
+const MEETING_PLATFORMS = [
+  { host: 'zoom.us',            name: 'Zoom' },
+  { host: 'meet.google.com',    name: 'Google Meet' },
+  { host: 'teams.microsoft.com', name: 'Microsoft Teams' },
+  { host: 'teams.live.com',     name: 'Microsoft Teams' },
+  { host: 'webex.com',          name: 'Webex' },
+];
+function detectPlatform(url) {
+  const u = (url || '').toLowerCase();
+  return MEETING_PLATFORMS.find(p => u.includes(p.host)) || null;
+}
+
 function AudioLevelMeter({ stream, source, A, MUTED, TEXT }) {
   const [bars, setBars] = useState(() => new Array(9).fill(0));
   const [silentTooLong, setSilentTooLong] = useState(false);
@@ -276,6 +291,7 @@ function SessionsPageInner() {
   const [zoomBotId,          setZoomBotId]          = useState(null);
   const [zoomStatus,         setZoomStatus]         = useState('idle'); // idle|joining|recording|processing|done|error
   const [zoomError,          setZoomError]          = useState('');
+  const [zoomStopping,       setZoomStopping]       = useState(false); // "Stop & Save" pressed → waiting for transcript
   const [postRecordMoodIdx,  setPostRecordMoodIdx]  = useState(null);
   const [postMoodSaved,      setPostMoodSaved]      = useState(false);
   const [savingMood,         setSavingMood]         = useState(false);
@@ -561,7 +577,59 @@ function SessionsPageInner() {
 
   function closeZoom() {
     setShowZoom(false); setZoomUrl(''); setZoomConsent(false);
-    setZoomBotId(null); setZoomStatus('idle'); setZoomError('');
+    setZoomBotId(null); setZoomStatus('idle'); setZoomError(''); setZoomStopping(false);
+  }
+
+  // "Stop & Save": tell the bot to leave, then let the poll below carry it through
+  // processing → done and save the session. We keep the window in a "processing"
+  // state (no close button) so the local poll survives until the transcript lands.
+  async function stopAndSaveZoom() {
+    if (!zoomBotId) return;
+    setZoomError('');
+    setZoomStopping(true);
+    try {
+      const res = await fetch('/api/recall/leave', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bot_id: zoomBotId }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      // The poll effect will now observe processing → done and save automatically.
+    } catch (e) {
+      setZoomError('Не удалось остановить бота: ' + e.message);
+      setZoomStopping(false);
+    }
+  }
+
+  // "Cancel": confirm, tell the bot to leave, and do NOT save. Closing first nulls
+  // zoomBotId so the poll effect tears down before it can save this recording.
+  async function discardZoom() {
+    if (!window.confirm('Discard recording? The session will not be saved.')) return;
+    const botId = zoomBotId;
+    closeZoom();
+    if (botId) {
+      try {
+        await fetch('/api/recall/leave', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bot_id: botId }),
+        });
+      } catch { /* best-effort — the bot leaves on its own eventually */ }
+    }
+  }
+
+  // Re-attempt the save after a save failure (transcript is already on Recall).
+  async function retrySaveZoom() {
+    if (!zoomBotId) { closeZoom(); return; }
+    setZoomError(''); setZoomStatus('saving');
+    try {
+      const res = await fetch(`/api/recall/status?bot_id=${encodeURIComponent(zoomBotId)}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      const saved = await sessionsApi.saveFromRecall(supabase, { transcript: data.transcript, recall_bot_id: zoomBotId });
+      setSessions(list => list.some(s => s.id === saved.id) ? list : [saved, ...list]);
+      setSelectedSession(saved);
+      setZoomStatus('done');
+    } catch (e) { setZoomStatus('error'); setZoomError('Не удалось сохранить сессию: ' + e.message); }
   }
 
   // Poll the bot until done/error. On done, save the session (upsert-dedup vs the
@@ -575,17 +643,23 @@ function SessionsPageInner() {
         const data = await res.json();
         if (cancelled) return;
         if (data.error) { clearInterval(iv); setZoomStatus('error'); setZoomError(data.error); return; }
-        setZoomStatus(data.status);
-        if (data.status === 'error') { clearInterval(iv); return; }
+        if (data.status === 'error') { clearInterval(iv); setZoomStatus('error'); setZoomError('Recording failed on Recall.'); return; }
         if (data.status === 'done') {
           clearInterval(iv);
+          setZoomStatus('saving'); // transcript ready — now actually persist it; success is NOT shown yet
           try {
             const saved = await sessionsApi.saveFromRecall(supabase, { transcript: data.transcript, recall_bot_id: zoomBotId });
             if (cancelled) return;
             setSessions(list => list.some(s => s.id === saved.id) ? list : [saved, ...list]);
             setSelectedSession(saved);
-          } catch (e) { if (!cancelled) setZoomError('Не удалось сохранить сессию: ' + e.message); }
+            setZoomStatus('done'); // ONLY now — after Supabase confirmed the row exists
+          } catch (e) {
+            if (!cancelled) { setZoomStatus('error'); setZoomError('Не удалось сохранить сессию: ' + e.message); }
+            // keep zoomBotId + localStorage so the user can retry the save
+          }
+          return;
         }
+        setZoomStatus(data.status); // non-terminal: joining / recording / processing
       } catch (e) { if (!cancelled) { clearInterval(iv); setZoomStatus('error'); setZoomError(e.message); } }
     };
     poll();
@@ -759,7 +833,7 @@ function SessionsPageInner() {
           <div style={{ padding: '0 14px 12px' }}>
             <button onClick={() => { setShowZoom(true); setSelectedSession(null); }}
               style={{ width: '100%', padding: '8px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: A, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-              🎥 Record Zoom meeting
+              🎥 Record online session
             </button>
           </div>
 
@@ -812,15 +886,25 @@ function SessionsPageInner() {
             /* ── RECALL / ZOOM NOTETAKER ─────────────────────────────────────────── */
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', justifyContent: 'center', padding: 28 }}>
               <div style={{ width: '100%', maxWidth: 560, height: 'fit-content', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32 }}>
-                <p style={{ fontFamily: '"Fraunces", serif', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>Record Zoom meeting</p>
-                <p style={{ fontSize: 13, color: MUTED, margin: '0 0 24px' }}>A notetaker bot joins the call and transcribes it.</p>
+                <p style={{ fontFamily: '"Fraunces", serif', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>Record online session</p>
+                <p style={{ fontSize: 13, color: MUTED, margin: '0 0 24px', lineHeight: 1.5 }}>A notetaker bot joins your call and transcribes it. Works with Zoom, Google Meet, Microsoft Teams, and Webex.</p>
 
-                {zoomStatus === 'idle' && (
+                {zoomStatus === 'idle' && (() => {
+                  const platform = detectPlatform(zoomUrl);
+                  const hasUrl = zoomUrl.trim().length > 0;
+                  const invalid = hasUrl && !platform;
+                  const canSend = !!platform && zoomConsent;
+                  return (
                   <>
-                    <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Zoom meeting link</p>
+                    <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Meeting link</p>
                     <input value={zoomUrl} onChange={e => setZoomUrl(e.target.value)}
-                      placeholder="Paste Zoom meeting link"
-                      style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 13, outline: 'none', fontFamily: 'inherit', marginBottom: 18 }} />
+                      placeholder="Paste meeting link (Zoom, Google Meet, Teams...)"
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: `1px solid ${invalid ? '#DC2626' : BORDER}`, background: BG, color: TEXT, fontSize: 13, outline: 'none', fontFamily: 'inherit', marginBottom: 6 }} />
+                    {platform
+                      ? <p style={{ fontSize: 12, color: '#15803D', fontWeight: 500, margin: '0 0 16px' }}>✓ {platform.name} detected</p>
+                      : invalid
+                        ? <p style={{ fontSize: 12, color: '#DC2626', margin: '0 0 16px' }}>Please paste a valid meeting link</p>
+                        : <p style={{ fontSize: 12, color: MUTED, margin: '0 0 16px' }}>Zoom, Google Meet, Microsoft Teams, or Webex</p>}
                     <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', marginBottom: 22 }}>
                       <input type="checkbox" checked={zoomConsent} onChange={e => setZoomConsent(e.target.checked)} style={{ marginTop: 3 }} />
                       <span style={{ fontSize: 13, color: TEXT, lineHeight: 1.5 }}>Both parties consent to recording this session.</span>
@@ -828,20 +912,37 @@ function SessionsPageInner() {
                     {zoomError && <p style={{ fontSize: 12, color: '#DC2626', margin: '0 0 12px' }}>{zoomError}</p>}
                     <div style={{ display: 'flex', gap: 10 }}>
                       <button onClick={closeZoom} style={{ flex: 1, padding: 11, borderRadius: 12, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 14, cursor: 'pointer' }}>Cancel</button>
-                      <button onClick={startZoom} disabled={!zoomUrl.trim() || !zoomConsent}
-                        style={{ flex: 2, padding: 11, borderRadius: 12, border: 'none', background: (zoomUrl.trim() && zoomConsent) ? A : BORDER, color: '#fff', fontSize: 14, fontWeight: 500, cursor: (zoomUrl.trim() && zoomConsent) ? 'pointer' : 'default' }}>Send Notetaker</button>
+                      <button onClick={startZoom} disabled={!canSend}
+                        style={{ flex: 2, padding: 11, borderRadius: 12, border: 'none', background: canSend ? A : BORDER, color: '#fff', fontSize: 14, fontWeight: 500, cursor: canSend ? 'pointer' : 'default' }}>Send Notetaker</button>
                     </div>
                   </>
-                )}
+                  );
+                })()}
 
-                {['joining', 'recording', 'processing'].includes(zoomStatus) && (
+                {['joining', 'recording', 'processing', 'saving'].includes(zoomStatus) && (
                   <div style={{ textAlign: 'center', padding: '12px 0' }}>
                     <div style={{ width: 44, height: 44, border: `3px solid ${BORDER}`, borderTop: `3px solid ${A}`, borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 1s linear infinite' }} />
                     <p style={{ fontSize: 15, color: TEXT, margin: '0 0 6px' }}>
-                      {zoomStatus === 'joining' ? 'Бот заходит в встречу…' : zoomStatus === 'recording' ? '🔴 Идёт запись сессии…' : 'Обработка транскрипта…'}
+                      {zoomStatus === 'saving'
+                        ? 'Saving session…'
+                        : zoomStopping
+                          ? 'Processing transcript…'
+                          : zoomStatus === 'joining' ? 'Бот заходит в встречу…' : zoomStatus === 'recording' ? '🔴 Идёт запись сессии…' : 'Обработка транскрипта…'}
                     </p>
-                    <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>Можно закрыть — сохранится автоматически.</p>
-                    <button onClick={closeZoom} style={{ marginTop: 20, padding: '8px 18px', borderRadius: 10, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>Close</button>
+                    <p style={{ fontSize: 12, color: MUTED, margin: 0, lineHeight: 1.5 }}>
+                      {zoomStatus === 'saving'
+                        ? 'Сохраняем транскрипт в базу…'
+                        : zoomStopping
+                          ? 'Транскрипт готовится — это займёт 3–5 минут. Не закрывайте окно, сессия сохранится автоматически.'
+                          : 'Запись идёт. Сессия сохранится автоматически, даже если закрыть окно.'}
+                    </p>
+                    {zoomError && <p style={{ fontSize: 12, color: '#DC2626', margin: '10px 0 0' }}>{zoomError}</p>}
+                    {!zoomStopping && zoomStatus !== 'saving' && (
+                      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 20 }}>
+                        <button onClick={discardZoom} style={{ padding: '9px 18px', borderRadius: 11, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+                        <button onClick={stopAndSaveZoom} style={{ padding: '9px 20px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Stop &amp; Save</button>
+                      </div>
+                    )}
                     <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
                   </div>
                 )}
@@ -860,7 +961,9 @@ function SessionsPageInner() {
                     <p style={{ fontSize: 14, color: '#DC2626', margin: '0 0 16px', lineHeight: 1.6 }}>⚠️ {zoomError || 'Что-то пошло не так.'}</p>
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
                       <button onClick={closeZoom} style={{ padding: '9px 18px', borderRadius: 11, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>Close</button>
-                      <button onClick={() => { setZoomBotId(null); setZoomStatus('idle'); setZoomError(''); }} style={{ padding: '9px 18px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Try again</button>
+                      {zoomBotId
+                        ? <button onClick={retrySaveZoom} style={{ padding: '9px 18px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Retry save</button>
+                        : <button onClick={() => { setZoomStatus('idle'); setZoomError(''); }} style={{ padding: '9px 18px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Try again</button>}
                     </div>
                   </div>
                 )}
