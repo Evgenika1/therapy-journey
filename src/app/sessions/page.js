@@ -284,6 +284,13 @@ function SessionsPageInner() {
   const [activeTab,       setActiveTab]       = useState('summary');
   const [sessionNotes,    setSessionNotes]    = useState('');
   const [savingNotes,     setSavingNotes]     = useState(false);
+
+  // Manual transcript entry/editing — the only way back for a session whose
+  // transcription failed, and the way to fix ASR mistakes in one that succeeded.
+  const [editingTranscript, setEditingTranscript] = useState(false);
+  const [transcriptDraft,   setTranscriptDraft]   = useState('');
+  const [savingTranscript,  setSavingTranscript]  = useState(false);
+  const [transcriptError,   setTranscriptError]   = useState('');
   const [analysing,       setAnalysing]       = useState(false);
   const [analyseError,    setAnalyseError]    = useState('');
 
@@ -381,6 +388,10 @@ function SessionsPageInner() {
     setSelectedSession(s);
     setActiveTab('summary');
     setSessionNotes(s.notes || '');
+    // Never carry another session's draft across — seed from the one just opened.
+    setEditingTranscript(false);
+    setTranscriptDraft(s.transcript || '');
+    setTranscriptError('');
     setChatMessages([]);
     setSessionChatId(null);
   }
@@ -952,6 +963,38 @@ function SessionsPageInner() {
     finally { setSavingNotes(false); }
   }
 
+  // ── transcript: manual entry / editing ───────────────────────────────────────
+  // Writes straight to sessions.transcript, so a hand-typed transcript is
+  // indistinguishable downstream from a transcribed one — Analyse, search and
+  // the speaker-turn renderer all just work on it.
+  async function saveTranscript() {
+    if (!selectedSession || !user) return;
+    setSavingTranscript(true); setTranscriptError('');
+    try {
+      const text = transcriptDraft.trim();
+      const value = text || null; // empty → NULL, matching how sessions are saved
+      await sessionsApi.update(supabase, selectedSession.id, { transcript: value });
+      setSelectedSession(s => ({ ...s, transcript: value }));
+      setSessions(list => list.map(s => s.id === selectedSession.id ? { ...s, transcript: value } : s));
+      setEditingTranscript(false);
+    } catch (e) {
+      console.error('[Sessions] transcript save:', e?.message);
+      setTranscriptError('Не удалось сохранить: ' + (e?.message || 'unknown'));
+    } finally { setSavingTranscript(false); }
+  }
+
+  function startEditTranscript() {
+    setTranscriptDraft(selectedSession?.transcript || '');
+    setTranscriptError('');
+    setEditingTranscript(true);
+  }
+
+  function cancelEditTranscript() {
+    setTranscriptDraft(selectedSession?.transcript || '');
+    setTranscriptError('');
+    setEditingTranscript(false);
+  }
+
   // ── delete session ───────────────────────────────────────────────────────────
   async function deleteSession(s) {
     if (!confirm(`Delete "${s.title || 'this session'}"?`)) return;
@@ -1493,7 +1536,16 @@ function SessionsPageInner() {
                         style={{ padding: '11px 28px', borderRadius: 12, border: 'none', background: selectedSession?.transcript ? A : BORDER, color: '#fff', fontSize: 14, fontWeight: 500, cursor: selectedSession?.transcript ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 8 }}>
                         {analysing ? '⏳ Analysing…' : '✦ Analyse'}
                       </button>
-                      {!selectedSession?.transcript && <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>Session needs a transcript to analyse</p>}
+                      {/* Dead end otherwise: say how to get a transcript, and go there. */}
+                      {!selectedSession?.transcript && (
+                        <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>
+                          Session needs a transcript to analyse —{' '}
+                          <button onClick={() => setActiveTab('transcript')}
+                            style={{ padding: 0, border: 'none', background: 'none', color: A, fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', textDecoration: 'underline' }}>
+                            вставить вручную
+                          </button>
+                        </p>
+                      )}
                     </div>
                   );
                   const SECTIONS = [
@@ -1539,13 +1591,59 @@ function SessionsPageInner() {
 
                 {/* Transcript tab */}
                 {activeTab === 'transcript' && (() => {
-                  if (!selectedSession.transcript)
-                    return <p style={{ fontSize: 14, color: MUTED }}>No transcript for this session.</p>;
+                  const hasTranscript = !!selectedSession.transcript;
+                  // With no transcript the editor IS the empty state — there is
+                  // nothing to look at, so don't make the user hunt for "Edit".
+                  const editing = editingTranscript || !hasTranscript;
+
+                  if (editing) {
+                    return (
+                      <div>
+                        {!hasTranscript && (
+                          <p style={{ fontSize: 13.5, color: MUTED, margin: '0 0 12px', lineHeight: 1.6 }}>
+                            Транскрипта нет. Вставьте или напишите текст вручную — после сохранения станут доступны AI-анализ и поиск по сессии.
+                          </p>
+                        )}
+                        <textarea value={transcriptDraft} onChange={e => setTranscriptDraft(e.target.value)}
+                          placeholder="Вставьте текст транскрипта…"
+                          style={{ width: '100%', boxSizing: 'border-box', minHeight: 340, padding: '14px 16px', borderRadius: 12, border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT, fontSize: 14, resize: 'vertical', outline: 'none', fontFamily: 'inherit', lineHeight: 1.8 }} />
+                        {transcriptError && <p style={{ fontSize: 12.5, color: '#DC2626', margin: '10px 0 0' }}>⚠ {transcriptError}</p>}
+                        <div style={{ marginTop: 12, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                          {hasTranscript && (
+                            <button onClick={cancelEditTranscript} disabled={savingTranscript}
+                              style={{ padding: '9px 20px', borderRadius: 10, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>
+                              Cancel
+                            </button>
+                          )}
+                          <button onClick={saveTranscript} disabled={savingTranscript || !transcriptDraft.trim()}
+                            style={{ padding: '9px 24px', borderRadius: 10, border: 'none', background: transcriptDraft.trim() ? A : BORDER, color: '#fff', fontSize: 13, fontWeight: 500, cursor: transcriptDraft.trim() ? 'pointer' : 'default' }}>
+                            {savingTranscript ? 'Saving…' : (hasTranscript ? 'Save' : 'Save transcript')}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const editBar = (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+                      <button onClick={startEditTranscript}
+                        style={{ padding: '7px 16px', borderRadius: 9, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 12.5, cursor: 'pointer' }}>
+                        ✎ Edit
+                      </button>
+                    </div>
+                  );
+
                   const parsed = parseSpeakerTurns(selectedSession.transcript);
                   if (!parsed)
-                    return <p style={{ fontSize: 14, color: TEXT, lineHeight: 1.9, whiteSpace: 'pre-wrap', margin: 0 }}>{selectedSession.transcript}</p>;
+                    return (
+                      <div>
+                        {editBar}
+                        <p style={{ fontSize: 14, color: TEXT, lineHeight: 1.9, whiteSpace: 'pre-wrap', margin: 0 }}>{selectedSession.transcript}</p>
+                      </div>
+                    );
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {editBar}
                       {parsed.turns.map((turn, i) => {
                         const role = parsed.roleMap[turn.speaker];
                         // Warm on-brand palette: terracotta for the primary speaker,
