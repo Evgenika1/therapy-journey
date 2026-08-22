@@ -5,6 +5,7 @@ import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
 import { sessions as sessionsApi, emotions as emotionsApi, aiChats, homework as homeworkApi } from '@/lib/api';
+import { ALLOWED_EXT, MAX_UPLOAD_BYTES, extOf, tooLargeMessage, unsupportedTypeMessage } from '@/lib/audioUpload';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const SESSION_MOODS = [
@@ -685,6 +686,16 @@ function SessionsPageInner() {
     setShowImport(true); setImportFileName(file.name); setImportError('');
     setImportProgress(0); setImportStage('uploading');
 
+    // Check type and size HERE, not just on the server: a 3 GB mp4 would spend
+    // minutes uploading before the server could tell us it is unusable.
+    const ext = extOf(file.name);
+    if (!ALLOWED_EXT.includes(ext)) {
+      setImportError(unsupportedTypeMessage(ext)); setImportStage('error'); return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setImportError(tooLargeMessage(file.size, ext)); setImportStage('error'); return;
+    }
+
     try {
       // Send the file as a RAW binary body (not multipart/form-data) — the server
       // reads it via req.arrayBuffer(). This avoids the flaky multipart parser
@@ -1041,7 +1052,20 @@ function SessionsPageInner() {
 
                 {importStage === 'error' && (
                   <div style={{ textAlign: 'center', padding: '8px 0' }}>
-                    <p style={{ fontSize: 14, color: '#DC2626', margin: '0 0 16px', lineHeight: 1.6 }}>⚠️ {importError || 'Не удалось обработать файл.'}</p>
+                    {/* Size errors carry a copy-pasteable ffmpeg command on a second
+                        line — keep the newline and give the command a mono block. */}
+                    {(() => {
+                      const [head, ...rest] = (importError || 'Не удалось обработать файл.').split('\n');
+                      const cmd = rest.join('\n').trim();
+                      return (
+                        <div style={{ margin: '0 0 16px', textAlign: cmd ? 'left' : 'center' }}>
+                          <p style={{ fontSize: 14, color: '#DC2626', margin: 0, lineHeight: 1.6 }}>⚠️ {head}</p>
+                          {cmd && (
+                            <code style={{ display: 'block', marginTop: 10, padding: '10px 12px', borderRadius: 9, background: 'rgba(127,127,127,0.12)', color: MUTED, fontSize: 12, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', userSelect: 'all' }}>{cmd}</code>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
                       <button onClick={closeImport} style={{ padding: '9px 18px', borderRadius: 11, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>Close</button>
                       <button onClick={() => { closeImport(); pickImportFile(); }} style={{ padding: '9px 18px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Choose another file</button>
