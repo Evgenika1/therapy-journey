@@ -6,7 +6,12 @@ import { MAX_UPLOAD_BYTES, fmtSize, tooLargeMessage } from '@/lib/audioUpload';
 // transcode + diarization. 300s cut that off well before it could finish.
 export const maxDuration = 3600; // 1 hour
 
-const AAI_BASE = 'https://api.assemblyai.com';
+// GDPR: session audio is health data, so it is processed in the EU region for
+// BOTH upload and transcript — same as /api/transcribe-file. Nothing persists an
+// AssemblyAI transcript id (the id below is local to one polling loop; Supabase
+// stores the finished text), so the region can be switched without stranding any
+// existing session.
+const AAI_BASE = 'https://api.eu.assemblyai.com';
 const API_KEY = process.env.ASSEMBLYAI_API_KEY;
 const HEADERS = { authorization: API_KEY, 'content-type': 'application/json' };
 
