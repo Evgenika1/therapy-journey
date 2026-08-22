@@ -180,10 +180,12 @@ function detectPlatform(url) {
   return MEETING_PLATFORMS.find(p => u.includes(p.host)) || null;
 }
 
-function AudioLevelMeter({ stream, source, A, MUTED, TEXT }) {
+function AudioLevelMeter({ stream, source, paused, A, MUTED, TEXT }) {
   const [bars, setBars] = useState(() => new Array(9).fill(0));
   const [silentTooLong, setSilentTooLong] = useState(false);
   const silentSinceRef = useRef(null);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused; // keep the rAF loop (deps: [stream]) reading the live value
   useEffect(() => {
     if (!stream) return;
     silentSinceRef.current = null;
@@ -199,12 +201,14 @@ function AudioLevelMeter({ stream, source, A, MUTED, TEXT }) {
       analyser.getByteFrequencyData(data);
       const next = Array.from({ length: 9 }, (_, i) => data[i * 2] / 255);
       setBars(next);
-      // Warn if the level has been near-zero continuously for > 10s.
+      // Warn if the level has been near-zero continuously for > 10s. Skip while
+      // paused — silence is expected then, not a fault.
       const active = next.some(b => b > 0.08);
+      const isPaused = pausedRef.current;
       const now = performance.now();
-      if (active) silentSinceRef.current = null;
+      if (active || isPaused) silentSinceRef.current = null;
       else if (silentSinceRef.current == null) silentSinceRef.current = now;
-      setSilentTooLong(!active && silentSinceRef.current != null && now - silentSinceRef.current > 10000);
+      setSilentTooLong(!isPaused && !active && silentSinceRef.current != null && now - silentSinceRef.current > 10000);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -226,8 +230,8 @@ function AudioLevelMeter({ stream, source, A, MUTED, TEXT }) {
         ))}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-        <div style={{ width: 7, height: 7, borderRadius: '50%', background: active ? A : MUTED, transition: 'background 0.2s' }} />
-        <span style={{ fontSize: 12.5, color: active ? TEXT : MUTED, fontWeight: 500 }}>{active ? 'Hearing your voice' : 'Listening…'}</span>
+        <div style={{ width: 7, height: 7, borderRadius: '50%', background: paused ? MUTED : (active ? A : MUTED), transition: 'background 0.2s' }} />
+        <span style={{ fontSize: 12.5, color: paused ? MUTED : (active ? TEXT : MUTED), fontWeight: 500 }}>{paused ? 'Paused' : (active ? 'Hearing your voice' : 'Listening…')}</span>
       </div>
       {silentTooLong && (
         <p style={{ fontSize: 12.5, color: '#DC2626', fontWeight: 500, margin: 0, textAlign: 'center', lineHeight: 1.5 }}>{warning}</p>
@@ -277,6 +281,7 @@ function SessionsPageInner() {
   // recording modal
   const [showModal,          setShowModal]          = useState(false);
   const [isCapturing,        setIsCapturing]        = useState(false);
+  const [isPaused,           setIsPaused]           = useState(false);
   const [isTranscribing,     setIsTranscribing]     = useState(false);
   const [isReview,           setIsReview]           = useState(false);
   const [seconds,            setSeconds]            = useState(0);
@@ -421,7 +426,7 @@ function SessionsPageInner() {
   function closeModal() {
     if (isCapturing) stopRecording();
     clearInterval(timerRef.current);
-    setShowModal(false); setIsCapturing(false); setIsTranscribing(false); setIsReview(false);
+    setShowModal(false); setIsCapturing(false); setIsPaused(false); setIsTranscribing(false); setIsReview(false);
     setSeconds(0); setTranscript(''); setRecNotes(''); setSaved(false);
     setShowPreMood(false); setPreRecordMoodIdx(null);
     setPostRecordMoodIdx(null); setPostMoodSaved(false);
@@ -487,15 +492,34 @@ function SessionsPageInner() {
     mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
     mr.onerror = (e) => { setSpeechError('Recording error: ' + (e?.error?.message || 'unknown')); clearInterval(timerRef.current); setIsCapturing(false); };
     mr.start(1000);
-    setIsCapturing(true); setSeconds(0);
+    setIsCapturing(true); setIsPaused(false); setSeconds(0);
     clearInterval(timerRef.current); // defensive: never leave a stale interval running
     timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
     startGuardRef.current = false; // setup complete — mediaRef.current now guards re-entry
   }
 
+  // Pause/resume the live recording. MediaRecorder.pause()/resume() keeps a single
+  // continuous file — chunks before and after the pause concatenate into one blob,
+  // so AssemblyAI still gets one uninterrupted stream. The timer freezes (doesn't
+  // reset) so elapsed time reflects only recorded audio.
+  function pauseRecording() {
+    if (!mediaRef.current || mediaRef.current.state !== 'recording') return;
+    mediaRef.current.pause();
+    clearInterval(timerRef.current);
+    setIsPaused(true);
+  }
+
+  function resumeRecording() {
+    if (!mediaRef.current || mediaRef.current.state !== 'paused') return;
+    mediaRef.current.resume();
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
+    setIsPaused(false);
+  }
+
   async function stopRecording() {
     clearInterval(timerRef.current);
-    setIsCapturing(false);
+    setIsCapturing(false); setIsPaused(false);
     if (!mediaRef.current) return;
 
     await new Promise(resolve => { mediaRef.current.onstop = resolve; mediaRef.current.stop(); });
@@ -1184,14 +1208,19 @@ function SessionsPageInner() {
                   <>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ width: 9, height: 9, borderRadius: '50%', background: '#EF4444', animation: 'pulse 1s infinite' }} />
-                        <span style={{ fontSize: 13, fontWeight: 500, color: '#EF4444' }}>Recording</span>
+                        <div style={{ width: 9, height: 9, borderRadius: '50%', background: isPaused ? MUTED : '#EF4444', animation: isPaused ? 'none' : 'pulse 1s infinite' }} />
+                        <span style={{ fontSize: 13, fontWeight: 500, color: isPaused ? MUTED : '#EF4444' }}>{isPaused ? 'Paused' : 'Recording'}</span>
                       </div>
                       <span style={{ fontFamily: '"Fraunces", serif', fontSize: 28, fontWeight: 300, color: TEXT }}>{fmt(seconds)}</span>
-                      <button onClick={stopRecording} style={{ padding: '9px 20px', borderRadius: 10, border: 'none', background: '#EF4444', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>⏹ Stop</button>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {isPaused
+                          ? <button onClick={resumeRecording} style={{ padding: '9px 18px', borderRadius: 10, border: `1px solid ${A}`, background: 'transparent', color: A, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>▶ Resume</button>
+                          : <button onClick={pauseRecording} style={{ padding: '9px 18px', borderRadius: 10, border: `1px solid ${BORDER}`, background: 'transparent', color: TEXT, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>⏸ Pause</button>}
+                        <button onClick={stopRecording} style={{ padding: '9px 20px', borderRadius: 10, border: 'none', background: '#EF4444', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>⏹ Stop</button>
+                      </div>
                     </div>
                     <div style={{ minHeight: 90, padding: '16px 14px', borderRadius: 10, background: BG, border: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <AudioLevelMeter stream={mediaRef.current?.stream} source={captureSource} A={A} MUTED={MUTED} TEXT={TEXT} />
+                      <AudioLevelMeter stream={mediaRef.current?.stream} source={captureSource} paused={isPaused} A={A} MUTED={MUTED} TEXT={TEXT} />
                     </div>
                     <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
                   </>
