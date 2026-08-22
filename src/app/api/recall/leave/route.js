@@ -18,6 +18,14 @@ export async function POST(req) {
     });
     const rawText = await res.text();
     console.log('[recall/leave] bot:', bot_id, 'status:', res.status, 'body:', rawText);
+
+    // A bot that already finished (async mode often lets it complete on its own
+    // before we send leave_call) rejects the command with 400
+    // "cannot_command_completed_bot". That's not a real error — the goal (bot is
+    // no longer in the meeting) is already met, so treat it like success.
+    if (res.status === 400 && rawText.includes('cannot_command_completed_bot')) {
+      return NextResponse.json({ ok: true, already_done: true });
+    }
     if (!res.ok) {
       return NextResponse.json({ error: `Recall leave failed (${res.status}): ${rawText}` }, { status: 500 });
     }
