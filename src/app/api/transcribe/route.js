@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
+import { aaiFetch, uploadAudio } from '@/lib/assemblyai';
+import { MAX_UPLOAD_BYTES, fmtSize, tooLargeMessage } from '@/lib/audioUpload';
 
-export const maxDuration = 300; // 5 minutes — needed for long recordings
+// A 91-minute session is a ~25-minute round trip on a slow uplink: upload +
+// transcode + diarization. 300s cut that off well before it could finish.
+export const maxDuration = 3600; // 1 hour
 
+const AAI_BASE = 'https://api.assemblyai.com';
 const API_KEY = process.env.ASSEMBLYAI_API_KEY;
 const HEADERS = { authorization: API_KEY, 'content-type': 'application/json' };
 
@@ -36,7 +41,7 @@ function stripHallucinations(text) {
 // langConfig is spread into the request — either { language_detection: true, … }
 // (auto-detect the spoken language) or { language_code: 'ru' } (forced fallback).
 async function transcribeOnce(upload_url, langConfig) {
-  const transcriptRes = await fetch('https://api.assemblyai.com/v2/transcript', {
+  const transcriptRes = await aaiFetch(`${AAI_BASE}/v2/transcript`, {
     method: 'POST',
     headers: HEADERS,
     body: JSON.stringify({
@@ -46,7 +51,7 @@ async function transcribeOnce(upload_url, langConfig) {
       speaker_labels: true,
       ...langConfig,
     }),
-  });
+  }, 'Создание транскрипта', 'transcribe');
   if (!transcriptRes.ok) {
     const err = await transcriptRes.text();
     return { kind: 'create_failed', error: `Transcript create failed: ${err}` };
@@ -56,7 +61,7 @@ async function transcribeOnce(upload_url, langConfig) {
 
   for (let i = 0; i < 150; i++) {
     await new Promise(r => setTimeout(r, 2000));
-    const pollRes = await fetch(`https://api.assemblyai.com/v2/transcript/${id}`, { headers: HEADERS });
+    const pollRes = await aaiFetch(`${AAI_BASE}/v2/transcript/${id}`, { headers: HEADERS }, 'Опрос статуса транскрипта', 'transcribe');
     const transcript = await pollRes.json();
     console.log('[transcribe] poll', i, 'status:', transcript.status, 'text_length:', transcript.text?.length ?? 0);
     if (transcript.status === 'completed') return { kind: 'completed', transcript };
@@ -67,23 +72,24 @@ async function transcribeOnce(upload_url, langConfig) {
 
 export async function POST(req) {
   try {
-    const formData = await req.formData();
-    const file = formData.get('audio');
-    if (!file) return NextResponse.json({ error: 'No audio file' }, { status: 400 });
-
-    // 1. Upload audio to AssemblyAI
-    const audioBuffer = Buffer.from(await file.arrayBuffer());
-    console.log('[transcribe] file size:', audioBuffer.length, 'bytes, name:', file.name);
-    const uploadRes = await fetch('https://api.assemblyai.com/v2/upload', {
-      method: 'POST',
-      headers: { authorization: API_KEY, 'content-type': 'application/octet-stream' },
-      body: audioBuffer,
-    });
-    if (!uploadRes.ok) {
-      const err = await uploadRes.text();
-      return NextResponse.json({ error: `Upload failed: ${err}` }, { status: 500 });
+    // RAW binary body, not multipart/form-data — same approach as
+    // /api/transcribe-file. It skips the flaky multipart layer in this
+    // Next/Turbopack setup, avoids a second full copy of an 85 MB buffer in
+    // memory, and matches how we forward the bytes to AssemblyAI anyway.
+    const declared = Number(req.headers.get('content-length')) || 0;
+    const filename = decodeURIComponent(req.headers.get('x-filename') || 'recording.webm');
+    console.log('[transcribe] name:', filename, 'content-length:', declared, `(${fmtSize(declared)})`);
+    if (declared > MAX_UPLOAD_BYTES) {
+      console.warn('[transcribe] rejected up front: over', MAX_UPLOAD_BYTES, 'bytes');
+      return NextResponse.json({ error: tooLargeMessage(declared, 'webm') }, { status: 413 });
     }
-    const { upload_url } = await uploadRes.json();
+
+    // 1. Upload audio to AssemblyAI (retries transport failures — a long upload
+    //    over a weak uplink is exactly what died here with EPIPE).
+    const audioBuffer = Buffer.from(await req.arrayBuffer());
+    if (audioBuffer.length === 0) return NextResponse.json({ error: 'Empty recording' }, { status: 400 });
+    console.log('[transcribe] received:', audioBuffer.length, 'bytes');
+    const upload_url = await uploadAudio(AAI_BASE, API_KEY, audioBuffer, { tag: 'transcribe' });
 
     // 2 + 3. Create + poll. Auto-detect the spoken language (users record in
     // different languages; forcing 'ru' on non-Russian audio made AssemblyAI

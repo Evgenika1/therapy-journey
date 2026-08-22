@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   ALLOWED_EXT, MAX_UPLOAD_BYTES, fmtSize, extOf, tooLargeMessage, unsupportedTypeMessage,
 } from '@/lib/audioUpload';
+import { aaiFetch, uploadAudio } from '@/lib/assemblyai';
 
 export const maxDuration = 300; // 5 minutes — long uploads + async transcription
 
@@ -9,19 +10,6 @@ export const maxDuration = 300; // 5 minutes — long uploads + async transcript
 // text stay in the EU. The API key is the same one used elsewhere in the app.
 const AAI_BASE = 'https://api.eu.assemblyai.com';
 const API_KEY = process.env.ASSEMBLYAI_API_KEY;
-
-// Node's fetch collapses every transport failure into a bare "fetch failed" and
-// hides the actual reason in err.cause. Unwrap it — that opacity is exactly what
-// made a 3 GB upload look like an AssemblyAI outage.
-async function aaiFetch(url, init, step) {
-  try {
-    return await fetch(url, init);
-  } catch (err) {
-    const cause = err?.cause;
-    console.error(`[transcribe-file] ${step} — fetch threw:`, err.message, '| cause:', cause);
-    throw new Error(`${step}: ${cause?.code || cause?.message || err.message}`);
-  }
-}
 
 export async function POST(req) {
   if (!API_KEY) {
@@ -56,18 +44,8 @@ export async function POST(req) {
       console.warn('[transcribe-file] rejected after buffering:', audioBuffer.length, 'bytes');
       return NextResponse.json({ error: tooLargeMessage(audioBuffer.length, ext) }, { status: 413 });
     }
-    console.log('[transcribe-file] received:', audioBuffer.length, 'bytes — uploading to AssemblyAI...');
-    const uploadRes = await aaiFetch(`${AAI_BASE}/v2/upload`, {
-      method: 'POST',
-      headers: { authorization: API_KEY, 'content-type': 'application/octet-stream' },
-      body: audioBuffer,
-    }, 'Загрузка в AssemblyAI');
-    console.log('[transcribe-file] AAI upload response:', uploadRes.status);
-    if (!uploadRes.ok) {
-      const err = await uploadRes.text();
-      return NextResponse.json({ error: `Upload failed: ${err}` }, { status: 500 });
-    }
-    const { upload_url } = await uploadRes.json();
+    console.log('[transcribe-file] received:', audioBuffer.length, 'bytes');
+    const upload_url = await uploadAudio(AAI_BASE, API_KEY, audioBuffer, { tag: 'transcribe-file' });
 
     // 2. Create the transcription job (auto language detection + speaker labels).
     const createRes = await aaiFetch(`${AAI_BASE}/v2/transcript`, {
@@ -78,7 +56,7 @@ export async function POST(req) {
         language_detection: true,
         speaker_labels: true,
       }),
-    }, 'Создание транскрипта');
+    }, 'Создание транскрипта', 'transcribe-file');
     console.log('[transcribe-file] AAI transcript create response:', createRes.status);
     if (!createRes.ok) {
       const err = await createRes.text();
@@ -91,7 +69,7 @@ export async function POST(req) {
     let transcript = null;
     for (let i = 0; i < 150; i++) {
       await new Promise(r => setTimeout(r, 2000));
-      const pollRes = await aaiFetch(`${AAI_BASE}/v2/transcript/${id}`, { headers: { authorization: API_KEY } }, 'Опрос статуса транскрипта');
+      const pollRes = await aaiFetch(`${AAI_BASE}/v2/transcript/${id}`, { headers: { authorization: API_KEY } }, 'Опрос статуса транскрипта', 'transcribe-file');
       transcript = await pollRes.json();
       console.log('[transcribe-file] poll', i, 'status:', transcript.status, 'len:', transcript.text?.length ?? 0);
       if (transcript.status === 'completed') break;

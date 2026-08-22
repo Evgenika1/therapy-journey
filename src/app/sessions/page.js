@@ -6,6 +6,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
 import { sessions as sessionsApi, emotions as emotionsApi, aiChats, homework as homeworkApi } from '@/lib/api';
 import { ALLOWED_EXT, MAX_UPLOAD_BYTES, extOf, tooLargeMessage, unsupportedTypeMessage } from '@/lib/audioUpload';
+import { savePendingRecording, loadPendingRecording, clearPendingRecording } from '@/lib/recordingStore';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const SESSION_MOODS = [
@@ -114,6 +115,13 @@ function getSupportedMimeType() {
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
   return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
 }
+
+// MediaRecorder defaults to ~128 kbps, which turned a 91-minute session into an
+// 84.7 MB upload that never made it to AssemblyAI. Speech recognition does not
+// need music-grade audio: Opus at 32 kbps is comfortably intelligible speech and
+// makes the same session ~21 MB. This is the single biggest reason long
+// recordings failed to upload.
+const SPEECH_BITS_PER_SECOND = 32000;
 
 // Parse a diarized transcript into per-utterance turns. Each block is either the
 // new "[A 0:15] text" format (speaker + m:ss start time) or the older
@@ -296,6 +304,13 @@ function SessionsPageInner() {
   const [micDevices,         setMicDevices]         = useState([]);
   const [selectedMicId,      setSelectedMicId]      = useState('');
 
+  // The recorded audio is held until the session is SAVED, not until it is
+  // transcribed — a failed upload must never cost the user the recording.
+  const pendingAudioRef = useRef(null); // { blob, mimeType }
+  const [transcribeFailed, setTranscribeFailed] = useState(false); // → show Retry
+  const [uploadProgress,   setUploadProgress]   = useState(0);
+  const [recovered,        setRecovered]        = useState(null); // recording found in IndexedDB after a reload
+
   // Zoom / Recall.ai notetaker
   const [showZoom,           setShowZoom]           = useState(false);
   const [zoomUrl,            setZoomUrl]            = useState('');
@@ -432,7 +447,15 @@ function SessionsPageInner() {
     setShowPreMood(false); setPreRecordMoodIdx(null);
     setPostRecordMoodIdx(null); setPostMoodSaved(false);
     setSpeechError(''); setSaveError('');
+    setTranscribeFailed(false); setUploadProgress(0);
     chunksRef.current = [];
+    // Closing with a failed transcription and nothing saved is NOT a discard —
+    // keep the audio so the recovery banner can offer it again. Anything else
+    // (saved, or transcribed fine) has served its purpose and can go.
+    if (!(transcribeFailed && !saved)) {
+      pendingAudioRef.current = null;
+      clearPendingRecording();
+    }
   }
 
   async function startAfterPreMood() {
@@ -488,7 +511,10 @@ function SessionsPageInner() {
     refreshMicDevices(); // permission is now granted → device labels are available
 
     const mimeType = getSupportedMimeType();
-    const mr = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+    const mr = new MediaRecorder(stream, {
+      ...(mimeType ? { mimeType } : {}),
+      audioBitsPerSecond: SPEECH_BITS_PER_SECOND,
+    });
     mediaRef.current = mr;
     mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
     mr.onerror = (e) => { setSpeechError('Recording error: ' + (e?.error?.message || 'unknown')); clearInterval(timerRef.current); setIsCapturing(false); };
@@ -564,15 +590,49 @@ function SessionsPageInner() {
       return;
     }
 
+    // Hold the audio BEFORE attempting transcription, in memory and on disk. The
+    // 91-minute session was lost because the blob lived only in a ref, so the
+    // upload error took the recording with it. It is cleared once the session is
+    // saved (or explicitly discarded) — not merely once transcription succeeds.
+    pendingAudioRef.current = { blob: audioBlob, mimeType };
+    await savePendingRecording({ blob: audioBlob, mimeType, seconds });
+
+    await transcribePending();
+  }
+
+  // Upload the held recording and transcribe it. Split out of stopRecording so
+  // Retry re-runs exactly this path — no re-recording, no second code path.
+  async function transcribePending() {
+    const pending = pendingAudioRef.current;
+    if (!pending) return;
+    const { blob, mimeType } = pending;
+    console.log('[stopRecording] blob size:', blob.size, 'bytes, mimeType:', mimeType,
+      `(${(blob.size / 1024 / 1024).toFixed(1)} MB)`);
+
+    setSpeechError(''); setTranscribeFailed(false); setUploadProgress(0);
     setIsTranscribing(true);
     try {
       const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
-      const form = new FormData();
-      form.append('audio', audioBlob, `recording.${ext}`);
-      form.append('language', navigator.language.slice(0, 2));
-      const res = await fetch('/api/transcribe', { method: 'POST', body: form });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      // RAW binary via XHR, not FormData: skips the multipart layer that proved
+      // flaky in this Next/Turbopack setup, avoids an extra full copy of the
+      // buffer server-side, and gives real upload progress — which matters when
+      // a long session takes minutes just to reach the server.
+      const data = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/transcribe');
+        xhr.setRequestHeader('Content-Type', mimeType || 'application/octet-stream');
+        xhr.setRequestHeader('X-Filename', encodeURIComponent(`recording.${ext}`));
+        xhr.upload.onprogress = ev => {
+          if (ev.lengthComputable) setUploadProgress(Math.round((ev.loaded / ev.total) * 100));
+        };
+        xhr.onload = () => {
+          let body; try { body = JSON.parse(xhr.responseText); } catch { body = {}; }
+          if (xhr.status >= 200 && xhr.status < 300 && !body.error) resolve(body);
+          else reject(new Error(body.error || `HTTP ${xhr.status}`));
+        };
+        xhr.onerror = () => reject(new Error('соединение с сервером оборвалось'));
+        xhr.send(blob);
+      });
       // The server already strips hallucination boilerplate (per-utterance when
       // the audio is diarized), so use its text verbatim — re-stripping here
       // would collapse the "Speaker A:" block separators into one paragraph.
@@ -581,10 +641,11 @@ function SessionsPageInner() {
       if (!finalText) setSpeechError('No speech detected in the recording.');
     } catch (err) {
       console.error('[transcribe]', err);
-      setSpeechError('Transcription error: ' + err.message);
+      setTranscribeFailed(true);
+      setSpeechError('Не удалось расшифровать: ' + err.message);
       setTranscript('');
     } finally {
-      setIsTranscribing(false); setIsReview(true);
+      setIsTranscribing(false); setIsReview(true); setUploadProgress(0);
     }
   }
 
@@ -636,7 +697,9 @@ function SessionsPageInner() {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      // The poll effect will now observe processing → done and save automatically.
+      // Success (200) OR already_done (bot finished on its own before leave) both
+      // mean "bot is out of the meeting" — either way the poll effect will observe
+      // processing → done and save the transcript automatically.
     } catch (e) {
       setZoomError('Не удалось остановить бота: ' + e.message);
       setZoomStopping(false);
@@ -795,6 +858,27 @@ function SessionsPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A recording left behind by a failed transcription — or by a reload/crash mid
+  // flow — is offered back instead of silently rotting in IndexedDB.
+  useEffect(() => {
+    loadPendingRecording().then(rec => { if (rec) setRecovered(rec); });
+  }, []);
+
+  function resumeRecovered() {
+    if (!recovered) return;
+    pendingAudioRef.current = { blob: recovered.blob, mimeType: recovered.mimeType || 'audio/webm' };
+    setSeconds(recovered.seconds || 0);
+    setRecovered(null);
+    setShowModal(true); setIsReview(true); setSaved(false); setTranscript(''); setRecNotes('');
+    transcribePending();
+  }
+
+  async function discardRecovered() {
+    setRecovered(null);
+    pendingAudioRef.current = null;
+    await clearPendingRecording();
+  }
+
   async function saveSession() {
     if (!user) { setSaveError('Not signed in.'); return; }
     setSaving(true); setSaveError('');
@@ -808,6 +892,10 @@ function SessionsPageInner() {
       });
       setSessions(s => [result, ...s]);
       setSaved(true);
+      // The transcript is safely in the database — the audio copy can go now.
+      pendingAudioRef.current = null;
+      setRecovered(null);
+      clearPendingRecording();
       setTimeout(() => { closeModal(); setSelectedSession(result); }, 1500);
     } catch (err) {
       console.error('[Sessions] save error:', err?.message, err?.code);
@@ -944,6 +1032,27 @@ function SessionsPageInner() {
               onBlur={e  => e.target.style.borderColor = BORDER}
             />
           </div>
+
+          {/* A recording survived a failed transcription or a reload — offer it back
+              rather than leaving the user to assume the session is gone. */}
+          {recovered && !showModal && (
+            <div style={{ margin: '0 14px 12px', background: '#C4687A12', border: '1px solid #C4687A40', borderRadius: 11, padding: '12px 13px' }}>
+              <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT, margin: '0 0 4px' }}>Найдена нерасшифрованная запись</p>
+              <p style={{ fontSize: 11.5, color: MUTED, margin: '0 0 10px', lineHeight: 1.5 }}>
+                {fmt(recovered.seconds || 0)} · {(recovered.blob.size / 1024 / 1024).toFixed(1)} МБ — расшифровка не завершилась.
+              </p>
+              <div style={{ display: 'flex', gap: 7 }}>
+                <button onClick={resumeRecovered}
+                  style={{ flex: 2, padding: '7px 0', borderRadius: 8, border: 'none', background: A, color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
+                  ↻ Расшифровать
+                </button>
+                <button onClick={discardRecovered}
+                  style={{ flex: 1, padding: '7px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 12, cursor: 'pointer' }}>
+                  Удалить
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Import + Record */}
           <input ref={importInputRef} type="file" accept=".mp3,.m4a,.wav,.mp4,audio/*,video/mp4"
@@ -1226,7 +1335,16 @@ function SessionsPageInner() {
                 {isTranscribing && (
                   <div style={{ textAlign: 'center', padding: '20px 0' }}>
                     <div style={{ width: 44, height: 44, border: `3px solid ${BORDER}`, borderTop: `3px solid ${A}`, borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 1s linear infinite' }} />
-                    <p style={{ fontSize: 16, color: TEXT, margin: 0 }}>Transcribing…</p>
+                    {/* A long session spends minutes just getting to the server —
+                        show that it is moving instead of an opaque spinner. */}
+                    <p style={{ fontSize: 16, color: TEXT, margin: 0 }}>
+                      {uploadProgress > 0 && uploadProgress < 100 ? `Загрузка записи… ${uploadProgress}%` : 'Transcribing…'}
+                    </p>
+                    {uploadProgress > 0 && uploadProgress < 100 && (
+                      <div style={{ width: '70%', height: 5, borderRadius: 3, background: BORDER, margin: '12px auto 0', overflow: 'hidden' }}>
+                        <div style={{ width: `${uploadProgress}%`, height: '100%', background: A, transition: 'width .2s' }} />
+                      </div>
+                    )}
                     <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
                   </div>
                 )}
@@ -1273,6 +1391,23 @@ function SessionsPageInner() {
                         <button onClick={savePostMood} disabled={postRecordMoodIdx === null || savingMood}
                           style={{ padding: '7px 16px', borderRadius: 9, border: 'none', background: postRecordMoodIdx !== null ? A : BORDER, color: '#fff', fontSize: 12, fontWeight: 500, cursor: postRecordMoodIdx !== null ? 'pointer' : 'default' }}>
                           {savingMood ? 'Saving…' : 'Save mood'}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Transcription failed — the audio is still held, so offer the
+                        one thing that actually helps: run it again. */}
+                    {transcribeFailed && (
+                      <div style={{ background: '#DC262610', border: '1px solid #DC262633', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: '#DC2626', margin: '0 0 6px' }}>⚠ Расшифровка не удалась</p>
+                        <p style={{ fontSize: 12.5, color: MUTED, margin: '0 0 12px', lineHeight: 1.6 }}>
+                          Запись не потеряна — она сохранена на этом устройстве
+                          {pendingAudioRef.current?.blob ? ` (${(pendingAudioRef.current.blob.size / 1024 / 1024).toFixed(1)} МБ)` : ''}.
+                          Можно повторить попытку, или сохранить сессию сейчас и вписать текст вручную.
+                        </p>
+                        <button onClick={transcribePending} disabled={isTranscribing}
+                          style={{ padding: '8px 18px', borderRadius: 9, border: 'none', background: A, color: '#fff', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' }}>
+                          ↻ Повторить расшифровку
                         </button>
                       </div>
                     )}
