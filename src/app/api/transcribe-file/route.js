@@ -15,11 +15,13 @@ export async function POST(req) {
     return NextResponse.json({ error: 'ASSEMBLYAI_API_KEY not configured' }, { status: 500 });
   }
   try {
-    const formData = await req.formData();
-    const file = formData.get('audio');
-    if (!file) return NextResponse.json({ error: 'No audio file' }, { status: 400 });
-
-    const ext = (file.name || '').split('.').pop()?.toLowerCase();
+    // We take the file as a RAW binary body (not multipart/form-data) with the
+    // filename in the X-Filename header. Multipart parsing via req.formData() was
+    // failing in this Next/Turbopack setup ("Failed to parse body as FormData");
+    // reading the raw body sidesteps that whole layer and matches how we forward
+    // the bytes to AssemblyAI (octet-stream) anyway.
+    const filename = decodeURIComponent(req.headers.get('x-filename') || 'audio');
+    const ext = filename.split('.').pop()?.toLowerCase();
     if (!ALLOWED_EXT.includes(ext)) {
       return NextResponse.json(
         { error: `Unsupported file type ".${ext}". Allowed: ${ALLOWED_EXT.join(', ')}` },
@@ -27,8 +29,9 @@ export async function POST(req) {
     }
 
     // 1. Upload the audio to AssemblyAI (EU).
-    const audioBuffer = Buffer.from(await file.arrayBuffer());
-    console.log('[transcribe-file] name:', file.name, 'size:', audioBuffer.length, 'bytes');
+    const audioBuffer = Buffer.from(await req.arrayBuffer());
+    if (audioBuffer.length === 0) return NextResponse.json({ error: 'Empty file' }, { status: 400 });
+    console.log('[transcribe-file] name:', filename, 'size:', audioBuffer.length, 'bytes');
     const uploadRes = await fetch(`${AAI_BASE}/v2/upload`, {
       method: 'POST',
       headers: { authorization: API_KEY, 'content-type': 'application/octet-stream' },

@@ -686,13 +686,17 @@ function SessionsPageInner() {
     setImportProgress(0); setImportStage('uploading');
 
     try {
-      const form = new FormData();
-      form.append('audio', file);
-      // XHR (not fetch) so we can show real upload progress; the server then
-      // uploads to AssemblyAI + polls, which we surface as the "processing" stage.
+      // Send the file as a RAW binary body (not multipart/form-data) — the server
+      // reads it via req.arrayBuffer(). This avoids the flaky multipart parser
+      // ("Failed to parse body as FormData"). The filename travels in a header so
+      // the server can validate the extension. XHR (not fetch) so we can show real
+      // upload progress; the server then uploads to AssemblyAI + polls, surfaced
+      // as the "processing" stage.
       const data = await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/api/transcribe-file');
+        xhr.setRequestHeader('X-Filename', encodeURIComponent(file.name));
+        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
         xhr.upload.onprogress = ev => {
           if (ev.lengthComputable) setImportProgress(Math.round((ev.loaded / ev.total) * 100));
         };
@@ -703,7 +707,7 @@ function SessionsPageInner() {
           else reject(new Error(body.error || `HTTP ${xhr.status}`));
         };
         xhr.onerror = () => reject(new Error('Network error during upload'));
-        xhr.send(form);
+        xhr.send(file);
       });
 
       const saved = await sessionsApi.save(supabase, { transcript: data.text || '', title: null });
