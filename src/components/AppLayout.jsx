@@ -83,6 +83,13 @@ export default function AppLayout({ children }) {
               <div style={{ padding: '4px 20px 8px' }}>
                 <p style={{ fontSize: 11, color: MUTED, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</p>
               </div>
+              {/* /account exists but had no link anywhere, so changing a password
+                  or deleting an account was unreachable. */}
+              <Link href="/account"
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', paddingLeft: pathname.startsWith('/account') ? 17 : 20, textDecoration: 'none', borderLeft: `3px solid ${pathname.startsWith('/account') ? CORAL : 'transparent'}`, color: pathname.startsWith('/account') ? CORAL : TEXT, fontWeight: pathname.startsWith('/account') ? 600 : 400, fontSize: 14 }}>
+                <span style={{ fontSize: 15 }}>⚙</span>
+                Account
+              </Link>
               <button onClick={signOut}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', background: 'none', border: 'none', borderLeft: '3px solid transparent', cursor: 'pointer', color: TEXT, fontSize: 14, width: '100%' }}>
                 <span style={{ fontSize: 15 }}>↪</span>
