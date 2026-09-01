@@ -28,7 +28,7 @@ const EMOTION_CATEGORIES = {
 };
 
 function Heatmap({ logs }) {
-  const { MUTED } = useTheme();
+  const { MUTED, BORDER } = useTheme();
   const data = useMemo(() => {
     const map = {};
     for (const l of logs) {
@@ -53,7 +53,7 @@ function Heatmap({ logs }) {
   const padded = [...Array(firstDay).fill(null), ...days];
 
   function cellColor(day) {
-    if (!day || !data[day]) return '#E8F0EC';
+    if (!day || !data[day]) return BORDER; // themed: the old '#E8F0EC' vanished in dark mode
     const alpha = 0.2 + (data[day].avg / 10) * 0.8;
     return `rgba(45,106,79,${alpha})`;
   }
@@ -164,6 +164,9 @@ export default function EmotionsPage() {
   const [saving,  setSaving]  = useState(false);
   const [loading, setLoading] = useState(true);
   const [viewCat, setViewCat] = useState(null);
+  // saveLog() had no catch: on a rejected insert the modal simply stayed open
+  // with the selection intact and no explanation.
+  const [error,   setError]   = useState('');
 
   useEffect(() => {
     if (!supabase) return;
@@ -191,11 +194,14 @@ export default function EmotionsPage() {
 
   async function saveLog() {
     if (!selectedCat || selectedEmos.length === 0) return;
-    setSaving(true);
+    setSaving(true); setError('');
     try {
       const entry = await emotionsApi.save(supabase, { category: selectedCat, sub_emotions: selectedEmos, intensity });
       setLogs(l => [entry, ...l]);
       setLogging(false); setSelectedCat(null); setSelectedEmos([]); setIntensity(5);
+    } catch (err) {
+      console.error('[Emotions] save:', err?.message);
+      setError('Не удалось сохранить: ' + (err?.message || 'неизвестная ошибка'));
     } finally { setSaving(false); }
   }
 
@@ -219,7 +225,7 @@ export default function EmotionsPage() {
               <h1 style={{ fontFamily: '"Fraunces", serif', fontSize: 32, fontWeight: 300, color: TEXT, margin: '0 0 4px', lineHeight: 1.2 }}>Emotions</h1>
               <p style={{ fontSize: 15, color: MUTED, margin: 0 }}>Track and understand your emotional patterns</p>
             </div>
-            <button onClick={() => { setLogging(true); setSelectedCat(null); setSelectedEmos([]); setIntensity(5); }}
+            <button onClick={() => { setLogging(true); setSelectedCat(null); setSelectedEmos([]); setIntensity(5); setError(''); }}
               style={{ padding: '10px 24px', borderRadius: 10, border: 'none', background: A, color: '#fff', fontSize: 15, fontWeight: 500, cursor: 'pointer', flexShrink: 0 }}>
               + Log Emotion
             </button>
@@ -326,6 +332,7 @@ export default function EmotionsPage() {
               </>
             )}
 
+            {error && <p style={{ fontSize: 13, color: '#DC2626', margin: '0 0 14px', lineHeight: 1.5 }}>⚠ {error}</p>}
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setLogging(false)} style={{ flex: 1, padding: '10px', borderRadius: 10, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 15, cursor: 'pointer' }}>Cancel</button>
               <button onClick={saveLog} disabled={!selectedCat || selectedEmos.length === 0 || saving}

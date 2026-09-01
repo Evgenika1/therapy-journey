@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server';
 import { aaiFetch, uploadAudio } from '@/lib/assemblyai';
 import { MAX_UPLOAD_BYTES, fmtSize, tooLargeMessage } from '@/lib/audioUpload';
+import { formatUtterances } from '@/lib/transcriptFormat';
 
 // A 91-minute session is a ~25-minute round trip on a slow uplink: upload +
 // transcode + diarization. 300s cut that off well before it could finish.
 export const maxDuration = 3600; // 1 hour
+
+// The poll budget must be generous enough for the transcode + diarization of a
+// long session; 150 attempts (5 minutes) timed out real 90-minute recordings
+// that were still processing. Stays well inside maxDuration.
+const POLL_ATTEMPTS = 600;
+const POLL_INTERVAL_MS = 2000;
 
 // GDPR: session audio is health data, so it is processed in the EU region for
 // BOTH upload and transcript — same as /api/transcribe-file. Nothing persists an
@@ -14,31 +21,6 @@ export const maxDuration = 3600; // 1 hour
 const AAI_BASE = 'https://api.eu.assemblyai.com';
 const API_KEY = process.env.ASSEMBLYAI_API_KEY;
 const HEADERS = { authorization: API_KEY, 'content-type': 'application/json' };
-
-// Last-resort server-side filter for ASR hallucination boilerplate (subtitle
-// credits) that speech models emit on near-silent audio.
-const HALLUCINATION_PATTERNS = [
-  /редактор\s+субтитров/i,
-  /корректор\s+[А-ЯA-Z]\./i,
-  /продолжение\s+следует/i,
-  /субтитры?\s+(сделал|создавал|делал|подготовил|редактировал|правил)/i,
-  /спасибо\s+за\s+просмотр/i,
-  /подписывайтесь/i,
-  /dimatorzok/i,
-  /amara\.org/i,
-  /thanks?\s+for\s+watching/i,
-  /subtitles?\s+by/i,
-  /please\s+subscribe/i,
-];
-function stripHallucinations(text) {
-  if (!text) return '';
-  return text
-    .split(/(?<=[.!?\n])\s+/)
-    .map(s => s.trim())
-    .filter(s => s && !HALLUCINATION_PATTERNS.some(re => re.test(s)))
-    .join(' ')
-    .trim();
-}
 
 // One create-job + poll attempt against an already-uploaded audio_url. Returns a
 // tagged result so the caller can decide whether to retry (e.g. on an
@@ -64,8 +46,8 @@ async function transcribeOnce(upload_url, langConfig) {
   const { id } = await transcriptRes.json();
   console.log('[transcribe] job created, id:', id);
 
-  for (let i = 0; i < 150; i++) {
-    await new Promise(r => setTimeout(r, 2000));
+  for (let i = 0; i < POLL_ATTEMPTS; i++) {
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
     const pollRes = await aaiFetch(`${AAI_BASE}/v2/transcript/${id}`, { headers: HEADERS }, 'Опрос статуса транскрипта', 'transcribe');
     const transcript = await pollRes.json();
     console.log('[transcribe] poll', i, 'status:', transcript.status, 'text_length:', transcript.text?.length ?? 0);
@@ -135,27 +117,17 @@ export async function POST(req) {
     const transcript = result.transcript; // kind === 'completed'
 
     // Diarization: format each utterance as a "[<speaker> <m:ss>] text" block so
-    // the client can render per-utterance timestamped dialogue turns. Hallucination
-    // boilerplate is stripped PER-UTTERANCE so the block separators (\n\n) survive
-    // (stripHallucinations collapses newlines). Fall back to flat text when
-    // diarization produced no utterances (short/near-silent audio).
+    // the client can render per-utterance timestamped dialogue turns. The shared
+    // formatter strips hallucination boilerplate PER-UTTERANCE so the block
+    // separators survive, and falls back to flat text when diarization produced
+    // no utterances (short/near-silent audio).
     const utterances = transcript.utterances || [];
-    const fmtMs = ms => { const s = Math.floor((ms || 0) / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
-    let cleanText;
-    if (utterances.length > 0) {
-      cleanText = utterances
-        .map(u => {
-          const t = stripHallucinations(u.text || '');
-          return t ? `[${u.speaker} ${fmtMs(u.start)}] ${t}` : '';
-        })
-        .filter(Boolean)
-        .join('\n\n');
-    } else {
-      cleanText = stripHallucinations(transcript.text || '');
-    }
+    const cleanText = formatUtterances(utterances, transcript.text);
+    // Lengths only — the transcript itself is therapy material and must not be
+    // written to the server log.
     console.log('[transcribe] done. language:', transcript.language_code,
       'raw_len:', transcript.text?.length ?? 0, 'clean_len:', cleanText.length,
-      'utterances:', utterances.length, 'text:', cleanText.slice(0, 200));
+      'utterances:', utterances.length);
     return NextResponse.json({
       text: cleanText,
       utterances,

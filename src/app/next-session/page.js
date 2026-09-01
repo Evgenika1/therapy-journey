@@ -52,10 +52,20 @@ export default function NextSessionPage() {
   const [loading,     setLoading]     = useState(true);
   const [clearing,    setClearing]    = useState(false);
   const [sessionDate, setSessionDate] = useState('');
+  // addTopic/toggleTopic/deleteTopic had no catch — a rejected write cleared the
+  // input or moved the item as though it had been saved.
+  const [error,       setError]       = useState('');
 
   useEffect(() => {
     if (!supabase) return;
-    topicsApi.list(supabase).then(l => { setTopics(l); setLoading(false); }).catch(err => console.error('[NextSession]', err?.message));
+    topicsApi.list(supabase)
+      .then(l => { setTopics(l); setLoading(false); })
+      .catch(err => {
+        // The list previously never left its loading state on failure.
+        console.error('[NextSession] list:', err?.message);
+        setError('Не удалось загрузить темы: ' + (err?.message || 'неизвестная ошибка'));
+        setLoading(false);
+      });
     const saved = localStorage.getItem('tj_next_session_date');
     if (saved) setSessionDate(saved);
   }, [supabase]);
@@ -67,30 +77,51 @@ export default function NextSessionPage() {
 
   async function addTopic() {
     if (!newText.trim()) return;
-    setAdding(true);
+    setAdding(true); setError('');
     try {
       const topic = await topicsApi.save(supabase, newText.trim());
       setTopics(t => [...t, topic]);
       setNewText('');
+    } catch (err) {
+      // Leave the text in the input so a failed add doesn't lose it.
+      console.error('[NextSession] add:', err?.message);
+      setError('Не удалось добавить тему: ' + (err?.message || 'неизвестная ошибка'));
     } finally { setAdding(false); }
   }
 
   async function toggleTopic(id, checked) {
-    await topicsApi.update(supabase, id, { checked: !checked });
-    setTopics(t => t.map(x => x.id === id ? { ...x, checked: !checked } : x));
+    setError('');
+    try {
+      await topicsApi.update(supabase, id, { checked: !checked });
+      setTopics(t => t.map(x => x.id === id ? { ...x, checked: !checked } : x));
+    } catch (err) {
+      console.error('[NextSession] toggle:', err?.message);
+      setError('Не удалось обновить тему: ' + (err?.message || 'неизвестная ошибка'));
+    }
   }
 
   async function deleteTopic(id) {
-    await topicsApi.delete(supabase, id);
-    setTopics(t => t.filter(x => x.id !== id));
+    setError('');
+    try {
+      await topicsApi.delete(supabase, id);
+      setTopics(t => t.filter(x => x.id !== id));
+    } catch (err) {
+      console.error('[NextSession] delete:', err?.message);
+      setError('Не удалось удалить тему: ' + (err?.message || 'неизвестная ошибка'));
+    }
   }
 
   async function clearAll() {
     if (!confirm('Clear all topics?')) return;
-    setClearing(true);
+    setClearing(true); setError('');
     try {
       await Promise.all(topics.map(t => topicsApi.delete(supabase, t.id)));
       setTopics([]);
+    } catch (err) {
+      // Some deletes may have succeeded — refetch rather than guess.
+      console.error('[NextSession] clear all:', err?.message);
+      setError('Не удалось удалить все темы: ' + (err?.message || 'неизвестная ошибка'));
+      topicsApi.list(supabase).then(setTopics).catch(() => {});
     } finally { setClearing(false); }
   }
 
@@ -137,6 +168,8 @@ export default function NextSessionPage() {
               Add
             </button>
           </div>
+
+          {error && <p style={{ fontSize: 13, color: '#DC2626', margin: '0 0 16px', lineHeight: 1.5 }}>⚠ {error}</p>}
 
           {loading && <p style={{ fontSize: 15, color: MUTED }}>Loading…</p>}
 

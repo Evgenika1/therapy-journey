@@ -17,6 +17,9 @@ export default function DiaryPage() {
   const [loading, setLoading] = useState(true);
   const [editId,  setEditId]  = useState(null);
   const [editContent, setEditContent] = useState('');
+  // Saves used to fail silently (try/finally with no catch): the entry vanished
+  // from the box and never appeared in the list, with nothing said.
+  const [error,   setError]   = useState('');
 
   useEffect(() => {
     if (!supabase) return;
@@ -25,26 +28,42 @@ export default function DiaryPage() {
 
   async function save() {
     if (!content.trim()) return;
-    setSaving(true);
+    setSaving(true); setError('');
     try {
       const entry = await diaryApi.save(supabase, { content, mood });
       setEntries(e => [entry, ...e]);
       setContent(''); setMood(null);
+    } catch (err) {
+      // Keep what was typed in the box — clearing it on a failed save loses it.
+      console.error('[Diary] save:', err?.message);
+      setError('Не удалось сохранить запись: ' + (err?.message || 'неизвестная ошибка'));
     } finally { setSaving(false); }
   }
 
   async function saveEdit(id) {
+    setError('');
     try {
-      const updated = await diaryApi.update(supabase, id, { content: editContent });
+      await diaryApi.update(supabase, id, { content: editContent });
       setEntries(e => e.map(x => x.id === id ? { ...x, content: editContent } : x));
       setEditId(null);
-    } catch (err) { console.error(err?.message); }
+    } catch (err) {
+      console.error('[Diary] edit:', err?.message);
+      setError('Не удалось сохранить изменения: ' + (err?.message || 'неизвестная ошибка'));
+    }
   }
 
   async function del(id) {
     if (!confirm('Delete this entry?')) return;
-    await diaryApi.delete(supabase, id);
-    setEntries(e => e.filter(x => x.id !== id));
+    setError('');
+    try {
+      await diaryApi.delete(supabase, id);
+      setEntries(e => e.filter(x => x.id !== id));
+    } catch (err) {
+      // Previously unguarded: a failed delete threw an unhandled rejection and
+      // the entry stayed on screen with no explanation.
+      console.error('[Diary] delete:', err?.message);
+      setError('Не удалось удалить запись: ' + (err?.message || 'неизвестная ошибка'));
+    }
   }
 
   return (
@@ -69,6 +88,7 @@ export default function DiaryPage() {
             <textarea value={content} onChange={e => setContent(e.target.value)}
               placeholder="What's on your mind today?"
               style={{ width: '100%', boxSizing: 'border-box', minHeight: 120, padding: '12px 16px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 15, resize: 'vertical', outline: 'none', fontFamily: 'inherit', lineHeight: 1.7 }} />
+            {error && <p style={{ fontSize: 13, color: '#DC2626', margin: '10px 0 0', lineHeight: 1.5 }}>⚠ {error}</p>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
               <button onClick={save} disabled={!content.trim() || saving}
                 style={{ padding: '10px 28px', borderRadius: 10, border: 'none', background: content.trim() ? A : BORDER, color: '#fff', fontSize: 14, fontWeight: 500, cursor: content.trim() ? 'pointer' : 'default' }}>

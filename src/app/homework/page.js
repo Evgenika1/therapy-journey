@@ -14,6 +14,9 @@ export default function HomeworkPage() {
   const [due,     setDue]     = useState('');
   const [saving,  setSaving]  = useState(false);
   const [loading, setLoading] = useState(true);
+  // add()/toggle()/del() had no catch: a rejected save cleared the form (or
+  // flipped the checkbox) as if it had worked.
+  const [error,   setError]   = useState('');
 
   useEffect(() => {
     if (!supabase) return;
@@ -22,22 +25,39 @@ export default function HomeworkPage() {
 
   async function add() {
     if (!title.trim()) return;
-    setSaving(true);
+    setSaving(true); setError('');
     try {
       const item = await hwApi.save(supabase, { title, description: desc, due_date: due || null });
       setItems(i => [item, ...i]);
       setTitle(''); setDesc(''); setDue('');
+    } catch (err) {
+      console.error('[Homework] save:', err?.message);
+      setError('Не удалось добавить задание: ' + (err?.message || 'неизвестная ошибка'));
     } finally { setSaving(false); }
   }
 
   async function toggle(id, completed) {
-    await hwApi.update(supabase, id, { completed: !completed });
-    setItems(i => i.map(x => x.id === id ? { ...x, completed: !completed } : x));
+    setError('');
+    // Write first, then update the list — an optimistic flip that the database
+    // rejected used to leave the UI showing the wrong state until a reload.
+    try {
+      await hwApi.update(supabase, id, { completed: !completed });
+      setItems(i => i.map(x => x.id === id ? { ...x, completed: !completed } : x));
+    } catch (err) {
+      console.error('[Homework] toggle:', err?.message);
+      setError('Не удалось обновить задание: ' + (err?.message || 'неизвестная ошибка'));
+    }
   }
 
   async function del(id) {
-    await hwApi.delete(supabase, id);
-    setItems(i => i.filter(x => x.id !== id));
+    setError('');
+    try {
+      await hwApi.delete(supabase, id);
+      setItems(i => i.filter(x => x.id !== id));
+    } catch (err) {
+      console.error('[Homework] delete:', err?.message);
+      setError('Не удалось удалить задание: ' + (err?.message || 'неизвестная ошибка'));
+    }
   }
 
   const pending = items.filter(i => !i.completed);
@@ -68,6 +88,7 @@ export default function HomeworkPage() {
                 </button>
               </div>
             </div>
+            {error && <p style={{ fontSize: 13, color: '#DC2626', margin: '12px 0 0', lineHeight: 1.5 }}>⚠ {error}</p>}
           </div>
 
           {loading && <p style={{ color: MUTED }}>Loading…</p>}

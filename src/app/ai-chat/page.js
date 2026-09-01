@@ -55,7 +55,12 @@ export default function AiChatPage() {
         body: JSON.stringify({ messages: next }),
       });
       const data = await res.json();
-      const assistantMsg = { role: 'assistant', content: data.content || data.message || 'Sorry, I could not respond.' };
+      // A failed request used to be persisted as a cheerful "Sorry, I could not
+      // respond." assistant turn, so the real reason never reached the user and
+      // the placeholder was saved into the chat history for good.
+      if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+      const assistantMsg = { role: 'assistant', content: data.content || '' };
+      if (!assistantMsg.content) throw new Error('пустой ответ от модели');
       const final = [...next, assistantMsg];
       setMessages(final);
 
@@ -70,7 +75,10 @@ export default function AiChatPage() {
         setChats(c => c.map(x => x.id === activeChatId ? { ...x, messages: final, updated_at: updated.updated_at } : x));
       }
     } catch (err) {
+      // Show the failure in the thread (matching the Sessions-page chat) rather
+      // than leaving the user staring at their own unanswered message.
       console.error('[AI Chat]', err?.message);
+      setMessages([...next, { role: 'assistant', content: '⚠ ' + (err?.message || 'запрос не удался') }]);
     } finally {
       setLoading(false);
     }
@@ -78,9 +86,13 @@ export default function AiChatPage() {
 
   async function deleteChat(id, e) {
     e.stopPropagation();
-    await aiChats.delete(supabase, id);
-    setChats(c => c.filter(x => x.id !== id));
-    if (activeChatId === id) newChat();
+    try {
+      await aiChats.delete(supabase, id);
+      setChats(c => c.filter(x => x.id !== id));
+      if (activeChatId === id) newChat();
+    } catch (err) {
+      console.error('[AI Chat] delete:', err?.message);
+    }
   }
 
   return (

@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
 
@@ -17,10 +17,9 @@ const NAV = [
 ];
 
 export default function AppLayout({ children }) {
-  const { BG, SURFACE, BORDER, MUTED, isDark, toggleTheme } = useTheme();
+  const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL, isDark, toggleTheme } = useTheme();
   const { supabase, user } = useAuth();
   const pathname = usePathname();
-  const router = useRouter();
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -36,7 +35,7 @@ export default function AppLayout({ children }) {
             fontSize: 22,
             fontWeight: 700,
             letterSpacing: '-0.02em',
-            color: '#1C1C1C',
+            color: TEXT,
             fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
             display: 'flex',
             alignItems: 'center',
@@ -60,8 +59,8 @@ export default function AppLayout({ children }) {
                   padding: '9px 20px',
                   paddingLeft: active ? 17 : 20,
                   textDecoration: 'none',
-                  borderLeft: active ? '3px solid #E8785A' : '3px solid transparent',
-                  color: active ? '#E8785A' : '#1C1C1C',
+                  borderLeft: `3px solid ${active ? CORAL : 'transparent'}`,
+                  color: active ? CORAL : TEXT,
                   fontWeight: active ? 600 : 400,
                   fontSize: 14,
                   transition: 'color 0.12s',
@@ -75,7 +74,7 @@ export default function AppLayout({ children }) {
         {/* Bottom */}
         <div style={{ padding: '12px 0', borderTop: `1px solid ${BORDER}` }}>
           <button onClick={toggleTheme}
-            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', paddingLeft: 20, background: 'none', border: 'none', borderLeft: '3px solid transparent', cursor: 'pointer', color: '#1C1C1C', fontSize: 14, width: '100%' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', paddingLeft: 20, background: 'none', border: 'none', borderLeft: '3px solid transparent', cursor: 'pointer', color: TEXT, fontSize: 14, width: '100%' }}>
             <span style={{ fontSize: 15 }}>{isDark ? '☀️' : '🌙'}</span>
             {isDark ? 'Light mode' : 'Dark mode'}
           </button>
@@ -85,7 +84,7 @@ export default function AppLayout({ children }) {
                 <p style={{ fontSize: 11, color: MUTED, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</p>
               </div>
               <button onClick={signOut}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', background: 'none', border: 'none', borderLeft: '3px solid transparent', cursor: 'pointer', color: '#1C1C1C', fontSize: 14, width: '100%' }}>
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', background: 'none', border: 'none', borderLeft: '3px solid transparent', cursor: 'pointer', color: TEXT, fontSize: 14, width: '100%' }}>
                 <span style={{ fontSize: 15 }}>↪</span>
                 Sign out
               </button>

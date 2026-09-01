@@ -7,6 +7,13 @@ import { useTheme } from '@/lib/ThemeContext';
 import { sessions as sessionsApi, emotions as emotionsApi, aiChats, homework as homeworkApi } from '@/lib/api';
 import { ALLOWED_EXT, MAX_UPLOAD_BYTES, extOf, tooLargeMessage, unsupportedTypeMessage } from '@/lib/audioUpload';
 import { savePendingRecording, loadPendingRecording, clearPendingRecording } from '@/lib/recordingStore';
+import {
+  parseSpeakerTurns, stripSpeakerMarkers,
+  detectSessionLang, groupSessions,
+} from '@/lib/transcriptFormat';
+import {
+  ANALYSIS_FIELDS, LEGACY_ANALYSIS_FIELDS, analysisToText, hasValue,
+} from '@/lib/analysisFormat';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const SESSION_MOODS = [
@@ -65,18 +72,6 @@ const CHAT_COPY = {
   ru: { askSessions: 'Спросите о своих сессиях',  ask: t => `Спросите о «${t}»`, tryOne: 'Попробуйте один из этих вопросов:' },
 };
 
-// Cheap EN/RU heuristic: does recent session text skew Cyrillic or Latin?
-// Robust against the "Speaker A:" Latin prefixes in diarized transcripts —
-// a Russian session is overwhelmingly Cyrillic, so a few Latin tokens can't
-// flip it. No sessions → default to English.
-function detectSessionLang(sessions) {
-  if (!sessions?.length) return 'en';
-  const sample = sessions.slice(0, 10).map(s => s.transcript || s.title || '').join(' ');
-  const cyr = (sample.match(/[а-яё]/gi) || []).length;
-  const lat = (sample.match(/[a-z]/gi) || []).length;
-  return cyr > lat ? 'ru' : 'en';
-}
-
 // Silence detection. Whole-file mean RMS is the WRONG statistic — long therapy
 // pauses dilute it below any threshold, so real speech reads as silent. Instead
 // we look at the loudest ~1s window: if any second reaches speech-level energy,
@@ -86,30 +81,6 @@ function detectSessionLang(sessions) {
 // costs one API round-trip that returns empty.
 const SPEECH_WINDOW_RMS  = 0.02;  // loudest ~1s window must reach this to be "speech"
 const SILENCE_PEAK_FLOOR = 0.05;  // ...and no sample exceeds this → truly silent
-
-// Known ASR hallucination artifacts (subtitle-credit boilerplate) that speech
-// models emit on silence — last-resort filter for anything that slips through.
-const HALLUCINATION_PATTERNS = [
-  /редактор\s+субтитров/i,
-  /корректор\s+[А-ЯA-Z]\./i,
-  /продолжение\s+следует/i,
-  /субтитры?\s+(сделал|создавал|делал|подготовил|редактировал|правил)/i,
-  /спасибо\s+за\s+просмотр/i,
-  /подписывайтесь/i,
-  /dimatorzok/i,
-  /amara\.org/i,
-  /thanks?\s+for\s+watching/i,
-  /subtitles?\s+by/i,
-  /please\s+subscribe/i,
-];
-function stripHallucinations(text) {
-  if (!text) return '';
-  const kept = text
-    .split(/(?<=[.!?\n])\s+/)
-    .map(s => s.trim())
-    .filter(s => s && !HALLUCINATION_PATTERNS.some(re => re.test(s)));
-  return kept.join(' ').trim();
-}
 
 function getSupportedMimeType() {
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
@@ -122,46 +93,6 @@ function getSupportedMimeType() {
 // makes the same session ~21 MB. This is the single biggest reason long
 // recordings failed to upload.
 const SPEECH_BITS_PER_SECOND = 32000;
-
-// Parse a diarized transcript into per-utterance turns. Each block is either the
-// new "[A 0:15] text" format (speaker + m:ss start time) or the older
-// "Speaker A: text" format (no timestamp). Returns:
-//   • null                → not diarized (plain transcript) — render raw text
-//   • { turns, roleMap, multiSpeaker } → one turn per utterance, each with
-//                           { speaker, time|null, text }
-// Role labels use a heuristic: in therapy the client usually speaks more, so the
-// speaker with the most total text becomes "Client" and the rest "Therapist".
-function parseSpeakerTurns(text) {
-  if (!text) return null;
-  const turns = [];
-  for (const block of text.split('\n\n')) {
-    let m = block.match(/^\[([A-Z0-9]+)\s+(\d{1,2}:\d{2})\]\s*([\s\S]*)$/); // new: [A 0:15] text
-    if (m) { turns.push({ speaker: m[1], time: m[2], text: m[3].trim() }); continue; }
-    m = block.match(/^Speaker ([A-Z0-9]+):\s*([\s\S]*)$/);                  // old sessions (no time)
-    if (m) { turns.push({ speaker: m[1], time: null, text: m[2].trim() }); continue; }
-    return null; // not diarized — bail to plain rendering
-  }
-  if (turns.length === 0) return null;
-  const totals = {};
-  for (const t of turns) totals[t.speaker] = (totals[t.speaker] || 0) + t.text.length;
-  const speakers = Object.keys(totals);
-  const client = speakers.reduce((a, b) => (totals[a] >= totals[b] ? a : b));
-  const roleMap = {};
-  for (const s of speakers) roleMap[s] = s === client ? 'Client' : 'Therapist';
-  return { turns, roleMap, multiSpeaker: speakers.length >= 2 };
-}
-
-// Strip only the [0:15] timestamp from each "[A 0:15] text" block, keeping the
-// speaker tag ("Speaker A: text") so the AI models still know who said what —
-// important for therapy analysis — without the timestamp clutter. Old
-// "Speaker A: text" blocks already lack a timestamp and pass through unchanged.
-function stripSpeakerMarkers(text) {
-  if (!text) return '';
-  return text
-    .split('\n\n')
-    .map(b => b.replace(/^\[([A-Z0-9]+)\s+\d{1,2}:\d{2}\]\s*/, 'Speaker $1: '))
-    .join('\n\n');
-}
 
 // Lightweight VU-meter shown during recording. Passive AnalyserNode tap on the
 // MediaRecorder stream — source.connect(analyser) only, NEVER connected to
@@ -249,19 +180,6 @@ function AudioLevelMeter({ stream, source, paused, A, MUTED, TEXT }) {
   );
 }
 
-function groupSessions(list) {
-  const today = new Date(); today.setHours(0,0,0,0);
-  const weekAgo = new Date(today); weekAgo.setDate(today.getDate() - 7);
-  const g = { TODAY: [], THIS_WEEK: [], EARLIER: [] };
-  for (const s of list) {
-    const d = new Date(s.created_at); d.setHours(0,0,0,0);
-    if (d.getTime() === today.getTime()) g.TODAY.push(s);
-    else if (d >= weekAgo) g.THIS_WEEK.push(s);
-    else g.EARLIER.push(s);
-  }
-  return g;
-}
-
 function parseAI(raw) {
   if (!raw) return null;
   if (typeof raw === 'object') return raw;
@@ -303,6 +221,7 @@ function SessionsPageInner() {
   const [seconds,            setSeconds]            = useState(0);
   const [transcript,         setTranscript]         = useState('');
   const [recNotes,           setRecNotes]           = useState('');
+  const [recTitle,           setRecTitle]           = useState(''); // name typed on the Dashboard
   const [saving,             setSaving]             = useState(false);
   const [saved,              setSaved]              = useState(false);
   const [showPreMood,        setShowPreMood]        = useState(false);
@@ -373,7 +292,10 @@ function SessionsPageInner() {
     if (searchParams.get('record') === 'true') {
       recordParamHandled.current = true;
       const preMoodParam = searchParams.get('preMood');
-      openRecordModal(preMoodParam !== null ? Number(preMoodParam) : undefined);
+      openRecordModal(
+        preMoodParam !== null ? Number(preMoodParam) : undefined,
+        searchParams.get('name') || '',
+      );
       router.replace('/sessions');
     }
   }, [searchParams]);
@@ -429,12 +351,13 @@ function SessionsPageInner() {
     } catch { /* ignore — dropdown just stays empty */ }
   }
 
-  function openRecordModal(preMoodIntensity) {
+  function openRecordModal(preMoodIntensity, title = '') {
     setShowModal(true);
     setShowImport(false); setShowZoom(false);
     setSpeechError('');
     setTranscript('');
     setRecNotes('');
+    setRecTitle(title);
     chunksRef.current = [];
     refreshMicDevices();
     // preMoodIntensity is set when navigating here from the Dashboard, which
@@ -454,7 +377,7 @@ function SessionsPageInner() {
     if (isCapturing) stopRecording();
     clearInterval(timerRef.current);
     setShowModal(false); setIsCapturing(false); setIsPaused(false); setIsTranscribing(false); setIsReview(false);
-    setSeconds(0); setTranscript(''); setRecNotes(''); setSaved(false);
+    setSeconds(0); setTranscript(''); setRecNotes(''); setRecTitle(''); setSaved(false);
     setShowPreMood(false); setPreRecordMoodIdx(null);
     setPostRecordMoodIdx(null); setPostMoodSaved(false);
     setSpeechError(''); setSaveError('');
@@ -896,7 +819,11 @@ function SessionsPageInner() {
     try {
       console.log('[Sessions] saving, transcript length:', transcript?.length);
       const result = await sessionsApi.save(supabase, {
-        title:    recNotes.slice(0, 60) || null, // untitled → derive from created_at at display (sessionTitle)
+        // The Dashboard's session-name field used to be discarded entirely — it
+        // was never passed through to this page. Fall back to the old
+        // notes-derived title, then to null (sessionTitle derives one from
+        // created_at at display time).
+        title:    recTitle.trim() || recNotes.slice(0, 60) || null,
         transcript, notes: recNotes, duration: seconds,
         mood_before: preRecordMoodIdx  !== null ? SESSION_MOODS[preRecordMoodIdx].intensity  : null,
         mood_after:  postRecordMoodIdx !== null ? SESSION_MOODS[postRecordMoodIdx].intensity : null,
@@ -932,12 +859,18 @@ function SessionsPageInner() {
       setSelectedSession(withAI);
       setSessions(list => list.map(s => s.id === selectedSession.id ? { ...s, ai_analysis: JSON.stringify(data.analysis) } : s));
 
-      if (data.analysis?.action) {
+      // The first action item becomes a homework task. This read `analysis.action`
+      // — a field the model has never been asked to return — so the hook was
+      // dead: analysing a session silently created no homework at all.
+      const firstAction = [data.analysis?.action_items, data.analysis?.action]
+        .flat()
+        .find(a => typeof a === 'string' && a.trim());
+      if (firstAction) {
         try {
           const existing = await homeworkApi.forSession(supabase, selectedSession.id);
           if (!existing) {
             await homeworkApi.save(supabase, {
-              title:       data.analysis.action.slice(0, 120),
+              title:       firstAction.trim().slice(0, 120),
               description: `Auto-created from AI analysis of "${selectedSession.title || 'this session'}".`,
               session_id:  selectedSession.id,
               due_date:    null,
@@ -1051,9 +984,10 @@ function SessionsPageInner() {
   function copySummary() {
     if (!selectedSession) return;
     const ai = parseAI(selectedSession.ai_analysis);
-    const text = ai
-      ? [ai.overview, ai.key_theme, ai.breakthrough, ai.action].filter(Boolean).join('\n\n')
-      : selectedSession.transcript || '';
+    // Was `[ai.overview, ai.key_theme, ai.breakthrough, ai.action].join()`: the
+    // first is an array (so it copied as a comma run) and the last two are
+    // fields the current analysis does not have, so they were always dropped.
+    const text = (ai && analysisToText(ai)) || selectedSession.transcript || '';
     navigator.clipboard.writeText(text).catch(() => {});
   }
 
@@ -1548,22 +1482,7 @@ function SessionsPageInner() {
                       )}
                     </div>
                   );
-                  const SECTIONS = [
-                    { key: 'topics_covered',              label: 'TOPICS COVERED',      color: '#0EA5E9' },
-                    { key: 'overview',                    label: 'OVERVIEW',            color: '#3B82F6' },
-                    { key: 'key_theme',                   label: 'KEY THEME',           color: '#8B5CF6' },
-                    { key: 'breakthroughs',               label: 'BREAKTHROUGHS',       color: '#10B981' },
-                    { key: 'emotions_identified',         label: 'EMOTIONS IDENTIFIED', color: '#EC4899' },
-                    { key: 'action_items',                label: 'ACTION ITEMS',        color: '#F59E0B' },
-                    { key: 'patterns_triggers',           label: 'PATTERNS / TRIGGERS', color: '#EF4444' },
-                    { key: 'continuity_notes',            label: 'CONTINUITY NOTES',    color: '#14B8A6' },
-                    { key: 'for_next_session',            label: 'FOR NEXT SESSION',    color: '#6366F1' },
-                    { key: 'emotional_intensity_markers', label: 'EMOTIONAL INTENSITY', color: '#DC2626' },
-                    // legacy keys from analyses generated before the 10-section rewrite
-                    { key: 'breakthrough',                label: 'BREAKTHROUGH',        color: '#10B981' },
-                    { key: 'action',                      label: 'ACTION',              color: '#F59E0B' },
-                  ];
-                  const hasVal = v => Array.isArray(v) ? v.length > 0 : (v != null && String(v).trim() !== '');
+                  const SECTIONS = [...ANALYSIS_FIELDS, ...LEGACY_ANALYSIS_FIELDS];
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
@@ -1573,7 +1492,7 @@ function SessionsPageInner() {
                           {analysing ? '⏳ Re-analysing…' : '↻ Re-analyze'}
                         </button>
                       </div>
-                      {SECTIONS.filter(({ key }) => hasVal(ai[key])).map(({ key, label, color }) => (
+                      {SECTIONS.filter(({ key }) => hasValue(ai[key])).map(({ key, label, color }) => (
                         <div key={key} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${color}`, borderRadius: 12, padding: '16px 18px' }}>
                           <p style={{ fontSize: 10, fontWeight: 700, color, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{label}</p>
                           {Array.isArray(ai[key])

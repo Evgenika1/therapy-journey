@@ -23,6 +23,9 @@ export default function JournalsPage() {
   const [loading,     setLoading]     = useState(true);
   const [newLabel,    setNewLabel]    = useState('');
   const [addingType,  setAddingType]  = useState(false);
+  // save()/del()/addType() had no catch — a rejected write cleared the editor
+  // and left the user believing the entry was stored.
+  const [error,       setError]       = useState('');
 
   useEffect(() => {
     if (!supabase) return;
@@ -38,25 +41,41 @@ export default function JournalsPage() {
 
   async function save() {
     if (!content.trim()) return;
-    setSaving(true);
+    setSaving(true); setError('');
     try {
       const entry = await journalsApi.save(supabase, { type: activeType, content });
       setEntries(e => [entry, ...e]);
       setContent('');
+    } catch (err) {
+      // Leave the text in the editor so a failed save doesn't lose it.
+      console.error('[Journals] save:', err?.message);
+      setError('Не удалось сохранить запись: ' + (err?.message || 'неизвестная ошибка'));
     } finally { setSaving(false); }
   }
 
   async function del(id) {
     if (!confirm('Delete this entry?')) return;
-    await journalsApi.delete(supabase, id);
-    setEntries(e => e.filter(x => x.id !== id));
+    setError('');
+    try {
+      await journalsApi.delete(supabase, id);
+      setEntries(e => e.filter(x => x.id !== id));
+    } catch (err) {
+      console.error('[Journals] delete:', err?.message);
+      setError('Не удалось удалить запись: ' + (err?.message || 'неизвестная ошибка'));
+    }
   }
 
   async function addType() {
     if (!newLabel.trim()) return;
-    const t = await customJournals.save(supabase, { label: newLabel.trim() });
-    setTypes(ts => [...ts, t]);
-    setNewLabel(''); setAddingType(false);
+    setError('');
+    try {
+      const t = await customJournals.save(supabase, { label: newLabel.trim() });
+      setTypes(ts => [...ts, t]);
+      setNewLabel(''); setAddingType(false);
+    } catch (err) {
+      console.error('[Journals] add type:', err?.message);
+      setError('Не удалось создать тип: ' + (err?.message || 'неизвестная ошибка'));
+    }
   }
 
   const allTypes = [
@@ -104,6 +123,7 @@ export default function JournalsPage() {
             <textarea value={content} onChange={e => setContent(e.target.value)}
               placeholder={`Write your ${currentType?.label?.toLowerCase() || 'journal'} entry…`}
               style={{ width: '100%', boxSizing: 'border-box', minHeight: 120, padding: '12px 16px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: BODY, fontSize: 15, resize: 'vertical', outline: 'none', fontFamily: 'inherit', lineHeight: 1.7 }} />
+            {error && <p style={{ fontSize: 13, color: '#DC2626', margin: '10px 0 0', lineHeight: 1.5 }}>⚠ {error}</p>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
               <button onClick={save} disabled={!content.trim() || saving}
                 style={{ padding: '10px 28px', borderRadius: 10, border: 'none', background: content.trim() ? A : BORDER, color: '#fff', fontSize: 14, fontWeight: 500, cursor: content.trim() ? 'pointer' : 'default' }}>

@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
+import { parseAnalysis } from '@/lib/analysisParse';
+import { ANALYSIS_SCHEMA } from '@/lib/analysisFormat';
 
-export const maxDuration = 60;
+// A 10-section analysis of a 90-minute session can run well past a minute now
+// that max_tokens gives it room to finish instead of being cut off.
+export const maxDuration = 300;
 
 // Detect the transcript's dominant script and return an explicit, forceful
 // language directive. Haiku inconsistently honours the "respond in the same
@@ -15,6 +19,12 @@ function languageDirective(text) {
   }
   return 'CRITICAL: Write the ENTIRE JSON — every field value and every array item — in the SAME language as the transcript above. Do NOT translate it into English.';
 }
+
+// The analysis shape is enforced server-side by the API rather than merely
+// asked for in the prompt: with output_config.format the model cannot emit
+// prose, a markdown fence, or a truncated object. The schema lives in
+// @/lib/analysisFormat alongside the field list the UI renders, so the two can
+// no longer drift apart.
 
 export async function POST(req) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -65,10 +75,13 @@ ${languageDirective(transcript)}`;
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        // 10-section analysis over a full-length transcript needs real output
-        // headroom; 512 truncated multi-topic summaries mid-JSON.
-        max_tokens: 4096,
+        // A 10-section analysis of a 90-minute session is genuinely long. At 4096
+        // a dense transcript could be cut off mid-object, and a truncated object
+        // has no closing brace — which is exactly how this surfaced as an
+        // unhelpful "Could not parse Claude response".
+        max_tokens: 16000,
         messages: [{ role: 'user', content: prompt }],
+        output_config: { format: { type: 'json_schema', schema: ANALYSIS_SCHEMA } },
       }),
     });
 
@@ -80,15 +93,26 @@ ${languageDirective(transcript)}`;
 
     const data = await res.json();
     const raw = data.content?.[0]?.text || '';
+    // Log the shape, not the content: this is therapy material, and the whole
+    // analysis was previously written to the server log on every success.
+    console.log('[analyze] stop_reason:', data.stop_reason,
+      '| output_tokens:', data.usage?.output_tokens, '| chars:', raw.length);
 
-    let analysis;
-    try {
-      analysis = JSON.parse(raw);
-    } catch {
-      // Try to extract JSON from the response if wrapped in text
-      const match = raw.match(/\{[\s\S]*\}/);
-      if (match) analysis = JSON.parse(match[0]);
-      else return NextResponse.json({ error: 'Could not parse Claude response', raw }, { status: 500 });
+    const analysis = parseAnalysis(raw);
+    if (!analysis) {
+      // Say WHICH way it went wrong — "could not parse" alone told the user
+      // nothing they could act on.
+      const reason = data.stop_reason === 'max_tokens'
+        ? 'ответ модели не поместился в лимит и оборвался на середине. Попробуйте разбить транскрипт на части.'
+        : data.stop_reason === 'refusal'
+          ? 'модель отказалась анализировать этот текст.'
+          : !raw.trim()
+            ? 'модель вернула пустой ответ.'
+            : `модель вернула не-JSON. Начало ответа: ${raw.trim().slice(0, 200)}`;
+      console.error('[Analyze] unparseable. stop_reason:', data.stop_reason, '| raw:', raw.slice(0, 500));
+      return NextResponse.json(
+        { error: `Не удалось разобрать анализ — ${reason}`, stop_reason: data.stop_reason ?? null },
+        { status: 502 });
     }
 
     return NextResponse.json({ analysis });

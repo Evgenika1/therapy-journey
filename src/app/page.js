@@ -5,6 +5,7 @@ import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
 import { sessions as sessionsApi, emotions as emotionsApi } from '@/lib/api';
+import { analysisHeadline } from '@/lib/analysisFormat';
 
 const MOOD_EMOJIS     = ['😞', '😟', '😐', '🙂', '😊'];
 const MOOD_INTENSITIES = [2,    4,    6,    8,    10];
@@ -48,15 +49,19 @@ export default function HomePage() {
       sessionsApi.list(supabase),
     ]).then(([s, list]) => {
       setStats(s);
+      // This used to read `parsed.summary` — a field the analysis has never
+      // contained — and fall through to the raw string, so the insight card
+      // rendered the entire serialized JSON blob in quotes. analysisHeadline
+      // picks a real field and returns null when there is nothing to show.
       const withAI = list.find(x => x.ai_analysis);
       if (withAI) {
         try {
           const parsed = typeof withAI.ai_analysis === 'string'
             ? JSON.parse(withAI.ai_analysis)
             : withAI.ai_analysis;
-          setLatestInsight(parsed?.summary || (typeof withAI.ai_analysis === 'string' ? withAI.ai_analysis : null));
+          setLatestInsight(analysisHeadline(parsed));
         } catch {
-          setLatestInsight(typeof withAI.ai_analysis === 'string' ? withAI.ai_analysis : null);
+          setLatestInsight(null);
         }
       }
       setLoading(false);
@@ -74,7 +79,9 @@ export default function HomePage() {
         preMoodQuery = `&preMood=${MOOD_INTENSITIES[moodBefore]}`;
       } catch (e) { console.error('[Dashboard] mood save:', e?.message); }
     }
-    router.push(`/sessions?record=true${preMoodQuery}`);
+    const name = sessionName.trim();
+    const nameQuery = name ? `&name=${encodeURIComponent(name)}` : '';
+    router.push(`/sessions?record=true${preMoodQuery}${nameQuery}`);
   }
 
   const STAT_CARDS = [
