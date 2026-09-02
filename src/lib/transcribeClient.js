@@ -105,3 +105,48 @@ export function uploadForTranscription(url, body, { filename, contentType, onPro
     xhr.send(body);
   });
 }
+
+// ── resuming across a reload ──────────────────────────────────────────────────
+//
+// The upload is the expensive half — minutes for a long session. Once the job
+// exists it runs on AssemblyAI whether or not this tab is alive, so remembering
+// the id lets a reload rejoin the same job instead of re-uploading. The audio
+// stays in IndexedDB either way, so a dead job still falls back to the recovery
+// banner rather than losing the recording.
+
+export const PENDING_JOB_KEY = 'miru_pending_transcribe_job';
+
+// Nothing outlives the polling window: an id older than this belongs to a job
+// that finished or expired long ago, and resuming it would spin for the full
+// timeout for nothing.
+export const PENDING_JOB_TTL_MS = POLL_TIMEOUT_MS;
+
+export function rememberPendingJob(jobId, { storage = safeStorage(), now = Date.now } = {}) {
+  if (!jobId || !storage) return;
+  try { storage.setItem(PENDING_JOB_KEY, JSON.stringify({ jobId, startedAt: now() })); } catch {}
+}
+
+export function forgetPendingJob({ storage = safeStorage() } = {}) {
+  if (!storage) return;
+  try { storage.removeItem(PENDING_JOB_KEY); } catch {}
+}
+
+// Returns the job id to resume, or null. A malformed or stale entry is cleared
+// rather than left to be retried on every future load.
+export function loadPendingJob({ storage = safeStorage(), now = Date.now, ttlMs = PENDING_JOB_TTL_MS } = {}) {
+  if (!storage) return null;
+  let raw;
+  try { raw = storage.getItem(PENDING_JOB_KEY); } catch { return null; }
+  if (!raw) return null;
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch { forgetPendingJob({ storage }); return null; }
+  if (!parsed?.jobId || typeof parsed.startedAt !== 'number') { forgetPendingJob({ storage }); return null; }
+  if (now() - parsed.startedAt > ttlMs) { forgetPendingJob({ storage }); return null; }
+  return parsed.jobId;
+}
+
+// localStorage throws outright in some privacy modes — never take down the
+// recording flow over a cache convenience.
+function safeStorage() {
+  try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
+}

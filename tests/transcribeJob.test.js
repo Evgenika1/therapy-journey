@@ -223,3 +223,71 @@ test('an HTTP failure from the status route stops the loop instead of polling fo
     return true;
   });
 });
+
+// ── resuming a job across a reload ───────────────────────────────────────────
+
+function fakeStorage(initial = {}) {
+  const map = new Map(Object.entries(initial));
+  return {
+    getItem: k => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => map.set(k, String(v)),
+    removeItem: k => map.delete(k),
+    _size: () => map.size,
+  };
+}
+
+test('a job id survives a reload so the upload is not repeated', async () => {
+  const { rememberPendingJob, loadPendingJob } =
+    await import('../src/lib/transcribeClient.js');
+  const storage = fakeStorage();
+  rememberPendingJob('job-1', { storage, now: () => 1000 });
+  assert.equal(loadPendingJob({ storage, now: () => 5000 }), 'job-1');
+});
+
+test('a settled job is forgotten', async () => {
+  const { rememberPendingJob, forgetPendingJob, loadPendingJob } =
+    await import('../src/lib/transcribeClient.js');
+  const storage = fakeStorage();
+  rememberPendingJob('job-1', { storage, now: () => 1000 });
+  forgetPendingJob({ storage });
+  assert.equal(loadPendingJob({ storage, now: () => 2000 }), null);
+  assert.equal(storage._size(), 0);
+});
+
+test('a stale job id is dropped instead of polled for the full timeout', async () => {
+  const { rememberPendingJob, loadPendingJob, PENDING_JOB_TTL_MS } =
+    await import('../src/lib/transcribeClient.js');
+  const storage = fakeStorage();
+  rememberPendingJob('old-job', { storage, now: () => 0 });
+  assert.equal(loadPendingJob({ storage, now: () => PENDING_JOB_TTL_MS + 1 }), null);
+  assert.equal(storage._size(), 0, 'the stale entry must be cleared, not left to retry every load');
+});
+
+test('a corrupted entry is cleared rather than resumed', async () => {
+  const { loadPendingJob, PENDING_JOB_KEY } = await import('../src/lib/transcribeClient.js');
+  for (const bad of ['not json', '{}', '{"jobId":"x"}', '{"startedAt":1}', 'null']) {
+    const storage = fakeStorage({ [PENDING_JOB_KEY]: bad });
+    assert.equal(loadPendingJob({ storage, now: () => 1 }), null, `should reject: ${bad}`);
+    assert.equal(storage._size(), 0, `should clear: ${bad}`);
+  }
+});
+
+test('no stored job means nothing to resume', async () => {
+  const { loadPendingJob } = await import('../src/lib/transcribeClient.js');
+  assert.equal(loadPendingJob({ storage: fakeStorage(), now: () => 1 }), null);
+});
+
+test('storage being unavailable never breaks the flow', async () => {
+  const { rememberPendingJob, forgetPendingJob, loadPendingJob } =
+    await import('../src/lib/transcribeClient.js');
+  // Private windows throw on access rather than returning null.
+  const hostile = {
+    getItem() { throw new Error('denied'); },
+    setItem() { throw new Error('denied'); },
+    removeItem() { throw new Error('denied'); },
+  };
+  assert.doesNotThrow(() => rememberPendingJob('job-1', { storage: hostile }));
+  assert.doesNotThrow(() => forgetPendingJob({ storage: hostile }));
+  assert.equal(loadPendingJob({ storage: hostile }), null);
+  assert.equal(loadPendingJob({ storage: null }), null);
+});

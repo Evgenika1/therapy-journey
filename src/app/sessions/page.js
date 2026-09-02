@@ -7,7 +7,10 @@ import { useTheme } from '@/lib/ThemeContext';
 import { sessions as sessionsApi, emotions as emotionsApi, aiChats, homework as homeworkApi } from '@/lib/api';
 import { ALLOWED_EXT, MAX_UPLOAD_BYTES, extOf, tooLargeMessage, unsupportedTypeMessage } from '@/lib/audioUpload';
 import { savePendingRecording, loadPendingRecording, clearPendingRecording } from '@/lib/recordingStore';
-import { uploadForTranscription, pollTranscript } from '@/lib/transcribeClient';
+import {
+  uploadForTranscription, pollTranscript,
+  rememberPendingJob, forgetPendingJob, loadPendingJob,
+} from '@/lib/transcribeClient';
 import {
   parseSpeakerTurns, stripSpeakerMarkers,
   detectSessionLang, groupSessions,
@@ -389,6 +392,7 @@ function SessionsPageInner() {
     // (saved, or transcribed fine) has served its purpose and can go.
     if (!(transcribeFailed && !saved)) {
       pendingAudioRef.current = null;
+      forgetPendingJob();
       clearPendingRecording();
     }
   }
@@ -559,15 +563,22 @@ function SessionsPageInner() {
         onProgress: setUploadProgress,
       });
       setUploadProgress(100); // upload done — the wait is now server-side
+      // The upload is the expensive half. Remember the job so a reload rejoins
+      // this same transcription instead of re-uploading the recording.
+      rememberPendingJob(job_id);
       const data = await pollTranscript(job_id);
       // The server already strips hallucination boilerplate (per-utterance when
       // the audio is diarized), so use its text verbatim — re-stripping here
       // would collapse the "Speaker A:" block separators into one paragraph.
       const finalText = data.text || '';
+      forgetPendingJob(); // settled — nothing left to rejoin
       setTranscript(finalText);
       if (!finalText) setSpeechError('No speech detected in the recording.');
     } catch (err) {
       console.error('[transcribe]', err);
+      // The job is done for either way; the audio stays in IndexedDB so the
+      // recovery banner can still offer a fresh attempt.
+      forgetPendingJob();
       setTranscribeFailed(true);
       setSpeechError('Не удалось расшифровать: ' + err.message);
       setTranscript('');
@@ -776,9 +787,50 @@ function SessionsPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A recording left behind by a failed transcription — or by a reload/crash mid
-  // flow — is offered back instead of silently rotting in IndexedDB.
+  // A transcription that was still running when the page was reloaded: the job
+  // lives on AssemblyAI regardless of this tab, so rejoin it rather than making
+  // the user upload a 90-minute recording a second time. On failure we fall
+  // through to the recovery banner below — the audio is still in IndexedDB.
   useEffect(() => {
+    const jobId = loadPendingJob();
+    if (!jobId) return;
+    let cancelled = false;
+    (async () => {
+      setShowImport(false); setShowZoom(false); setSelectedSession(null);
+      setShowModal(true); setIsTranscribing(true); setIsReview(false);
+      setSaved(false); setSpeechError(''); setTranscript('');
+      try {
+        const data = await pollTranscript(jobId, { isCancelled: () => cancelled });
+        if (cancelled) return;
+        forgetPendingJob();
+        const finalText = data.text || '';
+        setTranscript(finalText);
+        if (!finalText) setSpeechError('No speech detected in the recording.');
+        // Re-adopt the held audio so Retry and Save behave as if we never left.
+        const rec = await loadPendingRecording();
+        if (rec && !cancelled) {
+          pendingAudioRef.current = { blob: rec.blob, mimeType: rec.mimeType || 'audio/webm' };
+          setSeconds(rec.seconds || 0);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.error('[transcribe] resume:', err?.message);
+        forgetPendingJob();
+        setTranscribeFailed(true);
+        setSpeechError('Не удалось возобновить расшифровку: ' + err.message);
+      } finally {
+        if (!cancelled) { setIsTranscribing(false); setIsReview(true); }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // A recording left behind by a failed transcription — or by a reload/crash mid
+  // flow — is offered back instead of silently rotting in IndexedDB. Skipped
+  // while a resumed job is still being polled, so the two can't both claim it.
+  useEffect(() => {
+    if (loadPendingJob()) return;
     loadPendingRecording().then(rec => { if (rec) setRecovered(rec); });
   }, []);
 
@@ -794,6 +846,7 @@ function SessionsPageInner() {
   async function discardRecovered() {
     setRecovered(null);
     pendingAudioRef.current = null;
+    forgetPendingJob();
     await clearPendingRecording();
   }
 
@@ -817,6 +870,7 @@ function SessionsPageInner() {
       // The transcript is safely in the database — the audio copy can go now.
       pendingAudioRef.current = null;
       setRecovered(null);
+      forgetPendingJob();
       clearPendingRecording();
       setTimeout(() => { closeModal(); setSelectedSession(result); }, 1500);
     } catch (err) {
