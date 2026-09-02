@@ -3,26 +3,16 @@ import {
   ALLOWED_EXT, MAX_UPLOAD_BYTES, fmtSize, extOf, tooLargeMessage, unsupportedTypeMessage,
 } from '@/lib/audioUpload';
 import { aaiFetch, uploadAudio } from '@/lib/assemblyai';
-import { formatUtterances } from '@/lib/transcriptFormat';
+import { AAI_BASE, AAI_HEADERS, TRANSCRIBE_CONFIG } from '@/lib/transcribeJob';
 
-// Must exceed the upload time PLUS the poll budget below (POLL_ATTEMPTS *
-// POLL_INTERVAL_MS). At 300s this was exactly equal to the poll budget alone, so
-// the platform killed the request before the loop could ever complete and every
-// import of a long recording failed. Matches /api/transcribe.
-export const maxDuration = 3600; // 1 hour
-
-// ~20 minutes of polling — an hour-long recording takes several minutes to
-// transcode and diarize, and the request is dead the moment this runs out.
-const POLL_ATTEMPTS = 600;
-const POLL_INTERVAL_MS = 2000;
-
-// GDPR: use the AssemblyAI EU region for BOTH upload and transcript so audio and
-// text stay in the EU. The API key is the same one used elsewhere in the app.
-const AAI_BASE = 'https://api.eu.assemblyai.com';
-const API_KEY = process.env.ASSEMBLYAI_API_KEY;
+// Upload + create job only; the client then polls /api/transcribe/status, the
+// same route the live recording flow uses. This used to poll to completion with
+// `maxDuration = 3600` — above the ceiling of every Vercel plan, and previously
+// equal to its own poll budget, so importing a long recording could not finish.
+export const maxDuration = 300;
 
 export async function POST(req) {
-  if (!API_KEY) {
+  if (!process.env.ASSEMBLYAI_API_KEY) {
     return NextResponse.json({ error: 'ASSEMBLYAI_API_KEY not configured' }, { status: 500 });
   }
   try {
@@ -55,17 +45,13 @@ export async function POST(req) {
       return NextResponse.json({ error: tooLargeMessage(audioBuffer.length, ext) }, { status: 413 });
     }
     console.log('[transcribe-file] received:', audioBuffer.length, 'bytes');
-    const upload_url = await uploadAudio(AAI_BASE, API_KEY, audioBuffer, { tag: 'transcribe-file' });
+    const upload_url = await uploadAudio(AAI_BASE, process.env.ASSEMBLYAI_API_KEY, audioBuffer, { tag: 'transcribe-file' });
 
-    // 2. Create the transcription job (auto language detection + speaker labels).
+    // 2. Create the job and return its id — the client polls from here on.
     const createRes = await aaiFetch(`${AAI_BASE}/v2/transcript`, {
       method: 'POST',
-      headers: { authorization: API_KEY, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        audio_url: upload_url,
-        language_detection: true,
-        speaker_labels: true,
-      }),
+      headers: AAI_HEADERS(),
+      body: JSON.stringify({ audio_url: upload_url, ...TRANSCRIBE_CONFIG }),
     }, 'Создание транскрипта', 'transcribe-file');
     console.log('[transcribe-file] AAI transcript create response:', createRes.status);
     if (!createRes.ok) {
@@ -74,28 +60,7 @@ export async function POST(req) {
     }
     const { id } = await createRes.json();
     console.log('[transcribe-file] job created, id:', id);
-
-    // 3. Poll until completed / error.
-    let transcript = null;
-    for (let i = 0; i < POLL_ATTEMPTS; i++) {
-      await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
-      const pollRes = await aaiFetch(`${AAI_BASE}/v2/transcript/${id}`, { headers: { authorization: API_KEY } }, 'Опрос статуса транскрипта', 'transcribe-file');
-      transcript = await pollRes.json();
-      console.log('[transcribe-file] poll', i, 'status:', transcript.status, 'len:', transcript.text?.length ?? 0);
-      if (transcript.status === 'completed') break;
-      if (transcript.status === 'error') {
-        return NextResponse.json({ error: transcript.error || 'Transcription failed' }, { status: 500 });
-      }
-      transcript = null;
-    }
-    if (!transcript) return NextResponse.json({ error: 'Transcription timed out' }, { status: 500 });
-
-    // Format diarized utterances as "[<speaker> <m:ss>] text" blocks, matching how
-    // recorded sessions are stored, so the UI renders them identically.
-    const utterances = transcript.utterances || [];
-    const text = formatUtterances(utterances, transcript.text);
-    console.log('[transcribe-file] done. language:', transcript.language_code, 'clean_len:', text.length, 'utterances:', utterances.length);
-    return NextResponse.json({ text, utterances, language_code: transcript.language_code || null });
+    return NextResponse.json({ job_id: id });
   } catch (err) {
     console.error('[transcribe-file]', err);
     return NextResponse.json({ error: err.message }, { status: 500 });

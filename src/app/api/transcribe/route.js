@@ -1,63 +1,19 @@
 import { NextResponse } from 'next/server';
 import { aaiFetch, uploadAudio } from '@/lib/assemblyai';
 import { MAX_UPLOAD_BYTES, fmtSize, tooLargeMessage } from '@/lib/audioUpload';
-import { formatUtterances } from '@/lib/transcriptFormat';
+import { AAI_BASE, AAI_HEADERS, TRANSCRIBE_CONFIG } from '@/lib/transcribeJob';
 
-// A 91-minute session is a ~25-minute round trip on a slow uplink: upload +
-// transcode + diarization. 300s cut that off well before it could finish.
-export const maxDuration = 3600; // 1 hour
-
-// The poll budget must be generous enough for the transcode + diarization of a
-// long session; 150 attempts (5 minutes) timed out real 90-minute recordings
-// that were still processing. Stays well inside maxDuration.
-const POLL_ATTEMPTS = 600;
-const POLL_INTERVAL_MS = 2000;
-
-// GDPR: session audio is health data, so it is processed in the EU region for
-// BOTH upload and transcript — same as /api/transcribe-file. Nothing persists an
-// AssemblyAI transcript id (the id below is local to one polling loop; Supabase
-// stores the finished text), so the region can be switched without stranding any
-// existing session.
-const AAI_BASE = 'https://api.eu.assemblyai.com';
-const API_KEY = process.env.ASSEMBLYAI_API_KEY;
-const HEADERS = { authorization: API_KEY, 'content-type': 'application/json' };
-
-// One create-job + poll attempt against an already-uploaded audio_url. Returns a
-// tagged result so the caller can decide whether to retry (e.g. on an
-// intermittent transcoding failure) without re-running the whole POST.
-// langConfig is spread into the request — either { language_detection: true, … }
-// (auto-detect the spoken language) or { language_code: 'ru' } (forced fallback).
-async function transcribeOnce(upload_url, langConfig) {
-  const transcriptRes = await aaiFetch(`${AAI_BASE}/v2/transcript`, {
-    method: 'POST',
-    headers: HEADERS,
-    body: JSON.stringify({
-      audio_url: upload_url,
-      // Speaker diarization — returns per-speaker `utterances` so the
-      // transcript can be rendered as a dialogue instead of one paragraph.
-      speaker_labels: true,
-      ...langConfig,
-    }),
-  }, 'Создание транскрипта', 'transcribe');
-  if (!transcriptRes.ok) {
-    const err = await transcriptRes.text();
-    return { kind: 'create_failed', error: `Transcript create failed: ${err}` };
-  }
-  const { id } = await transcriptRes.json();
-  console.log('[transcribe] job created, id:', id);
-
-  for (let i = 0; i < POLL_ATTEMPTS; i++) {
-    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
-    const pollRes = await aaiFetch(`${AAI_BASE}/v2/transcript/${id}`, { headers: HEADERS }, 'Опрос статуса транскрипта', 'transcribe');
-    const transcript = await pollRes.json();
-    console.log('[transcribe] poll', i, 'status:', transcript.status, 'text_length:', transcript.text?.length ?? 0);
-    if (transcript.status === 'completed') return { kind: 'completed', transcript };
-    if (transcript.status === 'error')     return { kind: 'error', transcript };
-  }
-  return { kind: 'timeout' };
-}
+// Upload only takes as long as the network needs — no more open-ended polling
+// inside this function. The old `maxDuration = 3600` was above the ceiling of
+// every Vercel plan (Hobby 300s, Pro/Enterprise 800s, 1800s on the extended
+// beta), so a synchronous poll-to-completion could never have run there at all.
+// The job is now created here and polled from /api/transcribe/status.
+export const maxDuration = 300;
 
 export async function POST(req) {
+  if (!process.env.ASSEMBLYAI_API_KEY) {
+    return NextResponse.json({ error: 'ASSEMBLYAI_API_KEY not configured' }, { status: 500 });
+  }
   try {
     // RAW binary body, not multipart/form-data — same approach as
     // /api/transcribe-file. It skips the flaky multipart layer in this
@@ -76,63 +32,25 @@ export async function POST(req) {
     const audioBuffer = Buffer.from(await req.arrayBuffer());
     if (audioBuffer.length === 0) return NextResponse.json({ error: 'Empty recording' }, { status: 400 });
     console.log('[transcribe] received:', audioBuffer.length, 'bytes');
-    const upload_url = await uploadAudio(AAI_BASE, API_KEY, audioBuffer, { tag: 'transcribe' });
+    const upload_url = await uploadAudio(AAI_BASE, process.env.ASSEMBLYAI_API_KEY, audioBuffer, { tag: 'transcribe' });
 
-    // 2 + 3. Create + poll. Auto-detect the spoken language (users record in
-    // different languages; forcing 'ru' on non-Russian audio made AssemblyAI
-    // hallucinate Russian). language_confidence_threshold makes AssemblyAI error
-    // out when it can't confidently detect a language, so we fall back to forced
-    // Russian — the app's primary language. The same retry also recovers the
-    // intermittent transcoding failure on MediaRecorder's streamed WebM.
-    let result = await transcribeOnce(upload_url, {
-      language_detection: true,
-      language_confidence_threshold: 0.4,
-    });
-    if (result.kind === 'error') {
-      const msg = (result.transcript.error || '').toLowerCase();
-      const detectFailed = msg.includes('language') || msg.includes('detect') || msg.includes('confidence');
-      const transcodingFailed = msg.includes('transcoding') || msg.includes('unsupported');
-      if (detectFailed || transcodingFailed) {
-        console.log('[transcribe] auto-detect/transcoding failed, retrying with forced ru:', result.transcript.error);
-        result = await transcribeOnce(upload_url, { language_code: 'ru' });
-      }
+    // 2. Create the job and return immediately — do NOT wait for it to finish.
+    //    Auto-detect the spoken language (users record in different languages;
+    //    forcing 'ru' on non-Russian audio made AssemblyAI hallucinate Russian).
+    //    The forced-'ru' fallback now lives in /api/transcribe/status, since we
+    //    only find out detection failed once the job actually completes.
+    const createRes = await aaiFetch(`${AAI_BASE}/v2/transcript`, {
+      method: 'POST',
+      headers: AAI_HEADERS(),
+      body: JSON.stringify({ audio_url: upload_url, ...TRANSCRIBE_CONFIG }),
+    }, 'Создание транскрипта', 'transcribe');
+    if (!createRes.ok) {
+      const err = await createRes.text();
+      return NextResponse.json({ error: `Transcript create failed: ${err}` }, { status: 500 });
     }
-
-    if (result.kind === 'create_failed') {
-      return NextResponse.json({ error: result.error }, { status: 500 });
-    }
-    if (result.kind === 'timeout') {
-      return NextResponse.json({ error: 'Transcription timed out' }, { status: 500 });
-    }
-    if (result.kind === 'error') {
-      // Fix 2: speech_threshold rejection means "not enough speech" — treat as
-      // no-speech (empty), not a hard error, so the UI degrades gracefully.
-      const msg = (result.transcript.error || '').toLowerCase();
-      if (msg.includes('speech') || msg.includes('threshold') || msg.includes('audio duration')) {
-        console.log('[transcribe] rejected (insufficient speech):', result.transcript.error);
-        return NextResponse.json({ text: '', utterances: [], language_code: null, noSpeech: true });
-      }
-      return NextResponse.json({ error: result.transcript.error }, { status: 500 });
-    }
-    const transcript = result.transcript; // kind === 'completed'
-
-    // Diarization: format each utterance as a "[<speaker> <m:ss>] text" block so
-    // the client can render per-utterance timestamped dialogue turns. The shared
-    // formatter strips hallucination boilerplate PER-UTTERANCE so the block
-    // separators survive, and falls back to flat text when diarization produced
-    // no utterances (short/near-silent audio).
-    const utterances = transcript.utterances || [];
-    const cleanText = formatUtterances(utterances, transcript.text);
-    // Lengths only — the transcript itself is therapy material and must not be
-    // written to the server log.
-    console.log('[transcribe] done. language:', transcript.language_code,
-      'raw_len:', transcript.text?.length ?? 0, 'clean_len:', cleanText.length,
-      'utterances:', utterances.length);
-    return NextResponse.json({
-      text: cleanText,
-      utterances,
-      language_code: transcript.language_code || null,
-    });
+    const { id } = await createRes.json();
+    console.log('[transcribe] job created, id:', id);
+    return NextResponse.json({ job_id: id });
   } catch (err) {
     console.error('[transcribe]', err);
     return NextResponse.json({ error: err.message }, { status: 500 });

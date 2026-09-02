@@ -7,6 +7,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { sessions as sessionsApi, emotions as emotionsApi, aiChats, homework as homeworkApi } from '@/lib/api';
 import { ALLOWED_EXT, MAX_UPLOAD_BYTES, extOf, tooLargeMessage, unsupportedTypeMessage } from '@/lib/audioUpload';
 import { savePendingRecording, loadPendingRecording, clearPendingRecording } from '@/lib/recordingStore';
+import { uploadForTranscription, pollTranscript } from '@/lib/transcribeClient';
 import {
   parseSpeakerTurns, stripSpeakerMarkers,
   detectSessionLang, groupSessions,
@@ -536,37 +537,29 @@ function SessionsPageInner() {
 
   // Upload the held recording and transcribe it. Split out of stopRecording so
   // Retry re-runs exactly this path — no re-recording, no second code path.
+  //
+  // Two phases now: the upload creates a job and returns immediately, then we
+  // poll for the result. The route can no longer hold the request open for the
+  // whole transcription — no serverless platform allows that for a 90-minute
+  // recording — and a dropped poll no longer kills the job.
   async function transcribePending() {
     const pending = pendingAudioRef.current;
     if (!pending) return;
     const { blob, mimeType } = pending;
-    console.log('[stopRecording] blob size:', blob.size, 'bytes, mimeType:', mimeType,
+    console.log('[transcribe] blob size:', blob.size, 'bytes, mimeType:', mimeType,
       `(${(blob.size / 1024 / 1024).toFixed(1)} MB)`);
 
     setSpeechError(''); setTranscribeFailed(false); setUploadProgress(0);
     setIsTranscribing(true);
     try {
       const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
-      // RAW binary via XHR, not FormData: skips the multipart layer that proved
-      // flaky in this Next/Turbopack setup, avoids an extra full copy of the
-      // buffer server-side, and gives real upload progress — which matters when
-      // a long session takes minutes just to reach the server.
-      const data = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/transcribe');
-        xhr.setRequestHeader('Content-Type', mimeType || 'application/octet-stream');
-        xhr.setRequestHeader('X-Filename', encodeURIComponent(`recording.${ext}`));
-        xhr.upload.onprogress = ev => {
-          if (ev.lengthComputable) setUploadProgress(Math.round((ev.loaded / ev.total) * 100));
-        };
-        xhr.onload = () => {
-          let body; try { body = JSON.parse(xhr.responseText); } catch { body = {}; }
-          if (xhr.status >= 200 && xhr.status < 300 && !body.error) resolve(body);
-          else reject(new Error(body.error || `HTTP ${xhr.status}`));
-        };
-        xhr.onerror = () => reject(new Error('соединение с сервером оборвалось'));
-        xhr.send(blob);
+      const { job_id } = await uploadForTranscription('/api/transcribe', blob, {
+        filename: `recording.${ext}`,
+        contentType: mimeType,
+        onProgress: setUploadProgress,
       });
+      setUploadProgress(100); // upload done — the wait is now server-side
+      const data = await pollTranscript(job_id);
       // The server already strips hallucination boilerplate (per-utterance when
       // the audio is diarized), so use its text verbatim — re-stripping here
       // would collapse the "Speaker A:" block separators into one paragraph.
@@ -697,26 +690,17 @@ function SessionsPageInner() {
       // Send the file as a RAW binary body (not multipart/form-data) — the server
       // reads it via req.arrayBuffer(). This avoids the flaky multipart parser
       // ("Failed to parse body as FormData"). The filename travels in a header so
-      // the server can validate the extension. XHR (not fetch) so we can show real
-      // upload progress; the server then uploads to AssemblyAI + polls, surfaced
-      // as the "processing" stage.
-      const data = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/transcribe-file');
-        xhr.setRequestHeader('X-Filename', encodeURIComponent(file.name));
-        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-        xhr.upload.onprogress = ev => {
-          if (ev.lengthComputable) setImportProgress(Math.round((ev.loaded / ev.total) * 100));
-        };
-        xhr.upload.onload = () => setImportStage('processing');
-        xhr.onload = () => {
-          let body; try { body = JSON.parse(xhr.responseText); } catch { body = {}; }
-          if (xhr.status >= 200 && xhr.status < 300 && !body.error) resolve(body);
-          else reject(new Error(body.error || `HTTP ${xhr.status}`));
-        };
-        xhr.onerror = () => reject(new Error('Network error during upload'));
-        xhr.send(file);
+      // the server can validate the extension. The upload creates a transcription
+      // job and returns its id; the "processing" stage is the polling that
+      // follows, sharing /api/transcribe/status with the live recording flow.
+      const { job_id } = await uploadForTranscription('/api/transcribe-file', file, {
+        filename: file.name,
+        contentType: file.type,
+        onProgress: setImportProgress,
       });
+      setImportProgress(100);
+      setImportStage('processing');
+      const data = await pollTranscript(job_id);
 
       const saved = await sessionsApi.save(supabase, { transcript: data.text || '', title: null });
       setSessions(list => [saved, ...list]);
