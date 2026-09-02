@@ -207,3 +207,19 @@ test('no route declares a maxDuration above what Vercel allows', async () => {
       `${file} declares maxDuration=${m[1]}, above Vercel Hobby's 300s limit`);
   }
 });
+
+test('an HTTP failure from the status route stops the loop instead of polling forever', async () => {
+  // AssemblyAI answers an unknown/expired job id with HTTP 400 and a body that
+  // has an `error` key but NO `status`. A status route that only branches on
+  // transcript.status treats that as "processing", so a dead job would be
+  // polled until the client timeout — 40 minutes of a spinner for what is
+  // really a bad id or a rejected API key.
+  const { impl } = fakeStatus([
+    { __httpOk: false, __status: 502, error: 'Status check failed (400): transcript id not found' },
+  ]);
+  await assert.rejects(() => pollTranscript('bogus', opts(impl)), err => {
+    assert.ok(err instanceof TranscribeError);
+    assert.match(err.message, /transcript id not found/);
+    return true;
+  });
+});
