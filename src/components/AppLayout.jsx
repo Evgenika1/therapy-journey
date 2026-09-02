@@ -28,7 +28,7 @@ export default function AppLayout({ children }) {
   return (
     <div style={{ display: 'flex', height: '100vh', background: BG, fontFamily: '"Plus Jakarta Sans", sans-serif', overflow: 'hidden' }}>
       {/* Sidebar */}
-      <nav style={{ width: 220, flexShrink: 0, background: SURFACE, borderRight: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+      <nav className="app-nav" style={{ background: SURFACE, borderRight: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
         {/* Logo */}
         <div style={{ padding: '20px 20px 16px', display: 'flex', alignItems: 'center' }}>
           <span style={{

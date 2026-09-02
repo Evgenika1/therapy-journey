@@ -250,6 +250,14 @@ function SessionsPageInner() {
   const [zoomError,          setZoomError]          = useState('');
   const [zoomStopping,       setZoomStopping]       = useState(false); // "Stop & Save" pressed → waiting for transcript
 
+  // Paste an existing transcript (Zoom export, notes, another app) — a session
+  // with text but no audio.
+  const [showPaste,   setShowPaste]   = useState(false);
+  const [pasteTitle,  setPasteTitle]  = useState('');
+  const [pasteText,   setPasteText]   = useState('');
+  const [pasteSaving, setPasteSaving] = useState(false);
+  const [pasteError,  setPasteError]  = useState('');
+
   // Import audio (upload a file → AssemblyAI → session)
   const importInputRef = useRef(null);
   const [showImport,     setShowImport]     = useState(false);
@@ -311,6 +319,14 @@ function SessionsPageInner() {
 
   // ── select session ────────────────────────────────────────────────────────────
   function selectSession(s) {
+    // The panels render into the same centre column as the session detail, so
+    // an open one would swallow the click: the row highlights in the list and
+    // nothing else appears to happen. Close Paste — but only when it is empty,
+    // so a half-written transcript is never discarded by a stray click. The
+    // other three panels are left alone deliberately: each has work running
+    // behind it (a recording, an upload, a meeting bot) that must not be
+    // dismissed by selecting a session.
+    if (showPaste && !pasteText.trim()) closePaste();
     setSelectedSession(s);
     setActiveTab('summary');
     setSessionNotes(s.notes || '');
@@ -333,6 +349,77 @@ function SessionsPageInner() {
     }).catch(e => console.error('[Sessions] load chat:', e?.message));
     return () => { cancelled = true; };
   }, [supabase, selectedSession?.id]);
+
+  // All four capture panels render into the same centre column, so two open at
+  // once would stack on top of each other. One switch keeps them exclusive
+  // instead of every opener remembering to close the other three.
+  function closeOtherPanels(keep) {
+    if (keep !== 'import') setShowImport(false);
+    if (keep !== 'zoom')   setShowZoom(false);
+    if (keep !== 'record') setShowModal(false);
+    if (keep !== 'paste')  setShowPaste(false);
+  }
+
+  function openPaste() {
+    closeOtherPanels('paste');
+    setSelectedSession(null);
+    setShowPaste(true);
+    setPasteTitle(''); setPasteText(''); setPasteError('');
+  }
+
+  function closePaste() {
+    setShowPaste(false);
+    setPasteTitle(''); setPasteText(''); setPasteError('');
+  }
+
+  // Create a session straight from pasted text. Goes through sessionsApi.save
+  // like every other session, so the row is indistinguishable downstream —
+  // Analyse, search and the speaker-turn renderer all work on it unchanged.
+  // Not routed through saveSession(): that one is the recording flow's ending
+  // (audio cleanup, mood pair, elapsed timer, delayed modal close), none of
+  // which applies to pasted text.
+  async function createFromPaste() {
+    const text = pasteText.trim();
+    if (!text || pasteSaving) return;
+    if (!user) { setPasteError('Not signed in.'); return; }
+    setPasteSaving(true); setPasteError('');
+    try {
+      const saved = await sessionsApi.save(supabase, {
+        // Empty title → sessionTitle() derives one from created_at at display
+        // time, same as an untitled recording.
+        title: pasteTitle.trim() || null,
+        transcript: text,
+        duration: null, notes: null,
+        mood_before: null, mood_after: null,
+      });
+      setSessions(list => [saved, ...list]);
+      closePaste();
+      // Opens on Summary, where Analyse is live because the transcript exists.
+      selectSession(saved);
+    } catch (err) {
+      console.error('[Sessions] paste create:', err?.message, err?.code);
+      setPasteError('Не удалось создать сессию: ' + (err?.message || 'неизвестная ошибка'));
+    } finally { setPasteSaving(false); }
+  }
+
+  // In single-column mode (<800px) the container needs to know which pane to
+  // show. The centre is "occupied" not only by an open session but by the
+  // recording / import / meeting panels, which also live there — without those
+  // the narrow layout would hide the recorder the moment it opened.
+  const detailOpen = !!(selectedSession || showModal || showImport || showZoom || showPaste);
+
+  // Back out of the centre pane. Deliberately refuses while a recording or an
+  // upload is in flight: closeModal() stops the recorder, and losing a session
+  // to a mis-tap on "back" is exactly the failure this app has been fixing.
+  const canGoBack = !isCapturing && !isTranscribing;
+  function backToList() {
+    if (!canGoBack) return;
+    if (showPaste)       { closePaste();  return; }
+    if (showImport)      { closeImport(); return; }
+    if (showZoom)        { setShowZoom(false); return; }
+    if (showModal)       { closeModal(); return; }
+    setSelectedSession(null);
+  }
 
   // ── filtered sessions ─────────────────────────────────────────────────────────
   const filtered = sessions.filter(s => {
@@ -357,7 +444,7 @@ function SessionsPageInner() {
 
   function openRecordModal(preMoodIntensity, title = '') {
     setShowModal(true);
-    setShowImport(false); setShowZoom(false);
+    closeOtherPanels('record');
     setSpeechError('');
     setTranscript('');
     setRecNotes('');
@@ -683,7 +770,8 @@ function SessionsPageInner() {
     const file = e.target.files?.[0];
     e.target.value = ''; // allow re-selecting the same file later
     if (!file) return;
-    setSelectedSession(null); setShowZoom(false); setShowModal(false);
+    closeOtherPanels('import');
+    setSelectedSession(null);
     setShowImport(true); setImportFileName(file.name); setImportError('');
     setImportProgress(0); setImportStage('uploading');
 
@@ -1034,10 +1122,10 @@ function SessionsPageInner() {
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <AppLayout>
-      <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+      <div className={`sessions-layout${detailOpen ? ' show-detail' : ''}`}>
 
         {/* ── LEFT COLUMN ─────────────────────────────────────────────────────── */}
-        <div style={{ width: 340, flexShrink: 0, borderRight: `1px solid ${BORDER}`, background: SURFACE, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="sessions-list" style={{ borderRight: `1px solid ${BORDER}`, background: SURFACE }}>
           {/* Search */}
           <div style={{ padding: '16px 14px 10px' }}>
             <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
@@ -1086,9 +1174,17 @@ function SessionsPageInner() {
 
           {/* Record Zoom meeting (Recall.ai notetaker) */}
           <div style={{ padding: '0 14px 12px' }}>
-            <button onClick={() => { setShowZoom(true); setShowImport(false); setShowModal(false); setSelectedSession(null); }}
+            <button onClick={() => { closeOtherPanels('zoom'); setShowZoom(true); setSelectedSession(null); }}
               style={{ width: '100%', padding: '8px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: A, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
               🎥 Record online session
+            </button>
+          </div>
+
+          {/* Paste an existing transcript — no audio involved */}
+          <div style={{ padding: '0 14px 12px' }}>
+            <button onClick={openPaste}
+              style={{ width: '100%', padding: '8px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: showPaste ? A + '12' : 'transparent', color: showPaste ? A : MUTED, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              ✎ Paste transcript
             </button>
           </div>
 
@@ -1136,8 +1232,58 @@ function SessionsPageInner() {
         </div>
 
         {/* ── CENTER COLUMN ───────────────────────────────────────────────────── */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden', background: BG }}>
-          {showImport ? (
+        <div className="sessions-main" style={{ background: BG }}>
+          {/* Only rendered by CSS below 800px, where the list is hidden. */}
+          {canGoBack && (
+            <button className="sessions-back" onClick={backToList}
+              style={{ alignItems: 'center', gap: 8, padding: '11px 16px', border: 'none',
+                       borderBottom: `1px solid ${BORDER}`, background: SURFACE, color: A,
+                       fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+                       flexShrink: 0, width: '100%', textAlign: 'left' }}>
+              ← Все сессии
+            </button>
+          )}
+          {showPaste ? (
+            /* ── PASTE TRANSCRIPT (existing text → session, no audio) ─────────────── */
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', justifyContent: 'center', padding: 28 }}>
+              <div style={{ width: '100%', maxWidth: 720, height: 'fit-content', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32 }}>
+                <p style={{ fontFamily: '"Fraunces", serif', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>Paste transcript</p>
+                <p style={{ fontSize: 13, color: MUTED, margin: '0 0 24px', lineHeight: 1.5 }}>
+                  Уже есть текст — из записи Zoom, другого приложения или заметок? Вставьте его,
+                  и сессия будет вести себя как любая другая: поиск, AI-анализ, чат.
+                </p>
+
+                <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Название</p>
+                <input value={pasteTitle} onChange={e => setPasteTitle(e.target.value)}
+                  placeholder="Необязательно — по умолчанию дата"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 14, outline: 'none', fontFamily: 'inherit', marginBottom: 18 }} />
+
+                <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Транскрипт</p>
+                <textarea value={pasteText} onChange={e => setPasteText(e.target.value)}
+                  placeholder="Paste your transcript here…"
+                  style={{ width: '100%', boxSizing: 'border-box', minHeight: 300, padding: '14px 16px', borderRadius: 12, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 14, resize: 'vertical', outline: 'none', fontFamily: 'inherit', lineHeight: 1.8 }} />
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 8 }}>
+                  <span style={{ fontSize: 12, color: MUTED }}>
+                    {pasteText.trim() ? `${pasteText.trim().length.toLocaleString('ru-RU')} символов` : ''}
+                  </span>
+                </div>
+
+                {pasteError && <p style={{ fontSize: 13, color: '#DC2626', margin: '12px 0 0', lineHeight: 1.5 }}>⚠ {pasteError}</p>}
+
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
+                  <button onClick={closePaste} disabled={pasteSaving}
+                    style={{ padding: '10px 20px', borderRadius: 11, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 14, cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                  <button onClick={createFromPaste} disabled={!pasteText.trim() || pasteSaving}
+                    style={{ padding: '10px 24px', borderRadius: 11, border: 'none', background: pasteText.trim() ? A : BORDER, color: '#fff', fontSize: 14, fontWeight: 500, cursor: pasteText.trim() && !pasteSaving ? 'pointer' : 'default' }}>
+                    {pasteSaving ? 'Creating…' : 'Create session'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : showImport ? (
             /* ── IMPORT AUDIO (upload → transcribe → session) ─────────────────────── */
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', justifyContent: 'center', padding: 28 }}>
               <div style={{ width: '100%', maxWidth: 560, height: 'fit-content', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32 }}>
@@ -1646,7 +1792,7 @@ function SessionsPageInner() {
         </div>
 
         {/* ── RIGHT COLUMN ────────────────────────────────────────────────────── */}
-        <div style={{ width: 320, flexShrink: 0, borderLeft: `1px solid ${BORDER}`, background: SURFACE, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="sessions-chat" style={{ borderLeft: `1px solid ${BORDER}`, background: SURFACE }}>
           {/* Header — New chat */}
           <div style={{ padding: '12px 14px', borderBottom: `1px solid ${BORDER}` }}>
             <button onClick={() => { setChatMessages([]); setSessionChatId(null); }}

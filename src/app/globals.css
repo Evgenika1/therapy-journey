@@ -16,3 +16,77 @@ body {
   padding: 0;
   -webkit-font-smoothing: antialiased;
 }
+/* ── Application layout ───────────────────────────────────────────────────────
+   Column sizing lives here, not in inline styles, because inline styles win
+   over stylesheets — a media query could never have overridden `width: 340`
+   written on the element. Only geometry moved; theme colours stay inline so
+   light/dark keeps working the way the rest of the app does.
+
+   Fixed columns never shrink; the centre absorbs the slack and is given
+   min-width: 0 so long transcript text can ellipsis instead of forcing the row
+   wider than the viewport. Columns are removed at breakpoints rather than
+   squeezed, which is what "one column at a time" means below.
+   ------------------------------------------------------------------------- */
+
+.app-nav {
+  width: 200px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.sessions-layout {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;      /* no horizontal scroll, no columns sliding out */
+  position: relative;
+}
+
+.sessions-list {
+  width: 300px;
+  flex-shrink: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sessions-main {
+  flex: 1;
+  min-width: 0;          /* without this a long word forces the whole row wider */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sessions-chat {
+  width: 320px;
+  flex-shrink: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Shown only in single-column mode. */
+.sessions-back { display: none; }
+
+/* ── < 1100px: the AI panel goes ──────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .sessions-chat { display: none; }
+}
+
+/* ── < 800px: one column at a time ────────────────────────────────────────────
+   Which one is decided by `.show-detail` on the container, set when a session
+   is open or a recording/import/meeting panel is up. Both columns go full
+   width, so nothing is competing for space. */
+@media (max-width: 800px) {
+  .sessions-list { width: 100%; border-right: none; }
+  .sessions-main { display: none; }
+
+  .sessions-layout.show-detail .sessions-list { display: none; }
+  .sessions-layout.show-detail .sessions-main { display: flex; }
+
+  .sessions-back { display: flex; }
+}
