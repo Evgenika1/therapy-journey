@@ -93,7 +93,7 @@ export default function AccountPage() {
     <AppLayout>
       <div style={{ flex: 1, overflowY: 'auto', background: BG, padding: 32 }}>
         <div style={{ maxWidth: 560, margin: '0 auto' }}>
-          <h1 style={{ fontSize: 28, fontWeight: 300, color: TEXT, margin: '0 0 8px', fontFamily: '"Fraunces", serif' }}>Account</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 300, color: TEXT, margin: '0 0 8px', fontFamily: 'var(--font-serif)' }}>Account</h1>
           <p style={{ fontSize: 13, color: MUTED, margin: '0 0 32px' }}>{user?.email}</p>
 
           {section('Change Email', (

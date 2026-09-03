@@ -42,7 +42,7 @@ export default function ProgressPage() {
       <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, background: BG, fontFamily: '"Plus Jakarta Sans", sans-serif', color: TEXT, paddingBottom: 60 }}>
         <div style={{ padding: 32, maxWidth: 900, margin: '0 auto' }}>
           <div style={{ marginBottom: 32 }}>
-            <h1 style={{ fontFamily: '"Fraunces", serif', fontSize: 32, fontWeight: 300, color: TEXT, margin: '0 0 4px' }}>Progress</h1>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 32, fontWeight: 300, color: TEXT, margin: '0 0 4px' }}>Progress</h1>
             <p style={{ fontSize: 15, color: MUTED, margin: 0 }}>Your therapy journey at a glance</p>
           </div>
 
@@ -55,7 +55,7 @@ export default function ProgressPage() {
             ].map(s => (
               <div key={s.label} style={{ background: BG, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${A}`, borderRadius: 12, padding: 20 }}>
                 <p style={{ fontSize: 12, fontWeight: 600, color: MUTED, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{s.label}</p>
-                <p style={{ fontFamily: '"Fraunces", serif', fontSize: 32, fontWeight: 300, color: A, margin: 0 }}>{s.value}</p>
+                <p style={{ fontFamily: 'var(--font-serif)', fontSize: 32, fontWeight: 300, color: A, margin: 0 }}>{s.value}</p>
               </div>
             ))}
           </div>

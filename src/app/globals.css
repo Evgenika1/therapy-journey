@@ -90,3 +90,84 @@ body {
 
   .sessions-back { display: flex; }
 }
+
+/* ── Design refresh: time-of-day palette, serif headings, ritual glow ─────────
+   The colour tokens are written onto :root by src/lib/timeTheme.js at load and
+   re-checked every ten minutes, so a session that starts in daylight and ends
+   after dark changes with it. Values below are only the fallbacks used before
+   that first write lands.
+   ------------------------------------------------------------------------- */
+
+:root {
+  --bg: #D9EDEB;
+  --surface: #FFFFFF;
+  --text: #0A3F3D;
+  --text-muted: #4F827F;
+  --accent: #127A76;
+  --accent-deep: #0A3F3D;
+  --glow: rgba(44,166,160,0.24);
+  --border: #B6DAD6;
+  --nav-active: #C7E4E0;
+  --ok: #0F6B4C;
+  --err: #A01B14;
+
+  --font-serif: Georgia, "Times New Roman", Times, serif;
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* background-color, not the `background` shorthand: transitioning the
+   shorthand left body stuck on the :root fallback and never picked up the
+   value written by applyTheme. */
+body { background-color: var(--bg); color: var(--text); }
+
+/* The palette swap should read as the light changing, not as a repaint. Scoped
+   to the properties that actually carry colour — a blanket `all` would drag
+   layout and transform into the transition and make the UI feel sluggish. */
+*,
+*::before,
+*::after {
+  transition: background-color 0.6s ease, color 0.6s ease,
+              border-color 0.6s ease, fill 0.6s ease, stroke 0.6s ease,
+              box-shadow 0.6s ease;
+}
+
+/* Anything mid-interaction keeps its own snappier timing. */
+button, a, input, textarea, select {
+  transition: background-color 0.6s ease, color 0.6s ease, border-color 0.6s ease,
+              box-shadow 0.18s ease, transform 0.12s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; }
+}
+
+h1, h2 { font-family: var(--font-serif); font-weight: 400; letter-spacing: -0.01em; }
+/* Accent words inside a heading, e.g. the name in the greeting. */
+h1 em, h2 em, .serif-em { font-style: italic; font-weight: 400; }
+
+.ritual-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+
+/* The eye's halo. A radial gradient rather than a box-shadow so it stays soft
+   at large sizes; strength comes from --glow, which is heaviest in the evening. */
+.eye-glow {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--glow) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+@keyframes ritual-breathe {
+  0%, 100% { transform: scale(1);    opacity: 0.55; }
+  50%      { transform: scale(1.10); opacity: 0.95; }
+}
+.ritual-halo { animation: ritual-breathe 5.5s ease-in-out infinite; transform-origin: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ritual-halo { animation: none; }
+}

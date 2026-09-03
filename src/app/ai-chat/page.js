@@ -128,7 +128,7 @@ export default function AiChatPage() {
           <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
             {messages.length === 0 && (
               <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-                <p style={{ fontFamily: '"Fraunces", serif', fontSize: 28, fontWeight: 300, color: TEXT, margin: '0 0 10px' }}>How can I help?</p>
+                <p style={{ fontFamily: 'var(--font-serif)', fontSize: 28, fontWeight: 300, color: TEXT, margin: '0 0 10px' }}>How can I help?</p>
                 <p style={{ fontSize: 15, color: MUTED, maxWidth: 400 }}>I'm your AI therapy companion. Share what's on your mind.</p>
               </div>
             )}

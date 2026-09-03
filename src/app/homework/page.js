@@ -68,7 +68,7 @@ export default function HomeworkPage() {
       <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, background: BG, fontFamily: '"Plus Jakarta Sans", sans-serif', color: TEXT, paddingBottom: 60 }}>
         <div style={{ padding: 32, maxWidth: 740, margin: '0 auto' }}>
           <div style={{ marginBottom: 32 }}>
-            <h1 style={{ fontFamily: '"Fraunces", serif', fontSize: 32, fontWeight: 300, color: TEXT, margin: '0 0 4px' }}>Homework</h1>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 32, fontWeight: 300, color: TEXT, margin: '0 0 4px' }}>Homework</h1>
             <p style={{ fontSize: 15, color: MUTED, margin: 0 }}>Therapy tasks and exercises</p>
           </div>
 
@@ -135,7 +135,7 @@ export default function HomeworkPage() {
 
           {!loading && items.length === 0 && (
             <div style={{ textAlign: 'center', padding: '60px 0' }}>
-              <p style={{ fontFamily: '"Fraunces", serif', fontSize: 26, fontWeight: 300, color: TEXT, margin: '0 0 8px' }}>No tasks yet</p>
+              <p style={{ fontFamily: 'var(--font-serif)', fontSize: 26, fontWeight: 300, color: TEXT, margin: '0 0 8px' }}>No tasks yet</p>
               <p style={{ fontSize: 15, color: MUTED }}>Add your therapy homework above.</p>
             </div>
           )}

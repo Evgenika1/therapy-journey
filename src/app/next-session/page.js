@@ -35,7 +35,7 @@ function Countdown({ targetDate }) {
         [diff.mins,  'mins'],
       ].map(([val, label]) => (
         <div key={label} style={{ textAlign: 'center' }}>
-          <p style={{ fontFamily: '"Fraunces", serif', fontSize: 40, fontWeight: 300, color: A, margin: 0, lineHeight: 1, minWidth: 56 }}>{String(val).padStart(2, '0')}</p>
+          <p style={{ fontFamily: 'var(--font-serif)', fontSize: 40, fontWeight: 300, color: A, margin: 0, lineHeight: 1, minWidth: 56 }}>{String(val).padStart(2, '0')}</p>
           <p style={{ fontSize: 11, color: MUTED, margin: '4px 0 0', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{label}</p>
         </div>
       ))}
@@ -134,7 +134,7 @@ export default function NextSessionPage() {
         <div style={{ padding: 32, maxWidth: 900, margin: '0 auto' }}>
 
           <div style={{ marginBottom: 32 }}>
-            <h1 style={{ fontFamily: '"Fraunces", serif', fontSize: 32, fontWeight: 300, color: TEXT, margin: '0 0 4px', lineHeight: 1.2 }}>Next Session</h1>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 32, fontWeight: 300, color: TEXT, margin: '0 0 4px', lineHeight: 1.2 }}>Next Session</h1>
             <p style={{ fontSize: 15, color: MUTED, margin: 0 }}>Prepare topics and questions for your therapist</p>
           </div>
 
@@ -175,7 +175,7 @@ export default function NextSessionPage() {
 
           {!loading && topics.length === 0 && (
             <div style={{ textAlign: 'center', padding: '80px 0' }}>
-              <p style={{ fontFamily: '"Fraunces", serif', fontSize: 28, fontWeight: 300, color: TEXT, margin: '0 0 10px' }}>Nothing planned yet</p>
+              <p style={{ fontFamily: 'var(--font-serif)', fontSize: 28, fontWeight: 300, color: TEXT, margin: '0 0 10px' }}>Nothing planned yet</p>
               <p style={{ fontSize: 15, color: MUTED }}>Add topics or questions for your next therapy session.</p>
             </div>
           )}

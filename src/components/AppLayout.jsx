@@ -17,7 +17,7 @@ const NAV = [
 ];
 
 export default function AppLayout({ children }) {
-  const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL, isDark, toggleTheme } = useTheme();
+  const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL, ACCENT_DEEP, GLOW, isDark } = useTheme();
   const { supabase, user } = useAuth();
   const pathname = usePathname();
 
@@ -30,20 +30,27 @@ export default function AppLayout({ children }) {
       {/* Sidebar */}
       <nav className="app-nav" style={{ background: SURFACE, borderRight: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
         {/* Logo */}
-        <div style={{ padding: '20px 20px 16px', display: 'flex', alignItems: 'center' }}>
+        <div style={{ padding: '22px 20px 18px', display: 'flex', alignItems: 'center' }}>
           <span style={{
-            fontSize: 22,
-            fontWeight: 700,
-            letterSpacing: '-0.02em',
+            position: 'relative',
+            fontSize: 23,
+            fontWeight: 400,
+            letterSpacing: '0.01em',
             color: TEXT,
-            fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+            fontFamily: 'var(--font-serif)',
             display: 'flex',
             alignItems: 'center',
           }}>
-            miru
-            <svg style={{ marginLeft: 3, marginBottom: 8 }} width="7" height="7" viewBox="0 0 7 7" fill="none">
-              <ellipse cx="3.5" cy="3.5" rx="3" ry="2.2" stroke="#E8785A" strokeWidth="1.2" fill="none"/>
-              <circle cx="3.5" cy="3.5" r="1.1" fill="#E8785A"/>
+            {/* Halo sits behind the wordmark and is strongest in the evening,
+                where --glow is heaviest. */}
+            <span className="eye-glow" style={{ width: 74, height: 74, left: -8, top: '50%', transform: 'translateY(-50%)' }} />
+            <span style={{ position: 'relative' }}>miru</span>
+            <svg style={{ marginLeft: 5, marginBottom: 7, position: 'relative', overflow: 'visible' }}
+                 width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+              <ellipse cx="7.5" cy="7.5" rx="7" ry="4.6" fill="none" stroke={CORAL} strokeWidth="1.1" opacity="0.55"/>
+              <ellipse cx="7.5" cy="7.5" rx="4.6" ry="3.1" fill="none" stroke={CORAL} strokeWidth="1.3"/>
+              <circle cx="7.5" cy="7.5" r="1.9" fill={ACCENT_DEEP}/>
+              <circle cx="8.4" cy="6.6" r="0.62" fill={SURFACE} opacity="0.9"/>
             </svg>
           </span>
         </div>
@@ -73,11 +80,9 @@ export default function AppLayout({ children }) {
 
         {/* Bottom */}
         <div style={{ padding: '12px 0', borderTop: `1px solid ${BORDER}` }}>
-          <button onClick={toggleTheme}
-            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', paddingLeft: 20, background: 'none', border: 'none', borderLeft: '3px solid transparent', cursor: 'pointer', color: TEXT, fontSize: 14, width: '100%' }}>
-            <span style={{ fontSize: 15 }}>{isDark ? '☀️' : '🌙'}</span>
-            {isDark ? 'Light mode' : 'Dark mode'}
-          </button>
+          {/* The light/dark toggle is gone: the palette follows the clock
+              (src/lib/timeTheme.js). Deliberately unlabelled — the shift is
+              meant to be felt, not announced, so nothing here names the hour. */}
           {user && (
             <>
               <div style={{ padding: '4px 20px 8px' }}>

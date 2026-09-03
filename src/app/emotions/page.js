@@ -222,7 +222,7 @@ export default function EmotionsPage() {
 
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 32 }}>
             <div>
-              <h1 style={{ fontFamily: '"Fraunces", serif', fontSize: 32, fontWeight: 300, color: TEXT, margin: '0 0 4px', lineHeight: 1.2 }}>Emotions</h1>
+              <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 32, fontWeight: 300, color: TEXT, margin: '0 0 4px', lineHeight: 1.2 }}>Emotions</h1>
               <p style={{ fontSize: 15, color: MUTED, margin: 0 }}>Track and understand your emotional patterns</p>
             </div>
             <button onClick={() => { setLogging(true); setSelectedCat(null); setSelectedEmos([]); setIntensity(5); setError(''); }}
@@ -239,7 +239,7 @@ export default function EmotionsPage() {
             ].map(s => (
               <div key={s.label} style={{ background: BG, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${A}`, borderRadius: 12, padding: 20 }}>
                 <p style={{ fontSize: 12, fontWeight: 600, color: MUTED, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{s.label}</p>
-                <p style={{ fontFamily: '"Fraunces", serif', fontSize: 32, fontWeight: 300, color: A, margin: 0 }}>{s.value}</p>
+                <p style={{ fontFamily: 'var(--font-serif)', fontSize: 32, fontWeight: 300, color: A, margin: 0 }}>{s.value}</p>
               </div>
             ))}
           </div>
@@ -258,7 +258,7 @@ export default function EmotionsPage() {
                   <span style={{ fontSize: 14, fontWeight: 500, color: TEXT }}>{cat}</span>
                   <div style={{ width: 10, height: 10, borderRadius: '50%', background: info.color }} />
                 </div>
-                <p style={{ fontFamily: '"Fraunces", serif', fontSize: 28, fontWeight: 300, color: info.color, margin: 0, lineHeight: 1 }}>{catCounts[cat] ?? 0}</p>
+                <p style={{ fontFamily: 'var(--font-serif)', fontSize: 28, fontWeight: 300, color: info.color, margin: 0, lineHeight: 1 }}>{catCounts[cat] ?? 0}</p>
                 <p style={{ fontSize: 12, color: MUTED, margin: '2px 0 0' }}>logs</p>
               </button>
             ))}
@@ -296,7 +296,7 @@ export default function EmotionsPage() {
       {logging && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
           <div style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32, width: '100%', maxWidth: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
-            <h2 style={{ fontFamily: '"Fraunces", serif', fontSize: 26, fontWeight: 300, color: TEXT, margin: '0 0 24px' }}>Log Emotion</h2>
+            <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 26, fontWeight: 300, color: TEXT, margin: '0 0 24px' }}>Log Emotion</h2>
 
             <p style={{ fontSize: 12, fontWeight: 600, color: MUTED, margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Category</p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 22 }}>

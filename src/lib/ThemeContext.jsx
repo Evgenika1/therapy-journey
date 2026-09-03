@@ -1,58 +1,63 @@
 'use client';
 import { createContext, useContext, useState, useEffect } from 'react';
+import { themeForDate, applyTheme, THEME_REFRESH_MS } from '@/lib/timeTheme';
 
-const LIGHT = {
-  BG:        '#F7F5F2',
-  SURFACE:   '#FFFFFF',
-  WHITE:     '#FFFFFF',
-  BORDER:    '#E8E2DA',
-  H1:        '#1A1208',
-  BODY:      '#2C1A0E',
-  MUTED:     '#8A7A6A',
-  SEC:       '#8A7A6A',
-  CORAL:     '#E8673A',
-  NAV_ACTIVE:'#FDF0EA',
-  GREEN:     '#15803D',
-  ERR:       '#DC2626',
-  isDark:    false,
-};
+// The palette follows the device clock — morning, day, evening — instead of a
+// manual light/dark switch. The token names below are the ones the pages have
+// always consumed (BG, SURFACE, CORAL…), so every existing screen keeps working
+// unchanged; only where those tokens point has changed.
+function tokens(t) {
+  return {
+    BG:         t.bg,
+    SURFACE:    t.surface,
+    WHITE:      t.surface,
+    BORDER:     t.border,
+    H1:         t.text,
+    BODY:       t.text,
+    MUTED:      t.textMuted,
+    SEC:        t.textMuted,
+    CORAL:      t.accent,      // the app's accent; turquoise now, name kept
+    ACCENT:     t.accent,
+    ACCENT_DEEP:t.accentDeep,
+    GLOW:       t.glow,
+    NAV_ACTIVE: t.navActive,
+    GREEN:      t.ok,
+    ERR:        t.err,
+    isDark:     t.isDark,
+    period:     t.period,
+  };
+}
 
-const DARK = {
-  BG:        '#0F0F0F',
-  SURFACE:   '#1A1A1A',
-  WHITE:     '#1A1A1A',
-  BORDER:    '#2A2A2A',
-  H1:        '#F5F0EA',
-  BODY:      '#D0C8BE',
-  MUTED:     '#706860',
-  SEC:       '#706860',
-  CORAL:     '#E8673A',
-  NAV_ACTIVE:'#1F1612',
-  GREEN:     '#22C55E',
-  ERR:       '#F87171',
-  isDark:    true,
-};
+// Server render and first paint must agree, so both start from the same
+// deterministic value; the real clock is read in the effect below.
+const INITIAL = themeForDate(new Date(2000, 0, 1, 12));
 
-const ThemeCtx = createContext(LIGHT);
+const ThemeCtx = createContext(tokens(INITIAL));
 
 export function ThemeProvider({ children }) {
-  const [dark, setDark] = useState(false);
+  const [theme, setTheme] = useState(INITIAL);
 
   useEffect(() => {
-    const saved = localStorage.getItem('tj_theme');
-    if (saved === 'dark') setDark(true);
+    // Read the actual hour only on the client: doing it during render would
+    // make the server's HTML and the browser's first paint disagree.
+    const sync = () => {
+      const next = themeForDate(new Date());
+      applyTheme(next, document.documentElement);
+      setTheme(prev => (prev.period === next.period ? prev : next));
+    };
+    sync();
+
+    // A session can run straight through a boundary — begin in daylight, end
+    // after dark — so keep checking while the tab is open, and re-check on
+    // return in case the machine was asleep across one.
+    const id = setInterval(sync, THEME_REFRESH_MS);
+    const onVisible = () => { if (!document.hidden) sync(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
 
-  function toggle() {
-    setDark(d => {
-      const next = !d;
-      localStorage.setItem('tj_theme', next ? 'dark' : 'light');
-      return next;
-    });
-  }
-
   return (
-    <ThemeCtx.Provider value={{ ...(dark ? DARK : LIGHT), toggleTheme: toggle }}>
+    <ThemeCtx.Provider value={tokens(theme)}>
       {children}
     </ThemeCtx.Provider>
   );

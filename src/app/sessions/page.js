@@ -170,7 +170,14 @@ function AudioLevelMeter({ stream, source, paused, A, MUTED, TEXT }) {
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, width: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 40 }}>
         {bars.map((b, i) => (
-          <div key={i} style={{ width: 5, height: Math.max(6, b * 40), background: A, borderRadius: 3, transition: 'height 0.06s linear' }} />
+          <div key={i} style={{
+            width: 5,
+            height: Math.max(6, b * 44),
+            background: A,
+            opacity: paused ? 0.35 : 0.5 + b * 0.5,
+            borderRadius: 999,
+            transition: 'height 0.06s linear, opacity 0.12s linear',
+          }} />
         ))}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -193,7 +200,7 @@ function parseAI(raw) {
 // ─── Main component ────────────────────────────────────────────────────────────
 function SessionsPageInner() {
   const { supabase, user } = useAuth();
-  const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL: A } = useTheme();
+  const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL: A, ACCENT_DEEP, isDark } = useTheme();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -1139,7 +1146,7 @@ function SessionsPageInner() {
           {/* A recording survived a failed transcription or a reload — offer it back
               rather than leaving the user to assume the session is gone. */}
           {recovered && !showModal && (
-            <div style={{ margin: '0 14px 12px', background: '#C4687A12', border: '1px solid #C4687A40', borderRadius: 11, padding: '12px 13px' }}>
+            <div style={{ margin: '0 14px 12px', background: A + '14', border: `1px solid ${A}55`, borderRadius: 14, padding: '12px 13px' }}>
               <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT, margin: '0 0 4px' }}>Найдена нерасшифрованная запись</p>
               <p style={{ fontSize: 11.5, color: MUTED, margin: '0 0 10px', lineHeight: 1.5 }}>
                 {fmt(recovered.seconds || 0)} · {(recovered.blob.size / 1024 / 1024).toFixed(1)} МБ — расшифровка не завершилась.
@@ -1166,7 +1173,7 @@ function SessionsPageInner() {
               ↑ Upload audio
             </button>
             <button onClick={openRecordModal}
-              style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', background: '#C4687A', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+              style={{ flex: 1, padding: '8px 0', borderRadius: 999, border: 'none', background: ACCENT_DEEP, color: isDark ? BG : '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="3.5" fill="white" opacity="0.35"/><circle cx="5" cy="5" r="2" fill="white"/></svg>
               Record
             </button>
@@ -1247,7 +1254,7 @@ function SessionsPageInner() {
             /* ── PASTE TRANSCRIPT (existing text → session, no audio) ─────────────── */
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', justifyContent: 'center', padding: 28 }}>
               <div style={{ width: '100%', maxWidth: 720, height: 'fit-content', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32 }}>
-                <p style={{ fontFamily: '"Fraunces", serif', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>Paste transcript</p>
+                <p style={{ fontFamily: 'var(--font-serif)', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>Paste transcript</p>
                 <p style={{ fontSize: 13, color: MUTED, margin: '0 0 24px', lineHeight: 1.5 }}>
                   Уже есть текст — из записи Zoom, другого приложения или заметок? Вставьте его,
                   и сессия будет вести себя как любая другая: поиск, AI-анализ, чат.
@@ -1277,7 +1284,7 @@ function SessionsPageInner() {
                     Cancel
                   </button>
                   <button onClick={createFromPaste} disabled={!pasteText.trim() || pasteSaving}
-                    style={{ padding: '10px 24px', borderRadius: 11, border: 'none', background: pasteText.trim() ? A : BORDER, color: '#fff', fontSize: 14, fontWeight: 500, cursor: pasteText.trim() && !pasteSaving ? 'pointer' : 'default' }}>
+                    style={{ padding: '10px 26px', borderRadius: 999, border: 'none', background: pasteText.trim() ? ACCENT_DEEP : BORDER, color: pasteText.trim() && isDark ? BG : '#fff', fontSize: 14, fontWeight: 500, cursor: pasteText.trim() && !pasteSaving ? 'pointer' : 'default' }}>
                     {pasteSaving ? 'Creating…' : 'Create session'}
                   </button>
                 </div>
@@ -1287,7 +1294,7 @@ function SessionsPageInner() {
             /* ── IMPORT AUDIO (upload → transcribe → session) ─────────────────────── */
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', justifyContent: 'center', padding: 28 }}>
               <div style={{ width: '100%', maxWidth: 560, height: 'fit-content', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32 }}>
-                <p style={{ fontFamily: '"Fraunces", serif', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>Import audio</p>
+                <p style={{ fontFamily: 'var(--font-serif)', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>Import audio</p>
                 <p style={{ fontSize: 13, color: MUTED, margin: '0 0 4px', wordBreak: 'break-all' }}>{importFileName}</p>
                 <p style={{ fontSize: 12, color: MUTED, margin: '0 0 24px' }}>mp3, m4a, wav, mp4 — transcribed via AssemblyAI (EU).</p>
 
@@ -1348,7 +1355,7 @@ function SessionsPageInner() {
             /* ── RECALL / ZOOM NOTETAKER ─────────────────────────────────────────── */
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', justifyContent: 'center', padding: 28 }}>
               <div style={{ width: '100%', maxWidth: 560, height: 'fit-content', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32 }}>
-                <p style={{ fontFamily: '"Fraunces", serif', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>Record online session</p>
+                <p style={{ fontFamily: 'var(--font-serif)', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>Record online session</p>
                 <p style={{ fontSize: 13, color: MUTED, margin: '0 0 24px', lineHeight: 1.5 }}>A notetaker bot joins your call and transcribes it. Works with Zoom, Google Meet, Microsoft Teams, and Webex.</p>
 
                 {zoomStatus === 'idle' && (() => {
@@ -1438,7 +1445,7 @@ function SessionsPageInner() {
                 {/* Pre-mood */}
                 {showPreMood && !isCapturing && (
                   <>
-                    <p style={{ fontFamily: '"Fraunces", serif', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>How are you feeling?</p>
+                    <p style={{ fontFamily: 'var(--font-serif)', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>How are you feeling?</p>
                     <p style={{ fontSize: 13, color: MUTED, margin: '0 0 24px' }}>Before starting the session</p>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center', marginBottom: 28 }}>
                       {SESSION_MOODS.map((m, i) => (
@@ -1510,26 +1517,61 @@ function SessionsPageInner() {
                   </div>
                 )}
 
-                {/* Capturing */}
+                {/* Capturing — the ritual screen: a glowing eye, its halo
+                    breathing, the level meter as its lashes, and the two
+                    controls as quiet pills. */}
                 {isCapturing && !isTranscribing && (
                   <>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ width: 9, height: 9, borderRadius: '50%', background: isPaused ? MUTED : '#EF4444', animation: isPaused ? 'none' : 'pulse 1s infinite' }} />
-                        <span style={{ fontSize: 13, fontWeight: 500, color: isPaused ? MUTED : '#EF4444' }}>{isPaused ? 'Paused' : 'Recording'}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '18px 0 8px' }}>
+
+                      {/* Eye + halo */}
+                      <div style={{ position: 'relative', width: 210, height: 150, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {/* Centred with margins, not transform: the breathing
+                            keyframes animate transform, which would otherwise
+                            replace the centring translate and shove the halo
+                            off to one side. */}
+                        <span className={`eye-glow${isPaused ? '' : ' ritual-halo'}`}
+                          style={{ width: 260, height: 260, left: '50%', top: '50%', marginLeft: -130, marginTop: -130 }} />
+                        <svg width="150" height="98" viewBox="0 0 150 98" fill="none" style={{ position: 'relative', overflow: 'visible' }} aria-hidden="true">
+                          {/* Concentric rings — outermost faintest */}
+                          <ellipse cx="75" cy="49" rx="72" ry="45" fill="none" stroke={A} strokeWidth="1"   opacity={isPaused ? 0.16 : 0.30} />
+                          <ellipse cx="75" cy="49" rx="57" ry="35" fill="none" stroke={A} strokeWidth="1.1" opacity={isPaused ? 0.22 : 0.45} />
+                          <ellipse cx="75" cy="49" rx="42" ry="26" fill="none" stroke={A} strokeWidth="1.4" opacity={isPaused ? 0.30 : 0.72} />
+                          <circle  cx="75" cy="49" r="15" fill={ACCENT_DEEP} opacity={isPaused ? 0.45 : 1} />
+                          <circle  cx="80" cy="43" r="4.4" fill={SURFACE} opacity="0.85" />
+                        </svg>
                       </div>
-                      <span style={{ fontFamily: '"Fraunces", serif', fontSize: 28, fontWeight: 300, color: TEXT }}>{fmt(seconds)}</span>
-                      <div style={{ display: 'flex', gap: 8 }}>
+
+                      {/* Serif status + elapsed */}
+                      <p style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: 25, color: TEXT, margin: '10px 0 2px', letterSpacing: '0.01em' }}>
+                        {isPaused ? 'Paused' : 'Listening…'}
+                      </p>
+                      <p style={{ fontFamily: 'var(--font-serif)', fontSize: 32, color: A, margin: '0 0 4px', letterSpacing: '0.03em' }}>
+                        {fmt(seconds)}
+                      </p>
+
+                      {/* Breathing equaliser — the same AudioLevelMeter, restyled */}
+                      <div style={{ width: '100%', maxWidth: 340, padding: '10px 0 2px', display: 'flex', justifyContent: 'center' }}>
+                        <AudioLevelMeter stream={mediaRef.current?.stream} source={captureSource} paused={isPaused} A={A} MUTED={MUTED} TEXT={TEXT} />
+                      </div>
+
+                      {/* Pill controls */}
+                      <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
                         {isPaused
-                          ? <button onClick={resumeRecording} style={{ padding: '9px 18px', borderRadius: 10, border: `1px solid ${A}`, background: 'transparent', color: A, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>▶ Resume</button>
-                          : <button onClick={pauseRecording} style={{ padding: '9px 18px', borderRadius: 10, border: `1px solid ${BORDER}`, background: 'transparent', color: TEXT, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>⏸ Pause</button>}
-                        <button onClick={stopRecording} style={{ padding: '9px 20px', borderRadius: 10, border: 'none', background: '#EF4444', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>⏹ Stop</button>
+                          ? <button onClick={resumeRecording}
+                              style={{ padding: '11px 30px', borderRadius: 999, border: 'none', background: ACCENT_DEEP, color: isDark ? BG : '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer', letterSpacing: '0.02em' }}>
+                              ▶ Resume
+                            </button>
+                          : <button onClick={pauseRecording}
+                              style={{ padding: '11px 30px', borderRadius: 999, border: `1px solid ${A}`, background: 'transparent', color: A, fontSize: 14, fontWeight: 500, cursor: 'pointer', letterSpacing: '0.02em' }}>
+                              ⏸ Pause
+                            </button>}
+                        <button onClick={stopRecording}
+                          style={{ padding: '11px 32px', borderRadius: 999, border: 'none', background: ACCENT_DEEP, color: isDark ? BG : '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer', letterSpacing: '0.02em' }}>
+                          ⏹ Stop
+                        </button>
                       </div>
                     </div>
-                    <div style={{ minHeight: 90, padding: '16px 14px', borderRadius: 10, background: BG, border: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <AudioLevelMeter stream={mediaRef.current?.stream} source={captureSource} paused={isPaused} A={A} MUTED={MUTED} TEXT={TEXT} />
-                    </div>
-                    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
                   </>
                 )}
 
@@ -1651,7 +1693,7 @@ function SessionsPageInner() {
                       <p style={{ fontSize: 15, color: MUTED, margin: 0, textAlign: 'center' }}>No AI analysis yet</p>
                       {analyseError && <p style={{ fontSize: 12, color: '#DC2626', margin: 0, textAlign: 'center' }}>{analyseError}</p>}
                       <button onClick={analyseSession} disabled={analysing || !selectedSession?.transcript}
-                        style={{ padding: '11px 28px', borderRadius: 12, border: 'none', background: selectedSession?.transcript ? A : BORDER, color: '#fff', fontSize: 14, fontWeight: 500, cursor: selectedSession?.transcript ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        style={{ padding: '11px 30px', borderRadius: 999, border: 'none', background: selectedSession?.transcript ? ACCENT_DEEP : BORDER, color: selectedSession?.transcript && isDark ? BG : '#fff', fontSize: 14, fontWeight: 500, cursor: selectedSession?.transcript ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 8 }}>
                         {analysing ? '⏳ Analysing…' : '✦ Analyse'}
                       </button>
                       {/* Dead end otherwise: say how to get a transcript, and go there. */}
@@ -1678,7 +1720,7 @@ function SessionsPageInner() {
                       </div>
                       {SECTIONS.filter(({ key }) => hasValue(ai[key])).map(({ key, label, color }) => (
                         <div key={key} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${color}`, borderRadius: 12, padding: '16px 18px' }}>
-                          <p style={{ fontSize: 10, fontWeight: 700, color, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{label}</p>
+                          <p className="ritual-label" style={{ margin: '0 0 8px' }}>{label}</p>
                           {Array.isArray(ai[key])
                             ? <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6 }}>
                                 {ai[key].map((item, i) => (

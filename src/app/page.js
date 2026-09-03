@@ -29,7 +29,7 @@ function defaultSessionName() {
 
 export default function HomePage() {
   const { supabase, user } = useAuth();
-  const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL } = useTheme();
+  const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL, ACCENT_DEEP, isDark } = useTheme();
   const router = useRouter();
 
   const [stats,         setStats]         = useState(null);
@@ -85,10 +85,10 @@ export default function HomePage() {
   }
 
   const STAT_CARDS = [
-    { label: 'SESSIONS',    value: loading ? '—' : String(stats?.total ?? 0),                              color: '#E8785A' },
-    { label: 'AVG LIFT',    value: loading ? '—' : (stats?.avgLift ? `+${stats.avgLift}` : '—'),           color: '#3B82F6' },
-    { label: 'AI ANALYSES', value: loading ? '—' : String(stats?.breakthroughs ?? 0),                      color: '#8B5CF6' },
-    { label: 'ENCRYPTED',   value: '100%',                                                                  color: '#10B981' },
+    { label: 'SESSIONS',    value: loading ? '—' : String(stats?.total ?? 0),                              color: 'var(--accent-deep)' },
+    { label: 'AVG LIFT',    value: loading ? '—' : (stats?.avgLift ? `+${stats.avgLift}` : '—'),           color: 'var(--accent)' },
+    { label: 'AI ANALYSES', value: loading ? '—' : String(stats?.breakthroughs ?? 0),                      color: 'var(--accent-deep)' },
+    { label: 'ENCRYPTED',   value: '100%',                                                                  color: 'var(--accent)' },
   ];
 
   return (
@@ -101,8 +101,8 @@ export default function HomePage() {
             <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 6px', letterSpacing: '0.09em', textTransform: 'uppercase' }}>
               {todayDate()}
             </p>
-            <h1 style={{ fontSize: 28, fontWeight: 600, color: TEXT, margin: 0, lineHeight: 1.25, fontFamily: '"Plus Jakarta Sans", sans-serif' }}>
-              {greeting()}, {userName} 👋
+            <h1 style={{ fontSize: 38, fontWeight: 400, color: TEXT, margin: 0, lineHeight: 1.2, fontFamily: 'var(--font-serif)' }}>
+              {greeting()}, <em style={{ fontStyle: 'italic' }}>{userName}</em>
             </h1>
           </div>
 
@@ -148,13 +148,13 @@ export default function HomePage() {
                 onClick={handleStartRecording}
                 style={{
                   width: 80, height: 80, borderRadius: '50%',
-                  background: CORAL, border: 'none', cursor: 'pointer',
+                  background: ACCENT_DEEP, border: 'none', cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: '0 4px 18px rgba(232,120,90,0.38)',
+                  boxShadow: '0 6px 26px var(--glow)',
                   transition: 'transform 0.12s, box-shadow 0.12s',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.07)'; e.currentTarget.style.boxShadow = '0 6px 24px rgba(232,120,90,0.48)'; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)';    e.currentTarget.style.boxShadow = '0 4px 18px rgba(232,120,90,0.38)'; }}
+                onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.07)'; e.currentTarget.style.boxShadow = '0 10px 34px var(--glow)'; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)';    e.currentTarget.style.boxShadow = '0 6px 26px var(--glow)'; }}
               >
                 <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
                   <rect x="9" y="2" width="6" height="12" rx="3" fill="white"/>
@@ -190,18 +190,14 @@ export default function HomePage() {
           {/* ── Latest AI Insight ─────────────────────────────────────────────── */}
           {latestInsight ? (
             <div style={{ background: SURFACE, borderRadius: 14, padding: '20px 24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}` }}>
-              <p style={{ fontSize: 10, fontWeight: 600, color: MUTED, margin: '0 0 12px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                ✦ LATEST AI INSIGHT
-              </p>
-              <p style={{ fontSize: 14, color: TEXT, margin: 0, lineHeight: 1.75, fontStyle: 'italic' }}>
+              <p className="ritual-label" style={{ margin: '0 0 12px' }}>✦ Latest AI insight</p>
+              <p style={{ fontFamily: 'var(--font-serif)', fontSize: 18, color: TEXT, margin: 0, lineHeight: 1.7, fontStyle: 'italic' }}>
                 "{latestInsight}"
               </p>
             </div>
           ) : (
             <div style={{ background: SURFACE, borderRadius: 14, padding: '20px 24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}` }}>
-              <p style={{ fontSize: 10, fontWeight: 600, color: MUTED, margin: '0 0 10px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                ✦ LATEST AI INSIGHT
-              </p>
+              <p className="ritual-label" style={{ margin: '0 0 10px' }}>✦ Latest AI insight</p>
               <p style={{ fontSize: 14, color: MUTED, margin: 0, lineHeight: 1.7 }}>
                 No AI analyses yet — insights will appear here after your sessions are analysed.
               </p>
