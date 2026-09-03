@@ -8,6 +8,7 @@ const NAV = [
   { href: '/',             label: 'Dashboard'    },
   { href: '/sessions',     label: 'Sessions'     },
   { href: '/next-session', label: 'Next Session' },
+  { href: '/patterns',     label: 'Patterns'     },
   { href: '/homework',     label: 'Homework'     },
   { href: '/ai-chat',      label: 'AI Chat'      },
   { href: '/diary',        label: 'Diary'        },
