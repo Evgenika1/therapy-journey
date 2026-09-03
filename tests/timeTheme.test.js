@@ -138,11 +138,11 @@ test('the specified colours are carried through exactly', () => {
   assert.equal(THEMES.morning.accentDeep, '#127A76');
   assert.equal(THEMES.day.bg, '#D9EDEB');
   assert.equal(THEMES.day.text, '#0A3F3D');
-  assert.equal(THEMES.evening.bg, '#0C3835');
-  assert.equal(THEMES.evening.surface, '#12403D');
-  assert.equal(THEMES.evening.text, '#EAF7F5');
-  assert.equal(THEMES.evening.accent, '#7FC7C4');
-  assert.equal(THEMES.evening.glow, 'rgba(127,199,196,0.24)');
+  assert.equal(THEMES.evening.bg, '#141B2E');
+  assert.equal(THEMES.evening.surface, '#1E2740');
+  assert.equal(THEMES.evening.text, '#EAEFF8');
+  assert.equal(THEMES.evening.accent, '#7EA8DC');
+  assert.equal(THEMES.evening.glow, 'rgba(126,168,220,0.20)');
 });
 
 test('only the two morning colours that failed contrast were adjusted', () => {
@@ -156,17 +156,17 @@ test('only the two morning colours that failed contrast were adjusted', () => {
   // Everything else is exactly as specified.
   assert.equal(THEMES.day.textMuted,     '#4F827F');
   assert.equal(THEMES.day.accent,        '#127A76');
-  assert.equal(THEMES.evening.textMuted, '#8FBEBA');
-  assert.equal(THEMES.evening.accent,    '#7FC7C4');
+  assert.equal(THEMES.evening.textMuted, '#8A9BBE');
+  assert.equal(THEMES.evening.accent,    '#7EA8DC');
 });
 
 // ── CSS variables ────────────────────────────────────────────────────────────
 
 test('every token is exported as a CSS variable', () => {
   const vars = cssVars(THEMES.evening);
-  assert.equal(vars['--bg'], '#0C3835');
-  assert.equal(vars['--accent-deep'], '#7FC7C4');
-  assert.equal(vars['--glow'], 'rgba(127,199,196,0.24)');
+  assert.equal(vars['--bg'], '#141B2E');
+  assert.equal(vars['--accent-deep'], '#7EA8DC');
+  assert.equal(vars['--glow'], 'rgba(126,168,220,0.20)');
   for (const v of Object.values(vars)) assert.ok(v, 'no empty CSS variable');
 });
 

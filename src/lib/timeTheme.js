@@ -44,17 +44,26 @@ export const THEMES = {
     err:        '#A01B14',
     isDark:     false,
   },
+  // Evening is indigo, not a darkened version of the daytime teal: night has a
+  // different temperature. Measured on this background, every value clears 4.5:1
+  // — body text 14.85:1, muted 6.13:1, accent 6.95:1 — so nothing needed
+  // adjusting the way the morning palette did.
   evening: {
     period:     'evening',
-    bg:         '#0C3835',
-    surface:    '#12403D',
-    text:       '#EAF7F5',
-    textMuted:  '#8FBEBA',
-    accent:     '#7FC7C4',
-    accentDeep: '#7FC7C4',
-    glow:       'rgba(127,199,196,0.24)',
-    border:     '#1D5652',
-    navActive:  '#17504C',
+    bg:         '#141B2E',
+    surface:    '#1E2740',
+    text:       '#EAEFF8',
+    textMuted:  '#8A9BBE',
+    accent:     '#7EA8DC',
+    accentDeep: '#7EA8DC',
+    glow:       'rgba(126,168,220,0.20)',
+    // Derived tokens follow the hue too. Left teal they would have shown as
+    // green hairlines around every card on an indigo background.
+    border:     '#313F63',
+    navActive:  '#283555',
+    // Status colours keep their meaning rather than the theme's hue: green
+    // still reads as "went well", and both clear the threshold here (8.1:1
+    // and 7.5:1 on the surface).
     ok:         '#6FD3A8',
     err:        '#FF9E96',
     isDark:     true,
