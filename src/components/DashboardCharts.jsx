@@ -37,6 +37,34 @@ function useWidth() {
   return [ref, width];
 }
 
+// Copy for the whole chart block, per language. The titles travel with the
+// empty states on purpose: a Russian paragraph under an English heading is
+// worse than either language on its own. Which one is picked follows the same
+// rule the session chat already uses (detectSessionLang over the transcripts).
+const COPY = {
+  en: {
+    trendTitle: 'Mood after each session',
+    trendHint:  'Where a session leaves you, across time',
+    trendEmpty: 'This is where your mood trend will appear — how you feel before and after a session. Record a few sessions with a mood check to see it.',
+    heatTitle:  'Emotion check-ins',
+    heatHint:   'Last 8 weeks, by intensity',
+    heatEmpty:  'This is where a map of your emotions, day by day, will appear. Log how you feel regularly to see the patterns.',
+    less: 'less', more: 'more',
+    days: ['Mon', '', 'Wed', '', 'Fri', '', ''],
+  },
+  ru: {
+    trendTitle: 'Настроение после сессий',
+    trendHint:  'Каким тебя оставляет сессия, по времени',
+    trendEmpty: 'Здесь появится динамика твоего настроения — как ты чувствуешь себя до и после сессий. Запиши несколько сессий с отметкой настроения, чтобы увидеть тренд.',
+    heatTitle:  'Отметки эмоций',
+    heatHint:   'Последние 8 недель, по интенсивности',
+    heatEmpty:  'Здесь появится карта твоих эмоций по дням. Отмечай эмоции регулярно, чтобы увидеть паттерны.',
+    less: 'реже', more: 'чаще',
+    days: ['Пн', '', 'Ср', '', 'Пт', '', ''],
+  },
+};
+const copyFor = (lang) => COPY[lang] || COPY.en;
+
 const shortDate = (iso) =>
   new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
@@ -55,27 +83,60 @@ function ChartCard({ title, hint, children }) {
   );
 }
 
-// The one message for "there is not enough here yet". Deliberately an offer
-// rather than an error: an empty chart on a therapy journal should not read
-// like something the user got wrong.
-function NotYet({ children }) {
-  const { MUTED, BORDER } = useTheme();
+// "Not enough yet" is the state a new user sees first and longest, so it does
+// the explaining: what this panel is for, and the one action that fills it. The
+// faded sketch is the same shape the real chart will take — a picture of the
+// promise, which a sentence alone cannot make.
+function NotYet({ preview, children, width }) {
+  const { MUTED, BORDER, ACCENT } = useTheme();
   return (
     <div style={{
-      height: 116, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      border: `1px dashed ${BORDER}`, borderRadius: 10, padding: '0 14px',
+      display: 'flex', flexDirection: 'column', gap: 10,
+      border: `1px dashed ${BORDER}`, borderRadius: 10,
+      padding: '14px 15px', width: width || 'auto', boxSizing: 'border-box',
     }}>
-      <p style={{ fontSize: 11.5, color: MUTED, margin: 0, textAlign: 'center', lineHeight: 1.5 }}>
+      <div style={{ opacity: 0.3, color: ACCENT }} aria-hidden="true">{preview}</div>
+      <p style={{ fontSize: 12, color: MUTED, margin: 0, lineHeight: 1.55 }}>
         {children}
       </p>
     </div>
   );
 }
 
+// A line going up, with the before→after ticks the real chart draws.
+function TrendSketch() {
+  const pts = [[4, 30], [30, 22], [56, 26], [82, 13], [108, 8]];
+  return (
+    <svg width="112" height="38" viewBox="0 0 112 38" fill="none">
+      {pts.map(([x, y]) => (
+        <line key={x} x1={x} x2={x} y1={y} y2={y + 8} stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      ))}
+      <polyline points={pts.map(([x, y]) => `${x},${y}`).join(' ')}
+                fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      {pts.map(([x, y]) => <circle key={`d${x}`} cx={x} cy={y} r="2.6" fill="currentColor" />)}
+    </svg>
+  );
+}
+
+// A few weeks of a calendar grid, unevenly filled the way a real one is.
+function HeatSketch() {
+  const fill = [0.25, 0.9, 0.5, 0, 0.7, 0.35, 0, 0.6, 0.9, 0.4, 0.2, 0, 0.8, 0.45, 0.65, 0, 0.3, 0.85];
+  return (
+    <svg width="112" height="38" viewBox="0 0 112 38" fill="none">
+      {fill.map((op, i) => (
+        <rect key={i} x={(i % 6) * 19} y={Math.floor(i / 6) * 13} width="15" height="10" rx="2"
+              fill={op ? 'currentColor' : 'none'} fillOpacity={op}
+              stroke={op ? 'none' : 'currentColor'} strokeOpacity="0.5" strokeWidth="1" />
+      ))}
+    </svg>
+  );
+}
+
 // ── 1. mood over time ────────────────────────────────────────────────────────
 
-export function MoodTrendChart({ pairs }) {
+export function MoodTrendChart({ pairs, lang }) {
   const { BORDER, MUTED, H1: TEXT, SURFACE, ACCENT } = useTheme();
+  const t = copyFor(lang);
   const [ref, width] = useWidth();
   const points = moodTrendPoints(pairs);
 
@@ -97,10 +158,10 @@ export function MoodTrendChart({ pairs }) {
   const last = points[points.length - 1];
 
   return (
-    <ChartCard title="Mood after each session" hint="Where a session leaves you, across time">
+    <ChartCard title={t.trendTitle} hint={t.trendHint}>
       <div ref={ref} style={{ width: '100%', minWidth: 0 }}>
         {!enough ? (
-          <NotYet>Track more to see your trends over time</NotYet>
+          <NotYet preview={<TrendSketch />}>{t.trendEmpty}</NotYet>
         ) : width > 0 && (
           <svg width={width} height={H} role="img"
                aria-label={`Mood after each session across ${points.length} sessions`}
@@ -168,10 +229,10 @@ export function MoodTrendChart({ pairs }) {
 // and on the evening surface the same steps read dark → bright without
 // inverting anything, which is what a dark mode is supposed to do.
 const LEVEL_OPACITY = [0, 0.16, 0.38, 0.62, 0.9];
-const DAY_LABELS = ['Mon', '', 'Wed', '', 'Fri', '', ''];
 
-export function EmotionHeatmap({ emotions, today }) {
+export function EmotionHeatmap({ emotions, today, lang }) {
   const { BORDER, MUTED, ACCENT } = useTheme();
+  const t = copyFor(lang);
 
   const cols = heatmapGrid(emotions, today || new Date(), HEATMAP_WEEKS);
   const withData = heatmapDaysWithData(cols);
@@ -187,15 +248,17 @@ export function EmotionHeatmap({ emotions, today }) {
   const step = STEP;
 
   return (
-    <ChartCard title="Emotion check-ins" hint="Last 8 weeks, by intensity">
+    <ChartCard title={t.heatTitle} hint={t.heatHint}>
       <div style={{ minWidth: 0 }}>
         {withData < MIN_HEATMAP_DAYS ? (
-          <NotYet>Track more to see your trends over time</NotYet>
+          // Pinned to the width the drawn map would take, so an empty card does
+          // not balloon this column to fit one long sentence.
+          <NotYet preview={<HeatSketch />} width={W + 40}>{t.heatEmpty}</NotYet>
         ) : (
           <svg width={W} height={H} role="img"
                aria-label={`Emotion check-ins over the last ${HEATMAP_WEEKS} weeks, ${withData} days logged`}
                style={{ display: 'block' }}>
-            {DAY_LABELS.map((label, r) => label && (
+            {t.days.map((label, r) => label && (
               <text key={r} x="0" y={TOP + r * step + cell - 2} fontSize="8.5" fill={MUTED}>{label}</text>
             ))}
 
@@ -224,13 +287,13 @@ export function EmotionHeatmap({ emotions, today }) {
 
             {/* Sequential legend. "less → more" is the only reading a one-hue
                 ramp supports, so it says exactly that and nothing more. */}
-            <text x={LABEL_W} y={H - 5} fontSize="8.5" fill={MUTED}>less</text>
+            <text x={LABEL_W} y={H - 5} fontSize="8.5" fill={MUTED}>{t.less}</text>
             {LEVEL_OPACITY.map((op, i) => (
               <rect key={i} x={LABEL_W + 26 + i * 11} y={H - 13} width="8" height="8" rx="2"
                     fill={i === 0 ? 'none' : ACCENT} fillOpacity={op}
                     stroke={i === 0 ? BORDER : 'none'} strokeWidth="1" />
             ))}
-            <text x={LABEL_W + 26 + LEVEL_OPACITY.length * 11 + 4} y={H - 5} fontSize="8.5" fill={MUTED}>more</text>
+            <text x={LABEL_W + 26 + LEVEL_OPACITY.length * 11 + 4} y={H - 5} fontSize="8.5" fill={MUTED}>{t.more}</text>
           </svg>
         )}
       </div>
