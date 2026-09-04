@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
@@ -51,6 +51,13 @@ export default function HomePage() {
   const [sessionPairs,  setSessionPairs]  = useState([]);
   const [showAllPairs,  setShowAllPairs]  = useState(false);
   const [moodBefore,    setMoodBefore]    = useState(null);
+  const [insightOpen,   setInsightOpen]   = useState(false);
+  // Whether the insight is actually taller than its collapsed box. Measured
+  // rather than guessed from the string length: the same character count wraps
+  // to three lines or to five depending on the viewport, and a "Show more" that
+  // reveals nothing is worse than no button at all.
+  const [insightClamped, setInsightClamped] = useState(false);
+  const insightRef = useRef(null);
   const [sessionName,   setSessionName]   = useState(defaultSessionName);
   const [loading,       setLoading]       = useState(true);
 
@@ -89,6 +96,11 @@ export default function HomePage() {
     }).catch(() => setLoading(false));
   }, [supabase]);
 
+  useEffect(() => {
+    const el = insightRef.current;
+    if (el) setInsightClamped(el.scrollHeight > el.clientHeight + 1);
+  }, [latestInsight]);
+
   async function handleStartRecording() {
     let preMoodQuery = '';
     if (moodBefore !== null && user && supabase) {
@@ -120,33 +132,33 @@ export default function HomePage() {
 
   return (
     <AppLayout>
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, background: BG, fontFamily: '"Plus Jakarta Sans", sans-serif', color: TEXT, paddingBottom: 60 }}>
-        <div style={{ padding: 32, maxWidth: 860, margin: '0 auto' }}>
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, background: BG, fontFamily: '"Plus Jakarta Sans", sans-serif', color: TEXT, paddingBottom: 28 }}>
+        <div style={{ padding: '22px 26px', maxWidth: 860, margin: '0 auto' }}>
 
           {/* ── Header ───────────────────────────────────────────────────────── */}
-          <div style={{ marginBottom: 32 }}>
-            <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 6px', letterSpacing: '0.09em', textTransform: 'uppercase' }}>
+          <div style={{ marginBottom: 18 }}>
+            <p style={{ fontSize: 10.5, fontWeight: 600, color: MUTED, margin: '0 0 4px', letterSpacing: '0.09em', textTransform: 'uppercase' }}>
               {todayDate()}
             </p>
-            <h1 style={{ fontSize: 38, fontWeight: 400, color: TEXT, margin: 0, lineHeight: 1.2, fontFamily: 'var(--font-serif)' }}>
+            <h1 style={{ fontSize: 27, fontWeight: 400, color: TEXT, margin: 0, lineHeight: 1.2, fontFamily: 'var(--font-serif)' }}>
               {greeting()}, <em style={{ fontStyle: 'italic' }}>{userName}</em>
             </h1>
           </div>
 
           {/* ── Stat cards ───────────────────────────────────────────────────── */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 28 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 18 }}>
             {STAT_CARDS.map(({ label, value, color }) => (
               <div key={label} style={{
                 background: SURFACE,
-                borderRadius: 12,
-                padding: '16px 18px',
+                borderRadius: 11,
+                padding: '11px 14px',
                 boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
                 border: `1px solid ${BORDER}`,
               }}>
-                <p style={{ fontSize: 10, fontWeight: 600, color: MUTED, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.09em' }}>
+                <p style={{ fontSize: 9.5, fontWeight: 600, color: MUTED, margin: '0 0 5px', textTransform: 'uppercase', letterSpacing: '0.09em' }}>
                   {label}
                 </p>
-                <p style={{ fontSize: 30, fontWeight: 700, color, margin: 0, lineHeight: 1, fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+                <p style={{ fontSize: 22, fontWeight: 700, color, margin: 0, lineHeight: 1, fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
                   {value}
                 </p>
               </div>
@@ -159,23 +171,23 @@ export default function HomePage() {
               viewport, so the section that replaced a whole screen was the one
               thing nobody saw. It reads with the stat cards above it — both
               answer "where am I", before the page asks anything of you. */}
-          <section style={{ marginBottom: 28 }}>
-            <div style={{ marginBottom: 16 }}>
-              <p className="ritual-label" style={{ margin: '0 0 8px' }}>✦ Progress</p>
-              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 26, fontWeight: 300, color: TEXT, margin: '0 0 4px', lineHeight: 1.25 }}>
+          <section style={{ marginBottom: 18 }}>
+            <div style={{ marginBottom: 10 }}>
+              <p className="ritual-label" style={{ margin: '0 0 5px' }}>✦ Progress</p>
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 19, fontWeight: 300, color: TEXT, margin: '0 0 3px', lineHeight: 1.25 }}>
                 Your therapy journey at a glance
               </h2>
-              <p style={{ fontSize: 14, color: MUTED, margin: 0 }}>
+              <p style={{ fontSize: 12.5, color: MUTED, margin: 0 }}>
                 How your mood moves across a session, from the first to the most recent.
               </p>
             </div>
 
             {/* Session mood impact */}
-            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 28 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                <p style={{ fontSize: 12, fontWeight: 600, color: MUTED, margin: 0, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Session Impact</p>
+            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 14, padding: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: 0, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Session Impact</p>
                 {avgDiff && (
-                  <span style={{ fontSize: 13, fontWeight: 500, color: Number(avgDiff) >= 0 ? GREEN : ERR }}>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: Number(avgDiff) >= 0 ? GREEN : ERR }}>
                     avg {Number(avgDiff) >= 0 ? '+' : ''}{avgDiff} per session
                   </span>
                 )}
@@ -183,21 +195,21 @@ export default function HomePage() {
 
               {loading && <p style={{ color: MUTED }}>Loading…</p>}
               {!loading && sessionPairs.length === 0 && (
-                <p style={{ color: MUTED, fontSize: 14 }}>No before/after mood data yet. Log your mood before and after a session to see impact here.</p>
+                <p style={{ color: MUTED, fontSize: 12.5, margin: 0 }}>No before/after mood data yet. Log your mood before and after a session to see impact here.</p>
               )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                 {visiblePairs.map(p => {
                   const pct = Math.min(100, Math.max(0, (p.after / 10) * 100));
                   const positive = p.diff >= 0;
                   return (
-                    <div key={p.id} style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 18px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                        <span style={{ fontSize: 13, color: MUTED }}>{new Date(p.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                    <div key={p.id} style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 10, padding: '9px 13px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <span style={{ fontSize: 12, color: MUTED }}>{new Date(p.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 18 }}>{moodEmoji(p.before)}</span>
+                          <span style={{ fontSize: 16 }}>{moodEmoji(p.before)}</span>
                           <span style={{ fontSize: 12, color: MUTED }}>→</span>
-                          <span style={{ fontSize: 18 }}>{moodEmoji(p.after)}</span>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: positive ? GREEN : ERR, minWidth: 36, textAlign: 'right' }}>
+                          <span style={{ fontSize: 16 }}>{moodEmoji(p.after)}</span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: positive ? GREEN : ERR, minWidth: 32, textAlign: 'right' }}>
                             {positive ? '+' : ''}{p.diff}
                           </span>
                         </div>
@@ -214,8 +226,8 @@ export default function HomePage() {
                 <button
                   onClick={() => setShowAllPairs(v => !v)}
                   style={{
-                    marginTop: 14, background: 'none', border: 'none', padding: 0,
-                    color: CORAL, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    marginTop: 10, background: 'none', border: 'none', padding: 0,
+                    color: CORAL, fontSize: 12, fontWeight: 600, cursor: 'pointer',
                     fontFamily: 'inherit',
                   }}>
                   {showAllPairs
@@ -227,58 +239,58 @@ export default function HomePage() {
           </section>
 
           {/* ── Record card ──────────────────────────────────────────────────── */}
-          <div style={{ background: SURFACE, borderRadius: 16, padding: '28px 32px', marginBottom: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}` }}>
+          <div style={{ background: SURFACE, borderRadius: 14, padding: '18px 22px', marginBottom: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}` }}>
 
             {/* Session name */}
             <input
               value={sessionName}
               onChange={e => setSessionName(e.target.value)}
               style={{
-                fontSize: 17, fontWeight: 500, color: TEXT,
+                fontSize: 15, fontWeight: 500, color: TEXT,
                 border: 'none', borderBottom: `1px solid ${BORDER}`,
                 outline: 'none', background: 'transparent',
-                width: '100%', paddingBottom: 8, marginBottom: 28,
+                width: '100%', paddingBottom: 6, marginBottom: 16,
                 fontFamily: 'inherit', boxSizing: 'border-box',
               }}
             />
 
             {/* Mic button */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, marginBottom: 32 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, marginBottom: 16 }}>
               <button
                 onClick={handleStartRecording}
                 style={{
-                  width: 80, height: 80, borderRadius: '50%',
+                  width: 58, height: 58, borderRadius: '50%',
                   background: ACCENT_DEEP, border: 'none', cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: '0 6px 26px var(--glow)',
+                  boxShadow: '0 5px 20px var(--glow)',
                   transition: 'transform 0.12s, box-shadow 0.12s',
                 }}
                 onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.07)'; e.currentTarget.style.boxShadow = '0 10px 34px var(--glow)'; }}
                 onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)';    e.currentTarget.style.boxShadow = '0 6px 26px var(--glow)'; }}
               >
-                <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+                <svg width="23" height="23" viewBox="0 0 24 24" fill="none">
                   <rect x="9" y="2" width="6" height="12" rx="3" fill="white"/>
                   <path d="M5 10a7 7 0 0 0 14 0" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                   <line x1="12" y1="17" x2="12" y2="21" stroke="white" strokeWidth="2" strokeLinecap="round"/>
                   <line x1="8"  y1="21" x2="16" y2="21" stroke="white" strokeWidth="2" strokeLinecap="round"/>
                 </svg>
               </button>
-              <p style={{ fontSize: 13, color: MUTED, margin: 0 }}>Tap to begin your therapy session</p>
+              <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>Tap to begin your therapy session</p>
             </div>
 
             {/* Mood before */}
             <div>
-              <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.09em' }}>
+              <p style={{ fontSize: 10.5, fontWeight: 600, color: MUTED, margin: '0 0 7px', textTransform: 'uppercase', letterSpacing: '0.09em' }}>
                 Mood before
               </p>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 7 }}>
                 {MOOD_EMOJIS.map((emoji, i) => (
                   <button key={i} onClick={() => setMoodBefore(moodBefore === i ? null : i)}
                     style={{
-                      width: 42, height: 42, borderRadius: 11,
+                      width: 34, height: 34, borderRadius: 9,
                       border: `1.5px solid ${moodBefore === i ? CORAL : BORDER}`,
                       background: moodBefore === i ? CORAL + '18' : 'transparent',
-                      fontSize: 20, cursor: 'pointer', transition: 'all 0.1s',
+                      fontSize: 17, cursor: 'pointer', transition: 'all 0.1s',
                     }}>
                     {emoji}
                   </button>
@@ -289,16 +301,32 @@ export default function HomePage() {
 
           {/* ── Latest AI Insight ─────────────────────────────────────────────── */}
           {latestInsight ? (
-            <div style={{ background: SURFACE, borderRadius: 14, padding: '20px 24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}` }}>
-              <p className="ritual-label" style={{ margin: '0 0 12px' }}>✦ Latest AI insight</p>
-              <p style={{ fontFamily: 'var(--font-serif)', fontSize: 18, color: TEXT, margin: 0, lineHeight: 1.7, fontStyle: 'italic' }}>
+            <div style={{ background: SURFACE, borderRadius: 12, padding: '14px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}` }}>
+              <p className="ritual-label" style={{ margin: '0 0 8px' }}>✦ Latest AI insight</p>
+              {/* Collapsed to three lines by default. The analysis runs to a
+                  paragraph, and at full height it was the tallest thing on the
+                  page — for something the user reads once. */}
+              <p ref={insightRef}
+                style={{
+                  fontFamily: 'var(--font-serif)', fontSize: 15, color: TEXT, margin: 0,
+                  lineHeight: 1.55, fontStyle: 'italic',
+                  ...(insightOpen ? {} : {
+                    display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                  }),
+                }}>
                 "{latestInsight}"
               </p>
+              {(insightClamped || insightOpen) && (
+                <button onClick={() => setInsightOpen(v => !v)}
+                  style={{ marginTop: 7, background: 'none', border: 'none', padding: 0, color: CORAL, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  {insightOpen ? 'Show less' : 'Show more'}
+                </button>
+              )}
             </div>
           ) : (
-            <div style={{ background: SURFACE, borderRadius: 14, padding: '20px 24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}` }}>
-              <p className="ritual-label" style={{ margin: '0 0 10px' }}>✦ Latest AI insight</p>
-              <p style={{ fontSize: 14, color: MUTED, margin: 0, lineHeight: 1.7 }}>
+            <div style={{ background: SURFACE, borderRadius: 12, padding: '14px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}` }}>
+              <p className="ritual-label" style={{ margin: '0 0 7px' }}>✦ Latest AI insight</p>
+              <p style={{ fontSize: 12.5, color: MUTED, margin: 0, lineHeight: 1.6 }}>
                 No AI analyses yet — insights will appear here after your sessions are analysed.
               </p>
             </div>
