@@ -6,6 +6,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
 import { sessions as sessionsApi, emotions as emotionsApi } from '@/lib/api';
 import { analysisHeadline } from '@/lib/analysisFormat';
+import { MoodTrendChart, EmotionHeatmap } from '@/components/DashboardCharts';
 
 const MOOD_EMOJIS     = ['😞', '😟', '😐', '🙂', '😊'];
 const MOOD_INTENSITIES = [2,    4,    6,    8,    10];
@@ -49,6 +50,7 @@ export default function HomePage() {
   const [stats,         setStats]         = useState(null);
   const [latestInsight, setLatestInsight] = useState(null);
   const [sessionPairs,  setSessionPairs]  = useState([]);
+  const [emotionLogs,   setEmotionLogs]   = useState([]);
   const [showAllPairs,  setShowAllPairs]  = useState(false);
   const [moodBefore,    setMoodBefore]    = useState(null);
   const [insightOpen,   setInsightOpen]   = useState(false);
@@ -74,9 +76,13 @@ export default function HomePage() {
       sessionsApi.stats(supabase),
       sessionsApi.list(supabase),
       sessionsApi.moodPairs(supabase),
-    ]).then(([s, list, pairs]) => {
+      // The heatmap needs these on the first paint, so they ride along rather
+      // than arriving in a second wave that makes the section jump.
+      emotionsApi.list(supabase).catch(() => []),
+    ]).then(([s, list, pairs, logs]) => {
       setStats(s);
       setSessionPairs(pairs);
+      setEmotionLogs(logs);
       // This used to read `parsed.summary` — a field the analysis has never
       // contained — and fall through to the raw string, so the insight card
       // rendered the entire serialized JSON blob in quotes. analysisHeadline
@@ -177,9 +183,13 @@ export default function HomePage() {
               <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 19, fontWeight: 300, color: TEXT, margin: '0 0 3px', lineHeight: 1.25 }}>
                 Your therapy journey at a glance
               </h2>
-              <p style={{ fontSize: 12.5, color: MUTED, margin: 0 }}>
-                How your mood moves across a session, from the first to the most recent.
-              </p>
+            </div>
+
+            {/* Two charts side by side; the grid collapses to one column on a
+                narrow window (.dash-charts in globals.css). */}
+            <div className="dash-charts">
+              <MoodTrendChart pairs={sessionPairs} />
+              <EmotionHeatmap emotions={emotionLogs} />
             </div>
 
             {/* Session mood impact */}

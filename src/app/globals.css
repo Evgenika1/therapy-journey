@@ -171,3 +171,23 @@ h1 em, h2 em, .serif-em { font-style: italic; font-weight: 400; }
 @media (prefers-reduced-motion: reduce) {
   .ritual-halo { animation: none; }
 }
+
+/* ── Dashboard charts ─────────────────────────────────────────────────────────
+   Flex-wrap rather than a grid with a media query: the breakpoint that matters
+   is whether the two cards fit side by side in *this column*, which is not the
+   same question as how wide the window is. A grid `auto` track also refuses to
+   shrink, so a narrow container crushed the chart next to it instead of moving
+   the map to its own line. Here the trend chart asks for 320px and the heatmap
+   keeps its fixed size; when both cannot fit, the heatmap simply wraps. */
+.dash-charts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+/* Grows into whatever is left; min-width:0 lets it actually shrink, which a
+   flex item does not do by default. */
+.dash-charts > :first-child { flex: 1 1 320px; min-width: 0; }
+.dash-charts > :last-child  { flex: 0 0 auto; }
