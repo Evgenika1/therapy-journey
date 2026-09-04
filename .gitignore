@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# not part of Miru — a standalone scraper that happens to live in this folder.
+# Ignored rather than deleted: the file stays on disk, it just isn't this
+# project's to version.
+/scraper.py
