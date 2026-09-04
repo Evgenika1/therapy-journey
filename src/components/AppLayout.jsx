@@ -14,7 +14,6 @@ const NAV = [
   { href: '/diary',        label: 'Diary'        },
   { href: '/journals',     label: 'Journals'     },
   { href: '/emotions',     label: 'Emotions'     },
-  { href: '/progress',     label: 'Progress'     },
 ];
 
 export default function AppLayout({ children }) {
