@@ -5,34 +5,45 @@ import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { topics as topicsApi } from '@/lib/api';
 import { useTheme } from '@/lib/ThemeContext';
+import { countdownFrom, SESSION_DATE_KEY } from '@/lib/nextSession';
 
 function Countdown({ targetDate }) {
-  const { CORAL: A, MUTED } = useTheme();
-  const [diff, setDiff] = useState(null);
+  const { CORAL: A, MUTED, ERR } = useTheme();
+  // Re-derived on a timer so the panel flips to "passed" on its own if the page
+  // is left open across the appointment, rather than counting down past zero.
+  const [state, setState] = useState(() => countdownFrom(targetDate));
 
   useEffect(() => {
-    if (!targetDate) return;
-    function update() {
-      const ms = new Date(targetDate) - new Date();
-      if (ms <= 0) { setDiff({ days: 0, hours: 0, mins: 0 }); return; }
-      const days  = Math.floor(ms / 86400000);
-      const hours = Math.floor((ms % 86400000) / 3600000);
-      const mins  = Math.floor((ms % 3600000) / 60000);
-      setDiff({ days, hours, mins });
-    }
+    const update = () => setState(countdownFrom(targetDate));
     update();
     const id = setInterval(update, 30000);
     return () => clearInterval(id);
   }, [targetDate]);
 
-  if (!diff) return null;
+  if (state.status === 'none') {
+    return <p style={{ fontSize: 15, color: MUTED, margin: 0 }}>Set your next session date to see the countdown</p>;
+  }
+
+  // The reported bug: this used to fall through to the digits and render
+  // 00:00:00, which reads as a broken clock rather than a date that has been
+  // sitting there since June. Say what is actually true, and what to do.
+  if (state.status === 'past') {
+    return (
+      <div>
+        <p style={{ fontFamily: 'var(--font-serif)', fontSize: 34, fontWeight: 300, color: MUTED, margin: 0, lineHeight: 1 }}>—</p>
+        <p style={{ fontSize: 13, color: ERR, margin: '8px 0 0', fontWeight: 500 }}>
+          This date has passed, update it
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
       {[
-        [diff.days,  'days'],
-        [diff.hours, 'hours'],
-        [diff.mins,  'mins'],
+        [state.days,  'days'],
+        [state.hours, 'hours'],
+        [state.mins,  'mins'],
       ].map(([val, label]) => (
         <div key={label} style={{ textAlign: 'center' }}>
           <p style={{ fontFamily: 'var(--font-serif)', fontSize: 40, fontWeight: 300, color: A, margin: 0, lineHeight: 1, minWidth: 56 }}>{String(val).padStart(2, '0')}</p>
@@ -45,7 +56,7 @@ function Countdown({ targetDate }) {
 
 export default function NextSessionPage() {
   const { supabase } = useAuth();
-  const { BG, BORDER, MUTED, SURFACE, CORAL: A, NAV_ACTIVE: ABG, H1: TEXT } = useTheme();
+  const { BG, BORDER, MUTED, SURFACE, CORAL: A, NAV_ACTIVE: ABG, H1: TEXT, ERR } = useTheme();
   const [topics,      setTopics]      = useState([]);
   const [newText,     setNewText]     = useState('');
   const [adding,      setAdding]      = useState(false);
@@ -66,13 +77,32 @@ export default function NextSessionPage() {
         setError('Не удалось загрузить темы: ' + (err?.message || 'неизвестная ошибка'));
         setLoading(false);
       });
-    const saved = localStorage.getItem('tj_next_session_date');
-    if (saved) setSessionDate(saved);
   }, [supabase]);
 
+  // Its own effect: this used to sit after an `if (!supabase) return`, so the
+  // saved date was only read once auth had come up — and never at all for a
+  // signed-out visitor, though the value is purely local.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(SESSION_DATE_KEY);
+      if (saved) setSessionDate(saved);
+    } catch (e) {
+      // Private mode and blocked site data both throw on access.
+      console.error('[NextSession] read date:', e?.message);
+    }
+  }, []);
+
   function handleDateChange(e) {
-    setSessionDate(e.target.value);
-    localStorage.setItem('tj_next_session_date', e.target.value);
+    const value = e.target.value;
+    setSessionDate(value);
+    try {
+      // Clearing the field clears the stored value too, otherwise the old date
+      // comes back on the next visit.
+      if (value) localStorage.setItem(SESSION_DATE_KEY, value);
+      else localStorage.removeItem(SESSION_DATE_KEY);
+    } catch (e) {
+      console.error('[NextSession] save date:', e?.message);
+    }
   }
 
   async function addTopic() {
@@ -125,6 +155,9 @@ export default function NextSessionPage() {
     } finally { setClearing(false); }
   }
 
+  const dateStatus = countdownFrom(sessionDate).status;
+  const datePassed = dateStatus === 'past';
+
   const pending = topics.filter(t => !t.checked);
   const done    = topics.filter(t => t.checked);
 
@@ -142,16 +175,23 @@ export default function NextSessionPage() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 20 }}>
               <div>
                 <p style={{ fontSize: 12, fontWeight: 600, color: MUTED, margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Countdown</p>
-                {sessionDate
-                  ? <Countdown targetDate={sessionDate} />
-                  : <p style={{ fontSize: 15, color: MUTED, margin: 0 }}>Set your next session date to see the countdown</p>
-                }
+                <Countdown targetDate={sessionDate} />
               </div>
               <div>
                 <p style={{ fontSize: 12, color: MUTED, margin: '0 0 6px', fontWeight: 500 }}>Next session date</p>
                 <input type="datetime-local" value={sessionDate} onChange={handleDateChange}
-                  style={{ padding: '9px 14px', borderRadius: 10, border: `1px solid ${BORDER}`, fontSize: 14, color: TEXT, background: BG, outline: 'none', cursor: 'pointer' }}
+                  aria-label="Next session date"
+                  style={{ padding: '9px 14px', borderRadius: 10, border: `1px solid ${datePassed ? ERR : BORDER}`, fontSize: 14, color: TEXT, background: BG, outline: 'none', cursor: 'pointer' }}
                 />
+                {/* type="datetime-local" has no placeholder of its own, so the
+                    prompt lives under the field where a hint would go anyway. */}
+                {/* Only the prompt lives here. The "has passed" warning is
+                    stated once, next to the countdown it replaced; saying it
+                    twice in one panel is noise, and the red border already
+                    points at the field to change. */}
+                <p style={{ fontSize: 11.5, color: MUTED, margin: '6px 0 0', minHeight: 15 }}>
+                  {dateStatus === 'none' ? 'Set your next session date' : ''}
+                </p>
               </div>
             </div>
           </div>
