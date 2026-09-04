@@ -299,3 +299,55 @@ test('every write is scoped to the signed-in user', async () => {
     assert.ok(filters.includes('user_id'), `missing user_id scope on ${sb.lastCall().table}`);
   }
 });
+
+// ── emotion notes (migration 017) ────────────────────────────────────────────
+
+test('an emotion note is stored alongside the log', async () => {
+  const sb = fakeSupabase({ responses: { emotion_logs: { data: row({ emotion: 'Anxiety', note: 'поругалась с мамой' }) } } });
+  const saved = await emotions.save(sb, {
+    category: 'Anxiety', sub_emotions: ['worried'], intensity: 8, note: '  поругалась с мамой  ',
+  });
+  assert.equal(sb.lastCall().payload.note, 'поругалась с мамой', 'note is trimmed before insert');
+  assert.equal(saved.note, 'поругалась с мамой');
+});
+
+test('an empty note is left out of the insert entirely', async () => {
+  for (const note of ['', '   ', undefined, null]) {
+    const sb = fakeSupabase({ responses: { emotion_logs: { data: row() } } });
+    await emotions.save(sb, { category: 'Joy', sub_emotions: ['proud'], intensity: 5, note });
+    assert.ok(!('note' in sb.lastCall().payload), `empty note (${JSON.stringify(note)}) must not be sent`);
+  }
+});
+
+test('a log still saves when the note column has not been migrated yet', async () => {
+  // Migration 017 may not have run. Losing the emotion because of an optional
+  // extra would be the wrong trade: drop the column, keep the log.
+  const sb = fakeSupabase({ responses: { emotion_logs: [
+    { error: pgError('PGRST204', "Could not find the 'note' column of 'emotion_logs' in the schema cache") },
+    { data: row({ emotion: 'Anxiety' }) },
+  ] } });
+  const saved = await emotions.save(sb, { category: 'Anxiety', sub_emotions: ['tense'], intensity: 7, note: 'контекст' });
+  assert.equal(saved.category, 'Anxiety');
+  const inserts = sb.callsFor('emotion_logs').filter(c => c.op === 'insert');
+  assert.equal(inserts.length, 2);
+  assert.ok(!('note' in inserts[1].payload), 'the retry must drop only the missing column');
+  assert.deepEqual(inserts[1].payload.sub_emotions, ['tense'], 'and must keep the ones that do exist');
+});
+
+test('a missing sub_emotions column is still handled the same way', async () => {
+  const sb = fakeSupabase({ responses: { emotion_logs: [
+    { error: pgError('42703', 'column "sub_emotions" of relation "emotion_logs" does not exist') },
+    { data: row({ emotion: 'Joy' }) },
+  ] } });
+  await emotions.save(sb, { category: 'Joy', sub_emotions: ['proud'], intensity: 6, note: 'сегодня получилось' });
+  const inserts = sb.callsFor('emotion_logs').filter(c => c.op === 'insert');
+  assert.ok(!('sub_emotions' in inserts[1].payload));
+  assert.equal(inserts[1].payload.note, 'сегодня получилось', 'the note must survive a sub_emotions failure');
+});
+
+test('an error that is not a missing column is not retried away', async () => {
+  const sb = fakeSupabase({ responses: { emotion_logs: { error: pgError('42501', 'RLS denied') } } });
+  await assert.rejects(
+    () => emotions.save(sb, { category: 'Joy', sub_emotions: ['proud'], intensity: 5, note: 'x' }),
+    /RLS denied/);
+});

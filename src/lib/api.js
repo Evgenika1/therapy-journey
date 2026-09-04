@@ -20,6 +20,16 @@ function normalizeEmotion(e) {
   return { ...e, category, emotion_name, sub_emotions: subs };
 }
 
+// PostgREST reports an unknown column either as Postgres 42703 ("column \"note\"
+// of relation ... does not exist") or as PGRST204 ("Could not find the 'note'
+// column ... in the schema cache"). Both name the column in quotes.
+const isMissingColumn = (e) => e?.code === '42703' || e?.code === 'PGRST204';
+
+function missingColumnName(e) {
+  const m = String(e?.message || '').match(/["'`]([a-z_][a-z0-9_]*)["'`]/i);
+  return m ? m[1] : null;
+}
+
 function toError(supabaseError) {
   const msg = supabaseError?.message
     || supabaseError?.details
@@ -229,15 +239,30 @@ export const emotions = {
       sub_emotions: subEmotions,
     };
     if (log.session_tag) insert.session_tag = log.session_tag;
+    if (log.note?.trim()) insert.note = log.note.trim();
 
+    // Columns added by later migrations (013 sub_emotions, 017 note) may not
+    // exist yet on a database that hasn't been migrated. Rather than lose the
+    // whole log, drop whichever column the error names and try again — the
+    // emotion itself matters more than its optional extras.
+    const dropped = [];
     let { data, error } = await supabase.from('emotion_logs').insert(insert).select().single();
-    // Graceful fallback if migration 013 (sub_emotions column) hasn't run yet.
-    if (error && (error.code === '42703' || error.code === 'PGRST204')) {
-      delete insert.sub_emotions;
+    for (let i = 0; i < 2 && error && isMissingColumn(error); i++) {
+      const column = missingColumnName(error);
+      if (!column || !(column in insert)) break;
+      delete insert[column];
+      dropped.push(column);
       ({ data, error } = await supabase.from('emotion_logs').insert(insert).select().single());
     }
     if (error) throw toError(error);
-    return normalizeEmotion({ ...data, sub_emotions: data.sub_emotions ?? subEmotions });
+    return normalizeEmotion({
+      ...data,
+      sub_emotions: data.sub_emotions ?? subEmotions,
+      note: data.note ?? null,
+      // Reported so the UI can say a note was not stored. Dropping it silently
+      // would show the text once and lose it on the next load.
+      dropped_columns: dropped,
+    });
   },
 
   async update(supabase, id, fields) {

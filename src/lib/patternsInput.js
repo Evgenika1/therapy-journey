@@ -103,6 +103,10 @@ export function buildPatternsInput(sessions = [], emotions = []) {
       emotions: Array.isArray(e.sub_emotions) ? e.sub_emotions.slice(0, 6) : [],
       intensity: e.intensity ?? null,
       tag: trim(e.session_tag, 20),   // 'before' / 'after' around a session
+      // The note is the only field saying what a feeling was ABOUT. Triggers
+      // are hard to find without it: "Anxiety 8/10" repeats, "поругалась с
+      // мамой" is what makes it a pattern.
+      note: trim(e.note, 160),
     }));
 
   return {

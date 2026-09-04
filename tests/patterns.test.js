@@ -139,7 +139,7 @@ test('the emotion log travels with dates, intensity and before/after tags', () =
   ]);
   assert.equal(input.emotion_log.length, 2);
   assert.deepEqual(input.emotion_log[0], {
-    date: '2026-01-02', category: 'Anxiety', emotions: ['worried'], intensity: 8, tag: 'before',
+    date: '2026-01-02', category: 'Anxiety', emotions: ['worried'], intensity: 8, tag: 'before', note: null,
   });
   assert.equal(input.emotion_log[1].tag, 'after');
 });
@@ -211,4 +211,42 @@ test('an all-empty analysis is reported as no patterns, not as a result', () => 
   assert.equal(hasAnyPattern({ recurring_themes: [{ theme: 'x' }], emotional_patterns: [], triggers: [], shifts: [] }), true);
   assert.equal(hasAnyPattern(null), false);
   assert.equal(hasAnyPattern('nonsense'), false);
+});
+
+// ── the twelve-category picker feeds the analysis ────────────────────────────
+
+test('a bare-category log (no sub-emotions) reaches the analysis intact', async () => {
+  // The picker stores one row per selected category with an empty sub_emotions
+  // list. That shape has to survive normalisation, or the six categories added
+  // with the picker would be invisible to Patterns.
+  const { emotions } = await import('../src/lib/api.js');
+  const { fakeSupabase } = await import('./helpers/fakeSupabase.js');
+  const sb = fakeSupabase({ responses: { emotion_logs: { data: [
+    { id: 1, created_at: '2026-09-04T10:00:00Z', emotion: 'Gratitude', sub_emotions: [], intensity: 7, note: 'сессия помогла' },
+    { id: 2, created_at: '2026-09-04T10:00:00Z', emotion: 'Love',      sub_emotions: [], intensity: 6, note: null },
+  ] } } });
+  const list = await emotions.list(sb);
+  assert.deepEqual(list.map(e => e.category), ['Gratitude', 'Love']);
+
+  const input = buildPatternsInput([session(1), session(2), session(3)], list);
+  assert.deepEqual(input.emotion_log.map(e => e.category), ['Gratitude', 'Love']);
+  assert.equal(input.emotion_log[0].intensity, 7);
+  assert.deepEqual(input.emotion_log[0].emotions, [], 'an empty refinement list is fine');
+});
+
+test('an emotion note travels to the analysis as context', async () => {
+  const input = buildPatternsInput([session(1), session(2), session(3)], [
+    { created_at: '2026-09-04T10:00:00Z', category: 'Overwhelm', sub_emotions: [], intensity: 9, note: 'слишком много работы' },
+  ]);
+  assert.equal(input.emotion_log[0].category, 'Overwhelm');
+  assert.equal(input.emotion_log[0].intensity, 9);
+  // The note is what turns a repeated intensity into an identifiable trigger.
+  assert.equal(input.emotion_log[0].note, 'слишком много работы');
+});
+
+test('a long note is capped like every other field in the payload', () => {
+  const input = buildPatternsInput([session(1), session(2), session(3)], [
+    { created_at: '2026-09-04T10:00:00Z', category: 'Anxiety', intensity: 5, note: 'я'.repeat(1000) },
+  ]);
+  assert.ok(input.emotion_log[0].note.length <= 160);
 });
