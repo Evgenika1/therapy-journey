@@ -81,12 +81,12 @@ export default function PatternsPage() {
 
   // ── shared bits ────────────────────────────────────────────────────────────
   const card = {
-    background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: '20px 24px',
+    background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 14, padding: '16px 18px',
   };
   const primaryBtn = (on) => ({
-    padding: '11px 30px', borderRadius: 999, border: 'none',
+    padding: '10px 26px', borderRadius: 999, border: 'none',
     background: on ? ACCENT_DEEP : BORDER, color: on && isDark ? BG : '#fff',
-    fontSize: 14, fontWeight: 500, cursor: on ? 'pointer' : 'default', letterSpacing: '0.02em',
+    fontSize: 13, fontWeight: 500, cursor: on ? 'pointer' : 'default', letterSpacing: '0.02em',
   });
 
   return (
@@ -94,11 +94,11 @@ export default function PatternsPage() {
       <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, background: BG, fontFamily: 'var(--font-sans)', color: TEXT, paddingBottom: 60 }}>
         <div style={{ padding: 32, maxWidth: 820, margin: '0 auto' }}>
 
-          <div style={{ marginBottom: 28 }}>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 38, fontWeight: 400, color: TEXT, margin: '0 0 6px', lineHeight: 1.2 }}>
+          <div style={{ marginBottom: 22 }}>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 28, fontWeight: 400, color: TEXT, margin: '0 0 5px', lineHeight: 1.2 }}>
               What <em style={{ fontStyle: 'italic' }}>repeats</em>
             </h1>
-            <p style={{ fontSize: 15, color: MUTED, margin: 0, lineHeight: 1.6 }}>
+            <p style={{ fontSize: 13.5, color: MUTED, margin: 0, lineHeight: 1.6 }}>
               What only shows up when your sessions are read together, rather than one at a time.
             </p>
           </div>
@@ -107,12 +107,12 @@ export default function PatternsPage() {
 
           {/* Not enough history yet */}
           {!loading && !enough && (
-            <div style={{ ...card, textAlign: 'center', padding: '48px 28px' }}>
-              <div style={{ fontSize: 30, color: A, marginBottom: 14 }}>◎</div>
-              <p style={{ fontFamily: 'var(--font-serif)', fontSize: 22, color: TEXT, margin: '0 0 10px' }}>
+            <div style={{ ...card, textAlign: 'center', padding: '38px 24px' }}>
+              <div style={{ fontSize: 24, color: A, marginBottom: 11 }}>◎</div>
+              <p style={{ fontFamily: 'var(--font-serif)', fontSize: 18, color: TEXT, margin: '0 0 8px' }}>
                 Need at least {MIN_ANALYSED_SESSIONS} analysed sessions to find patterns
               </p>
-              <p style={{ fontSize: 14, color: MUTED, margin: 0, lineHeight: 1.7 }}>
+              <p style={{ fontSize: 13, color: MUTED, margin: 0, lineHeight: 1.65 }}>
                 Analysed so far: <strong style={{ color: A }}>{analysed.length}</strong> of {sessions.length}.
                 Patterns are built from session analyses — open a session and press Analyse
                 to add it to the history.
@@ -128,7 +128,7 @@ export default function PatternsPage() {
                   <p className="ritual-label" style={{ margin: '0 0 6px' }}>
                     {analysed.length} analysed {analysed.length === 1 ? 'session' : 'sessions'}
                   </p>
-                  <p style={{ fontSize: 13.5, color: MUTED, margin: 0, lineHeight: 1.6 }}>
+                  <p style={{ fontSize: 12.5, color: MUTED, margin: 0, lineHeight: 1.6 }}>
                     {!analysis
                       ? 'Your history is ready — patterns can be traced across it now.'
                       : stale
@@ -142,23 +142,23 @@ export default function PatternsPage() {
               </div>
 
               {stale && !running && (
-                <p style={{ fontSize: 13, color: A, margin: '0 0 18px', lineHeight: 1.6 }}>
+                <p style={{ fontSize: 12, color: A, margin: '0 0 15px', lineHeight: 1.6 }}>
                   ↻ Showing the previous run. Press Refresh to include the new sessions.
                 </p>
               )}
 
               {error && (
                 <div style={{ ...card, borderColor: `${A}66`, marginBottom: 20 }}>
-                  <p style={{ fontSize: 13.5, color: MUTED, margin: 0, lineHeight: 1.6 }}>⚠ {error}</p>
+                  <p style={{ fontSize: 12.5, color: MUTED, margin: 0, lineHeight: 1.6 }}>⚠ {error}</p>
                 </div>
               )}
 
               {running && !analysis && (
                 <div style={{ ...card, textAlign: 'center', padding: '44px 28px' }}>
-                  <p style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: 20, color: TEXT, margin: '0 0 8px' }}>
+                  <p style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: 17, color: TEXT, margin: '0 0 6px' }}>
                     Reading everything at once…
                   </p>
-                  <p style={{ fontSize: 13, color: MUTED, margin: 0 }}>
+                  <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>
                     Working through the whole history takes a few seconds.
                   </p>
                 </div>
@@ -166,7 +166,7 @@ export default function PatternsPage() {
 
               {analysis && !hasAnyPattern(analysis) && (
                 <div style={{ ...card }}>
-                  <p style={{ fontSize: 14.5, color: MUTED, margin: 0, lineHeight: 1.7 }}>
+                  <p style={{ fontSize: 13.5, color: MUTED, margin: 0, lineHeight: 1.7 }}>
                     Nothing steady has formed yet — the sessions are still too different.
                     That is normal this early: patterns surface as the history grows.
                   </p>
@@ -175,33 +175,33 @@ export default function PatternsPage() {
 
               {/* The four blocks */}
               {analysis && hasAnyPattern(analysis) && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {PATTERN_SECTIONS.map(({ key, label, icon, fields }) => {
                     const items = Array.isArray(analysis[key]) ? analysis[key] : [];
                     if (items.length === 0) return null;
                     const [head, second, third] = fields;
                     return (
                       <section key={key}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 9, margin: '0 0 12px' }}>
-                          <span style={{ fontSize: 15, color: A }}>{icon}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 10px' }}>
+                          <span style={{ fontSize: 13, color: A }}>{icon}</span>
                           <span className="ritual-label">{label}</span>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                           {items.map((item, i) => (
                             <div key={i} style={{ ...card, borderLeft: `3px solid ${A}` }}>
                               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
-                                <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 20, fontWeight: 400, color: TEXT, margin: 0, lineHeight: 1.35 }}>
+                                <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 16, fontWeight: 400, color: TEXT, margin: 0, lineHeight: 1.35 }}>
                                   {item?.[head]}
                                 </h2>
                                 {/* Frequency reads as a quiet counter, not a headline */}
                                 {key === 'recurring_themes' && item?.[second] && (
-                                  <span style={{ fontSize: 12.5, color: A, fontWeight: 600, whiteSpace: 'nowrap', letterSpacing: '0.03em' }}>
+                                  <span style={{ fontSize: 11.5, color: A, fontWeight: 600, whiteSpace: 'nowrap', letterSpacing: '0.03em' }}>
                                     {item[second]}
                                   </span>
                                 )}
                               </div>
                               {(key === 'recurring_themes' ? item?.[third] : item?.[second]) && (
-                                <p style={{ fontSize: 14.5, color: MUTED, margin: '10px 0 0', lineHeight: 1.75 }}>
+                                <p style={{ fontSize: 14, color: MUTED, margin: '8px 0 0', lineHeight: 1.65 }}>
                                   {key === 'recurring_themes' ? item[third] : item[second]}
                                 </p>
                               )}
