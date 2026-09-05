@@ -1987,7 +1987,7 @@ function SessionsPageInner() {
           </div>
 
           {/* Input */}
-          <div style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER}` }}>
+          <div style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER}`, minWidth: 0, boxSizing: 'border-box' }}>
             {/* Once the thread has started the preset buttons above are gone,
                 but "Help me reframe" only has something to work with once there
                 IS a conversation — so both stay reachable here as chips. */}
@@ -2051,12 +2051,12 @@ function SessionsPageInner() {
               <input value={chatInput} onChange={e => setChatInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendChat()}
                 placeholder="Ask anything about your conversations…"
-                style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 12, outline: 'none', fontFamily: 'inherit' }}
+                style={{ flex: 1, minWidth: 0, padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
                 onFocus={e => e.target.style.borderColor = A}
                 onBlur={e  => e.target.style.borderColor = BORDER}
               />
               <button onClick={() => sendChat()} disabled={!chatInput.trim() || chatLoading}
-                style={{ padding: '9px 14px', borderRadius: 10, border: 'none', background: chatInput.trim() ? A : BORDER, color: '#fff', fontSize: 12, fontWeight: 500, cursor: chatInput.trim() ? 'pointer' : 'default' }}>
+                style={{ padding: '9px 14px', borderRadius: 10, border: 'none', background: chatInput.trim() ? A : BORDER, color: '#fff', fontSize: 12, fontWeight: 500, cursor: chatInput.trim() ? 'pointer' : 'default', flexShrink: 0 }}>
                 ↑
               </button>
             </div>
@@ -2067,7 +2067,15 @@ function SessionsPageInner() {
             {/* The panel is overflow:hidden, so anything wider than it is
                 silently cut rather than wrapped. Long words get a break point
                 and the box is told it may shrink. */}
-            <p style={{ fontSize: 10.5, color: MUTED, margin: '9px 0 0', lineHeight: 1.5, textAlign: 'center', overflowWrap: 'anywhere', wordBreak: 'break-word', minWidth: 0, maxWidth: '100%' }}>
+            {/* Its own box, not whatever the row above happens to leave: full
+                width of the padded container, never wider, wrapping rather than
+                running past the edge that overflow:hidden would cut. */}
+            <p style={{
+              fontSize: 10.5, color: MUTED, margin: '9px 0 0', lineHeight: 1.5,
+              textAlign: 'center', width: '100%', maxWidth: '100%', minWidth: 0,
+              boxSizing: 'border-box', padding: '0 2px',
+              whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word',
+            }}>
               {CHAT_COPY.disclaimer}
             </p>
           </div>

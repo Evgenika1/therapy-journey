@@ -68,7 +68,11 @@ body {
      disclaimer under the input is what goes first. Shrinking is bounded, so it
      never collapses into a sliver. */
   flex-shrink: 1;
-  min-width: 264px;
+  /* No floor. With the input row able to shrink, a narrow panel simply gets
+     narrower; a floor here would put the width back past the viewport and hand
+     the clipping to overflow:hidden again. Below 1100px the panel is hidden
+     outright, so it never becomes a useless sliver. */
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
