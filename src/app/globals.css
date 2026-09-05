@@ -62,8 +62,13 @@ body {
 
 .sessions-chat {
   width: 320px;
-  flex-shrink: 0;
-  min-width: 0;
+  /* Allowed to give up a pixel rather than be cut. The row is three columns
+     inside an overflow:hidden container, so when the widths round up past the
+     viewport by a fraction, a rigid panel loses its right edge silently — the
+     disclaimer under the input is what goes first. Shrinking is bounded, so it
+     never collapses into a sliver. */
+  flex-shrink: 1;
+  min-width: 264px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
