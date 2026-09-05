@@ -36,7 +36,7 @@ export default function DiaryPage() {
     } catch (err) {
       // Keep what was typed in the box — clearing it on a failed save loses it.
       console.error('[Diary] save:', err?.message);
-      setError('Не удалось сохранить запись: ' + (err?.message || 'неизвестная ошибка'));
+      setError('Could not save the entry: ' + (err?.message || 'unknown error'));
     } finally { setSaving(false); }
   }
 
@@ -48,7 +48,7 @@ export default function DiaryPage() {
       setEditId(null);
     } catch (err) {
       console.error('[Diary] edit:', err?.message);
-      setError('Не удалось сохранить изменения: ' + (err?.message || 'неизвестная ошибка'));
+      setError('Could not save your changes: ' + (err?.message || 'unknown error'));
     }
   }
 
@@ -62,7 +62,7 @@ export default function DiaryPage() {
       // Previously unguarded: a failed delete threw an unhandled rejection and
       // the entry stayed on screen with no explanation.
       console.error('[Diary] delete:', err?.message);
-      setError('Не удалось удалить запись: ' + (err?.message || 'неизвестная ошибка'));
+      setError('Could not delete the entry: ' + (err?.message || 'unknown error'));
     }
   }
 

@@ -60,7 +60,7 @@ export default function AiChatPage() {
       // the placeholder was saved into the chat history for good.
       if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
       const assistantMsg = { role: 'assistant', content: data.content || '' };
-      if (!assistantMsg.content) throw new Error('пустой ответ от модели');
+      if (!assistantMsg.content) throw new Error('the model returned an empty response');
       const final = [...next, assistantMsg];
       setMessages(final);
 
@@ -78,7 +78,7 @@ export default function AiChatPage() {
       // Show the failure in the thread (matching the Sessions-page chat) rather
       // than leaving the user staring at their own unanswered message.
       console.error('[AI Chat]', err?.message);
-      setMessages([...next, { role: 'assistant', content: '⚠ ' + (err?.message || 'запрос не удался') }]);
+      setMessages([...next, { role: 'assistant', content: '⚠ ' + (err?.message || 'the request failed') }]);
     } finally {
       setLoading(false);
     }

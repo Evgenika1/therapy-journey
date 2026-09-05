@@ -27,24 +27,24 @@ function closestMoodIdx(intensity) {
 // original categories keep their sub-emotion lists so older rows still render
 // and the finer choice stays available; the six new ones have none.
 const EMOTION_CATEGORIES = {
-  Joy:        { emoji: '\u{1F60A}', color: '#F59E0B', about: 'радость, воодушевление',        emotions: ['excited','grateful','proud','hopeful','playful'] },
-  Sadness:    { emoji: '\u{1F614}', color: '#3B82F6', about: 'грусть, потеря, тоска',          emotions: ['lonely','disappointed','empty','hurt','melancholic'] },
-  Anxiety:    { emoji: '\u{1F61F}', color: '#F97316', about: 'тревога, беспокойство',          emotions: ['worried','nervous','overwhelmed','restless','tense'] },
-  Anger:      { emoji: '\u{1F624}', color: '#EF4444', about: 'злость, раздражение',            emotions: ['frustrated','irritated','resentful','furious'] },
-  Fear:       { emoji: '\u{1F628}', color: '#8B5CF6', about: 'страх, уязвимость',              emotions: ['scared','insecure','threatened','panicked'] },
-  Calm:       { emoji: '\u{1F30A}', color: '#10B981', about: 'спокойствие, покой',             emotions: ['safe','grounded','peaceful','relaxed','content'] },
-  Love:       { emoji: '\u{1FAF6}', color: '#EC4899', about: 'любовь, близость, тепло',        emotions: [] },
-  Shame:      { emoji: '\u{1F633}', color: '#A855F7', about: 'стыд, вина, смущение',           emotions: [] },
-  Numb:       { emoji: '\u{1F611}', color: '#64748B', about: 'оцепенение, пустота',            emotions: [] },
-  Excitement: { emoji: '\u{1F929}', color: '#FB923C', about: 'возбуждение, предвкушение',      emotions: [] },
-  Overwhelm:  { emoji: '\u{1F623}', color: '#DC2626', about: 'перегрузка, «слишком много»',    emotions: [] },
-  Gratitude:  { emoji: '\u{1F64F}', color: '#14B8A6', about: 'благодарность, признательность', emotions: [] },
-  Hurt:       { emoji: '\u{1F494}', color: '#BE123C', about: 'боль, рана, «болит внутри»',       emotions: [] },
-  Loneliness: { emoji: '\u{1F311}', color: '#475569', about: 'одиночество, покинутость, изоляция', emotions: [] },
-  Guilt:      { emoji: '\u{1F61E}', color: '#6366F1', about: 'вина, сожаление, «я виновата»',    emotions: [] },
-  Hope:       { emoji: '\u{1F331}', color: '#84CC16', about: 'надежда, вера, «станет лучше»',    emotions: [] },
-  Confusion:  { emoji: '\u{1F300}', color: '#0EA5E9', about: 'растерянность, «не понимаю что чувствую»', emotions: [] },
-  Relief:     { emoji: '\u{1F62E}\u{200D}\u{1F4A8}', color: '#06B6D4', about: 'облегчение, «отпустило»', emotions: [] },
+  Joy:        { emoji: '\u{1F60A}', color: '#F59E0B', about: 'joy, excitement, gratitude',        emotions: ['excited','grateful','proud','hopeful','playful'] },
+  Sadness:    { emoji: '\u{1F614}', color: '#3B82F6', about: 'sadness, loss, longing',          emotions: ['lonely','disappointed','empty','hurt','melancholic'] },
+  Anxiety:    { emoji: '\u{1F61F}', color: '#F97316', about: 'anxiety, worry, unease',          emotions: ['worried','nervous','overwhelmed','restless','tense'] },
+  Anger:      { emoji: '\u{1F624}', color: '#EF4444', about: 'anger, irritation',            emotions: ['frustrated','irritated','resentful','furious'] },
+  Fear:       { emoji: '\u{1F628}', color: '#8B5CF6', about: 'fear, vulnerability',              emotions: ['scared','insecure','threatened','panicked'] },
+  Calm:       { emoji: '\u{1F30A}', color: '#10B981', about: 'calm, steadiness, peace',             emotions: ['safe','grounded','peaceful','relaxed','content'] },
+  Love:       { emoji: '\u{1FAF6}', color: '#EC4899', about: 'love, closeness, warmth',        emotions: [] },
+  Shame:      { emoji: '\u{1F633}', color: '#A855F7', about: 'shame, embarrassment',           emotions: [] },
+  Numb:       { emoji: '\u{1F611}', color: '#64748B', about: 'numbness, emptiness',            emotions: [] },
+  Excitement: { emoji: '\u{1F929}', color: '#FB923C', about: 'excitement, anticipation',      emotions: [] },
+  Overwhelm:  { emoji: '\u{1F623}', color: '#DC2626', about: 'overload, "too much at once"',    emotions: [] },
+  Gratitude:  { emoji: '\u{1F64F}', color: '#14B8A6', about: 'gratitude, appreciation', emotions: [] },
+  Hurt:       { emoji: '\u{1F494}', color: '#BE123C', about: 'hurt, a wound, "it aches inside"',       emotions: [] },
+  Loneliness: { emoji: '\u{1F311}', color: '#475569', about: 'loneliness, isolation', emotions: [] },
+  Guilt:      { emoji: '\u{1F61E}', color: '#6366F1', about: 'guilt, regret, "this is my fault"',    emotions: [] },
+  Hope:       { emoji: '\u{1F331}', color: '#84CC16', about: 'hope, faith, "it will get better"',    emotions: [] },
+  Confusion:  { emoji: '\u{1F300}', color: '#0EA5E9', about: 'confusion, "I cannot name this"', emotions: [] },
+  Relief:     { emoji: '\u{1F62E}\u{200D}\u{1F4A8}', color: '#06B6D4', about: 'relief, "it let go"', emotions: [] },
 };
 
 const EMOTION_ORDER = Object.keys(EMOTION_CATEGORIES);
@@ -247,13 +247,13 @@ export default function EmotionsPage() {
       // emotion is still saved but the note is not — say so rather than show
       // the text once and lose it on the next load.
       if (note.trim() && entry.dropped_columns?.includes('note')) {
-        setError('Эмоция сохранена, но заметка — нет: в базе ещё нет колонки note (миграция 017).');
+        setError('Emotion saved, but the note was not: the database has no note column yet (migration 017).');
         return;
       }
       setLogging(false); setSelectedCats([]); setSelectedEmos([]); setIntensity(5); setNote('');
     } catch (err) {
       console.error('[Emotions] save:', err?.message);
-      setError('Не удалось сохранить: ' + (err?.message || 'неизвестная ошибка'));
+      setError('Could not save: ' + (err?.message || 'unknown error'));
     } finally { setSaving(false); }
   }
 
@@ -355,7 +355,7 @@ export default function EmotionsPage() {
             <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 26, fontWeight: 300, color: TEXT, margin: '0 0 24px' }}>Log Emotion</h2>
 
             <p style={{ fontSize: 12, fontWeight: 600, color: MUTED, margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-              Что вы чувствуете? <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>— можно выбрать несколько</span>
+              What are you feeling? <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>— pick as many as fit</span>
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(126px, 1fr))', gap: 8, marginBottom: 22 }}>
               {EMOTION_ORDER.map(cat => {
@@ -377,7 +377,7 @@ export default function EmotionsPage() {
             {selectedCats.some(c => (EMOTION_CATEGORIES[c]?.emotions || []).length > 0) && (
               <>
                 <p style={{ fontSize: 12, fontWeight: 600, color: MUTED, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-                  Уточните <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>— необязательно</span>
+                  Narrow it down <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>— optional</span>
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 22 }}>
                   {selectedCats.flatMap(cat => (EMOTION_CATEGORIES[cat]?.emotions || []).map(emo => {
@@ -401,17 +401,17 @@ export default function EmotionsPage() {
                 {/* Optional context. The category and sub-emotions record what
                     was felt; this is the only place that says what it was about. */}
                 <p style={{ fontSize: 12, fontWeight: 600, color: MUTED, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-                  Заметка <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>— необязательно</span>
+                  Note <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>— optional</span>
                 </p>
                 <textarea value={note} onChange={e => setNote(e.target.value)}
-                  placeholder="Что произошло? Например: «поругалась с мамой», «хорошо прошла сессия»"
+                  placeholder="What happened? For example: &quot;argued with my mum&quot;, &quot;a good session&quot;"
                   style={{ width: '100%', boxSizing: 'border-box', minHeight: 68, padding: '10px 13px', borderRadius: 10, border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT, fontSize: 13.5, resize: 'vertical', outline: 'none', fontFamily: 'inherit', lineHeight: 1.6, marginBottom: 22 }} />
 
             {/* Left unexplained, a disabled primary button reads as a dead one:
                 greyed out, still showing a pointer cursor, doing nothing. */}
             {selectedCats.length === 0 && (
               <p style={{ fontSize: 12.5, color: MUTED, margin: '0 0 14px' }}>
-                Выберите хотя бы одну эмоцию, чтобы сохранить.
+                Pick at least one emotion to save.
               </p>
             )}
 

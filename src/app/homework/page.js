@@ -32,7 +32,7 @@ export default function HomeworkPage() {
       setTitle(''); setDesc(''); setDue('');
     } catch (err) {
       console.error('[Homework] save:', err?.message);
-      setError('Не удалось добавить задание: ' + (err?.message || 'неизвестная ошибка'));
+      setError('Could not add the assignment: ' + (err?.message || 'unknown error'));
     } finally { setSaving(false); }
   }
 
@@ -45,7 +45,7 @@ export default function HomeworkPage() {
       setItems(i => i.map(x => x.id === id ? { ...x, completed: !completed } : x));
     } catch (err) {
       console.error('[Homework] toggle:', err?.message);
-      setError('Не удалось обновить задание: ' + (err?.message || 'неизвестная ошибка'));
+      setError('Could not update the assignment: ' + (err?.message || 'unknown error'));
     }
   }
 
@@ -56,7 +56,7 @@ export default function HomeworkPage() {
       setItems(i => i.filter(x => x.id !== id));
     } catch (err) {
       console.error('[Homework] delete:', err?.message);
-      setError('Не удалось удалить задание: ' + (err?.message || 'неизвестная ошибка'));
+      setError('Could not delete the assignment: ' + (err?.message || 'unknown error'));
     }
   }
 

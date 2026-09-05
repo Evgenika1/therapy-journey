@@ -16,19 +16,19 @@ export const ALLOWED_EXT = ['mp3', 'm4a', 'wav', 'mp4'];
 export const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 
 export const fmtSize = bytes => bytes >= 1024 ** 3
-  ? `${(bytes / 1024 ** 3).toFixed(2)} ГБ`
-  : `${Math.round(bytes / 1024 / 1024)} МБ`;
+  ? `${(bytes / 1024 ** 3).toFixed(2)} GB`
+  : `${Math.round(bytes / 1024 / 1024)} MB`;
 
 export const extOf = filename => filename.split('.').pop()?.toLowerCase();
 
 // Say the size out loud and, for video, hand over the exact command that fixes
 // it — "file too large" alone leaves the user guessing at a 3 GB mp4.
 export function tooLargeMessage(bytes, ext) {
-  const head = `Файл слишком большой — ${fmtSize(bytes)} (максимум ${fmtSize(MAX_UPLOAD_BYTES)}).`;
+  const head = `That file is too large — ${fmtSize(bytes)} (the limit is ${fmtSize(MAX_UPLOAD_BYTES)}).`;
   return ext === 'mp4'
-    ? `${head} Похоже, это видео: для расшифровки нужна только звуковая дорожка, она в десятки раз меньше. Извлеките её и загрузите снова:\nffmpeg -i "исходный.mp4" -vn -c:a aac -b:a 128k "звук.m4a"`
-    : `${head} Сожмите запись (например, в mp3 128 kbps) или разбейте её на части.`;
+    ? `${head} This looks like video: transcription needs only the audio track, which is tens of times smaller. Extract it and upload again:\nffmpeg -i "source.mp4" -vn -c:a aac -b:a 128k "audio.m4a"`
+    : `${head} Compress the recording (mp3 at 128 kbps, say) or split it into parts.`;
 }
 
 export const unsupportedTypeMessage = ext =>
-  `Неподдерживаемый формат ".${ext}". Допустимые: ${ALLOWED_EXT.join(', ')}`;
+  `Unsupported format ".${ext}". Allowed: ${ALLOWED_EXT.join(', ')}`;

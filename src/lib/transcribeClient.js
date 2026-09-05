@@ -28,20 +28,20 @@ export async function pollTranscript(jobId, {
   isCancelled = () => false,
   onProgress = () => {},
 } = {}) {
-  if (!jobId) throw new TranscribeError('нет идентификатора задачи транскрипции');
+  if (!jobId) throw new TranscribeError('no transcription job id');
 
   let currentJob = jobId;
   let retried = false;
   const startedAt = now();
 
   for (;;) {
-    if (isCancelled()) throw new TranscribeError('расшифровка отменена');
+    if (isCancelled()) throw new TranscribeError('transcription cancelled');
     if (now() - startedAt > timeoutMs) {
-      throw new TranscribeError('расшифровка не завершилась за отведённое время. Запись сохранена — попробуйте ещё раз.');
+      throw new TranscribeError('transcription did not finish in time. The recording is saved — try again.');
     }
 
     await sleep(intervalMs);
-    if (isCancelled()) throw new TranscribeError('расшифровка отменена');
+    if (isCancelled()) throw new TranscribeError('transcription cancelled');
 
     let body;
     try {
@@ -68,7 +68,7 @@ export async function pollTranscript(jobId, {
         noSpeech: !!body.noSpeech,
       };
     }
-    if (body.status === 'error') throw new TranscribeError(body.error || 'расшифровка не удалась');
+    if (body.status === 'error') throw new TranscribeError(body.error || 'transcription failed');
 
     // Still processing. The server may have started a forced-Russian retry and
     // handed back a different job id — follow it.
@@ -101,7 +101,7 @@ export function uploadForTranscription(url, body, { filename, contentType, onPro
       if (xhr.status >= 200 && xhr.status < 300 && !parsed.error) resolve(parsed);
       else reject(new TranscribeError(parsed.error || `HTTP ${xhr.status}`));
     };
-    xhr.onerror = () => reject(new TranscribeError('соединение с сервером оборвалось'));
+    xhr.onerror = () => reject(new TranscribeError('the connection to the server dropped'));
     xhr.send(body);
   });
 }

@@ -52,7 +52,7 @@ export async function POST(req) {
       method: 'POST',
       headers: AAI_HEADERS(),
       body: JSON.stringify({ audio_url: upload_url, ...TRANSCRIBE_CONFIG }),
-    }, 'Создание транскрипта', 'transcribe-file');
+    }, 'Create transcript', 'transcribe-file');
     console.log('[transcribe-file] AAI transcript create response:', createRes.status);
     if (!createRes.ok) {
       const err = await createRes.text();

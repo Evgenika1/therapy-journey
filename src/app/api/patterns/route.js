@@ -89,15 +89,15 @@ ${languageDirective(serialized)}`;
     const analysis = parseAnalysis(raw);
     if (!analysis) {
       const reason = data.stop_reason === 'max_tokens'
-        ? 'ответ модели оборвался на середине. Попробуйте ещё раз.'
+        ? 'the model stopped mid-answer. Try again.'
         : data.stop_reason === 'refusal'
-          ? 'модель отказалась анализировать эту историю.'
+          ? 'the model declined to analyse this history.'
           : !raw.trim()
-            ? 'модель вернула пустой ответ.'
-            : `модель вернула не-JSON. Начало ответа: ${raw.trim().slice(0, 200)}`;
+            ? 'the model returned an empty response.'
+            : `the model returned something other than JSON. It began: ${raw.trim().slice(0, 200)}`;
       console.error('[patterns] unparseable. stop_reason:', data.stop_reason);
       return NextResponse.json(
-        { error: `Не удалось разобрать паттерны — ${reason}`, stop_reason: data.stop_reason ?? null },
+        { error: `Could not parse the patterns — ${reason}`, stop_reason: data.stop_reason ?? null },
         { status: 502 });
     }
 

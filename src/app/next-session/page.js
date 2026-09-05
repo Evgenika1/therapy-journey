@@ -74,7 +74,7 @@ export default function NextSessionPage() {
       .catch(err => {
         // The list previously never left its loading state on failure.
         console.error('[NextSession] list:', err?.message);
-        setError('Не удалось загрузить темы: ' + (err?.message || 'неизвестная ошибка'));
+        setError('Could not load your topics: ' + (err?.message || 'unknown error'));
         setLoading(false);
       });
   }, [supabase]);
@@ -115,7 +115,7 @@ export default function NextSessionPage() {
     } catch (err) {
       // Leave the text in the input so a failed add doesn't lose it.
       console.error('[NextSession] add:', err?.message);
-      setError('Не удалось добавить тему: ' + (err?.message || 'неизвестная ошибка'));
+      setError('Could not add the topic: ' + (err?.message || 'unknown error'));
     } finally { setAdding(false); }
   }
 
@@ -126,7 +126,7 @@ export default function NextSessionPage() {
       setTopics(t => t.map(x => x.id === id ? { ...x, checked: !checked } : x));
     } catch (err) {
       console.error('[NextSession] toggle:', err?.message);
-      setError('Не удалось обновить тему: ' + (err?.message || 'неизвестная ошибка'));
+      setError('Could not update the topic: ' + (err?.message || 'unknown error'));
     }
   }
 
@@ -137,7 +137,7 @@ export default function NextSessionPage() {
       setTopics(t => t.filter(x => x.id !== id));
     } catch (err) {
       console.error('[NextSession] delete:', err?.message);
-      setError('Не удалось удалить тему: ' + (err?.message || 'неизвестная ошибка'));
+      setError('Could not delete the topic: ' + (err?.message || 'unknown error'));
     }
   }
 
@@ -150,7 +150,7 @@ export default function NextSessionPage() {
     } catch (err) {
       // Some deletes may have succeeded — refetch rather than guess.
       console.error('[NextSession] clear all:', err?.message);
-      setError('Не удалось удалить все темы: ' + (err?.message || 'неизвестная ошибка'));
+      setError('Could not clear the topics: ' + (err?.message || 'unknown error'));
       topicsApi.list(supabase).then(setTopics).catch(() => {});
     } finally { setClearing(false); }
   }

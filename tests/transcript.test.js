@@ -184,9 +184,9 @@ test('extracts the extension case-insensitively', () => {
 
 test('the oversize message states the size and, for video, the ffmpeg fix', () => {
   const big = MAX_UPLOAD_BYTES + 1;
-  assert.match(tooLargeMessage(big, 'mp3'), /слишком большой/);
+  assert.match(tooLargeMessage(big, 'mp3'), /too large/);
   assert.match(tooLargeMessage(3 * 1024 ** 3, 'mp4'), /ffmpeg -i/);
-  assert.match(tooLargeMessage(3 * 1024 ** 3, 'mp4'), /3\.00 ГБ/);
+  assert.match(tooLargeMessage(3 * 1024 ** 3, 'mp4'), /3\.00 GB/);
 });
 
 test('the upload ceiling stays below Nodes ~2 GiB request-body limit', () => {

@@ -31,7 +31,7 @@ export async function GET(req) {
 
   try {
     const res = await aaiFetch(`${AAI_BASE}/v2/transcript/${jobId}`,
-      { headers: AAI_HEADERS() }, 'Опрос статуса транскрипта', 'transcribe-status');
+      { headers: AAI_HEADERS() }, 'Poll transcript status', 'transcribe-status');
     if (!res.ok) {
       const err = await res.text();
       return NextResponse.json({ error: `Status check failed (${res.status}): ${err}` }, { status: 502 });
@@ -58,7 +58,7 @@ export async function GET(req) {
           method: 'POST',
           headers: AAI_HEADERS(),
           body: JSON.stringify({ audio_url: transcript.audio_url, ...FORCED_RU_CONFIG }),
-        }, 'Повторное создание транскрипта', 'transcribe-status');
+        }, 'Recreate transcript', 'transcribe-status');
         if (retryRes.ok) {
           const { id } = await retryRes.json();
           console.log('[transcribe-status] retry job created, id:', id);

@@ -103,15 +103,15 @@ ${languageDirective(transcript)}`;
       // Say WHICH way it went wrong — "could not parse" alone told the user
       // nothing they could act on.
       const reason = data.stop_reason === 'max_tokens'
-        ? 'ответ модели не поместился в лимит и оборвался на середине. Попробуйте разбить транскрипт на части.'
+        ? 'the model ran past its token limit and stopped mid-answer. Try splitting the transcript into parts.'
         : data.stop_reason === 'refusal'
-          ? 'модель отказалась анализировать этот текст.'
+          ? 'the model declined to analyse this text.'
           : !raw.trim()
-            ? 'модель вернула пустой ответ.'
-            : `модель вернула не-JSON. Начало ответа: ${raw.trim().slice(0, 200)}`;
+            ? 'the model returned an empty response.'
+            : `the model returned something other than JSON. It began: ${raw.trim().slice(0, 200)}`;
       console.error('[Analyze] unparseable. stop_reason:', data.stop_reason, '| raw:', raw.slice(0, 500));
       return NextResponse.json(
-        { error: `Не удалось разобрать анализ — ${reason}`, stop_reason: data.stop_reason ?? null },
+        { error: `Could not parse the analysis — ${reason}`, stop_reason: data.stop_reason ?? null },
         { status: 502 });
     }
 

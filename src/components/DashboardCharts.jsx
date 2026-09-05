@@ -37,33 +37,19 @@ function useWidth() {
   return [ref, width];
 }
 
-// Copy for the whole chart block, per language. The titles travel with the
-// empty states on purpose: a Russian paragraph under an English heading is
-// worse than either language on its own. Which one is picked follows the same
-// rule the session chat already uses (detectSessionLang over the transcripts).
+// Copy for the chart block. English only: the interface is one language for
+// everyone, while what the AI writes back still follows the language of the
+// user's own sessions. The two are deliberately not the same setting.
 const COPY = {
-  en: {
-    trendTitle: 'Mood after each session',
-    trendHint:  'Where a session leaves you, across time',
-    trendEmpty: 'This is where your mood trend will appear — how you feel before and after a session. Record a few sessions with a mood check to see it.',
-    heatTitle:  'Emotion check-ins',
-    heatHint:   'Last 8 weeks, by intensity',
-    heatEmpty:  'This is where a map of your emotions, day by day, will appear. Log how you feel regularly to see the patterns.',
-    less: 'less', more: 'more',
-    days: ['Mon', '', 'Wed', '', 'Fri', '', ''],
-  },
-  ru: {
-    trendTitle: 'Настроение после сессий',
-    trendHint:  'Каким тебя оставляет сессия, по времени',
-    trendEmpty: 'Здесь появится динамика твоего настроения — как ты чувствуешь себя до и после сессий. Запиши несколько сессий с отметкой настроения, чтобы увидеть тренд.',
-    heatTitle:  'Отметки эмоций',
-    heatHint:   'Последние 8 недель, по интенсивности',
-    heatEmpty:  'Здесь появится карта твоих эмоций по дням. Отмечай эмоции регулярно, чтобы увидеть паттерны.',
-    less: 'реже', more: 'чаще',
-    days: ['Пн', '', 'Ср', '', 'Пт', '', ''],
-  },
+  trendTitle: 'Mood after each session',
+  trendHint:  'Where a session leaves you, across time',
+  trendEmpty: 'This is where your mood trend will appear — how you feel before and after a session. Record a few sessions with a mood check to see it.',
+  heatTitle:  'Emotion check-ins',
+  heatHint:   'Last 8 weeks, by intensity',
+  heatEmpty:  'This is where a map of your emotions, day by day, will appear. Log how you feel regularly to see the patterns.',
+  less: 'less', more: 'more',
+  days: ['Mon', '', 'Wed', '', 'Fri', '', ''],
 };
-const copyFor = (lang) => COPY[lang] || COPY.en;
 
 const shortDate = (iso) =>
   new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -134,9 +120,8 @@ function HeatSketch() {
 
 // ── 1. mood over time ────────────────────────────────────────────────────────
 
-export function MoodTrendChart({ pairs, lang }) {
+export function MoodTrendChart({ pairs }) {
   const { BORDER, MUTED, H1: TEXT, SURFACE, ACCENT } = useTheme();
-  const t = copyFor(lang);
   const [ref, width] = useWidth();
   const points = moodTrendPoints(pairs);
 
@@ -158,10 +143,10 @@ export function MoodTrendChart({ pairs, lang }) {
   const last = points[points.length - 1];
 
   return (
-    <ChartCard title={t.trendTitle} hint={t.trendHint}>
+    <ChartCard title={COPY.trendTitle} hint={COPY.trendHint}>
       <div ref={ref} style={{ width: '100%', minWidth: 0 }}>
         {!enough ? (
-          <NotYet preview={<TrendSketch />}>{t.trendEmpty}</NotYet>
+          <NotYet preview={<TrendSketch />}>{COPY.trendEmpty}</NotYet>
         ) : width > 0 && (
           <svg width={width} height={H} role="img"
                aria-label={`Mood after each session across ${points.length} sessions`}
@@ -230,9 +215,8 @@ export function MoodTrendChart({ pairs, lang }) {
 // inverting anything, which is what a dark mode is supposed to do.
 const LEVEL_OPACITY = [0, 0.16, 0.38, 0.62, 0.9];
 
-export function EmotionHeatmap({ emotions, today, lang }) {
+export function EmotionHeatmap({ emotions, today }) {
   const { BORDER, MUTED, ACCENT } = useTheme();
-  const t = copyFor(lang);
 
   const cols = heatmapGrid(emotions, today || new Date(), HEATMAP_WEEKS);
   const withData = heatmapDaysWithData(cols);
@@ -248,17 +232,17 @@ export function EmotionHeatmap({ emotions, today, lang }) {
   const step = STEP;
 
   return (
-    <ChartCard title={t.heatTitle} hint={t.heatHint}>
+    <ChartCard title={COPY.heatTitle} hint={COPY.heatHint}>
       <div style={{ minWidth: 0 }}>
         {withData < MIN_HEATMAP_DAYS ? (
           // Pinned to the width the drawn map would take, so an empty card does
           // not balloon this column to fit one long sentence.
-          <NotYet preview={<HeatSketch />} width={W + 40}>{t.heatEmpty}</NotYet>
+          <NotYet preview={<HeatSketch />} width={W + 40}>{COPY.heatEmpty}</NotYet>
         ) : (
           <svg width={W} height={H} role="img"
                aria-label={`Emotion check-ins over the last ${HEATMAP_WEEKS} weeks, ${withData} days logged`}
                style={{ display: 'block' }}>
-            {t.days.map((label, r) => label && (
+            {COPY.days.map((label, r) => label && (
               <text key={r} x="0" y={TOP + r * step + cell - 2} fontSize="8.5" fill={MUTED}>{label}</text>
             ))}
 
@@ -287,13 +271,13 @@ export function EmotionHeatmap({ emotions, today, lang }) {
 
             {/* Sequential legend. "less → more" is the only reading a one-hue
                 ramp supports, so it says exactly that and nothing more. */}
-            <text x={LABEL_W} y={H - 5} fontSize="8.5" fill={MUTED}>{t.less}</text>
+            <text x={LABEL_W} y={H - 5} fontSize="8.5" fill={MUTED}>{COPY.less}</text>
             {LEVEL_OPACITY.map((op, i) => (
               <rect key={i} x={LABEL_W + 26 + i * 11} y={H - 13} width="8" height="8" rx="2"
                     fill={i === 0 ? 'none' : ACCENT} fillOpacity={op}
                     stroke={i === 0 ? BORDER : 'none'} strokeWidth="1" />
             ))}
-            <text x={LABEL_W + 26 + LEVEL_OPACITY.length * 11 + 4} y={H - 5} fontSize="8.5" fill={MUTED}>{t.more}</text>
+            <text x={LABEL_W + 26 + LEVEL_OPACITY.length * 11 + 4} y={H - 5} fontSize="8.5" fill={MUTED}>{COPY.more}</text>
           </svg>
         )}
       </div>

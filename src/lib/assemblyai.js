@@ -44,7 +44,7 @@ export async function uploadAudio(base, apiKey, audioBuffer, { attempts = 3, tag
         method: 'POST',
         headers: { authorization: apiKey, 'content-type': 'application/octet-stream' },
         body: audioBuffer,
-      }, 'Загрузка в AssemblyAI', tag);
+      }, 'Upload to AssemblyAI', tag);
       const secs = ((Date.now() - startedAt) / 1000).toFixed(1);
       console.log(`[${tag}] AAI upload response: ${res.status} in ${secs}s`);
       if (!res.ok) throw new Error(`Upload failed (${res.status}): ${await res.text()}`);
@@ -58,8 +58,8 @@ export async function uploadAudio(base, apiKey, audioBuffer, { attempts = 3, tag
         if (isTransient(err)) {
           // Say what actually happened — "fetch failed" told the user nothing.
           throw new Error(
-            `Не удалось передать аудио в AssemblyAI: соединение оборвалось (${causeCode(err)}) ` +
-            `после ${secs} с на ${mb} МБ. Похоже на слишком медленную/нестабильную сеть для файла такого размера.`
+            `Could not send the audio to AssemblyAI: the connection dropped (${causeCode(err)}) ` +
+            `after ${secs}s at ${mb} MB. That points to a connection too slow or unstable for a file this size.`
           );
         }
         throw err;

@@ -49,7 +49,7 @@ export default function JournalsPage() {
     } catch (err) {
       // Leave the text in the editor so a failed save doesn't lose it.
       console.error('[Journals] save:', err?.message);
-      setError('Не удалось сохранить запись: ' + (err?.message || 'неизвестная ошибка'));
+      setError('Could not save the entry: ' + (err?.message || 'unknown error'));
     } finally { setSaving(false); }
   }
 
@@ -61,7 +61,7 @@ export default function JournalsPage() {
       setEntries(e => e.filter(x => x.id !== id));
     } catch (err) {
       console.error('[Journals] delete:', err?.message);
-      setError('Не удалось удалить запись: ' + (err?.message || 'неизвестная ошибка'));
+      setError('Could not delete the entry: ' + (err?.message || 'unknown error'));
     }
   }
 
@@ -74,7 +74,7 @@ export default function JournalsPage() {
       setNewLabel(''); setAddingType(false);
     } catch (err) {
       console.error('[Journals] add type:', err?.message);
-      setError('Не удалось создать тип: ' + (err?.message || 'неизвестная ошибка'));
+      setError('Could not create the journal type: ' + (err?.message || 'unknown error'));
     }
   }
 

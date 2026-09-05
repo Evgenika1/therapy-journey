@@ -56,35 +56,22 @@ function sessionTitle(s) {
   return s?.created_at ? `Session ${new Date(s.created_at).toLocaleDateString()}` : 'Untitled';
 }
 
-const CHAT_SUGGESTIONS = {
-  en: [
-    'What emotions came up in my last session?',
-    'Summarize the key themes across my sessions',
-    'What patterns do you notice in my progress?',
-    'What should I focus on for next session?',
-  ],
-  ru: [
-    'Какие эмоции возникли на моей последней сессии?',
-    'Резюмируй ключевые темы моих сессий',
-    'Какие паттерны ты замечаешь в моём прогрессе?',
-    'На чём мне стоит сосредоточиться на следующей сессии?',
-  ],
-};
+const CHAT_SUGGESTIONS = [
+  'What emotions came up in my last session?',
+  'Summarize the key themes across my sessions',
+  'What patterns do you notice in my progress?',
+  'What should I focus on for next session?',
+];
 
-// Empty-state chat panel copy, per language.
+// Empty-state chat panel copy. One language, like the rest of the interface —
+// what the model writes back is a separate decision, made from the language of
+// the transcripts (see langRule in sendChat).
 const CHAT_COPY = {
-  en: {
-    askSessions: 'Ask about your sessions', ask: t => `Ask about "${t}"`,
-    tryOne: 'Try one of these to get started:',
-    cbtLabel: 'Or work with a thought:',
-    disclaimer: 'Miru is not a replacement for therapy. In a crisis, please reach out to a professional.',
-  },
-  ru: {
-    askSessions: 'Спросите о своих сессиях',  ask: t => `Спросите о «${t}»`,
-    tryOne: 'Попробуйте один из этих вопросов:',
-    cbtLabel: 'Или поработать с мыслью:',
-    disclaimer: 'Miru — не замена терапии. При кризисе обратись к специалисту.',
-  },
+  askSessions: 'Ask about your sessions',
+  ask: t => `Ask about "${t}"`,
+  tryOne: 'Try one of these to get started:',
+  cbtLabel: 'Or work with a thought:',
+  disclaimer: 'Miru is not a replacement for therapy. In crisis, reach out to a professional.',
 };
 
 // ─── CBT presets ──────────────────────────────────────────────────────────────
@@ -108,11 +95,8 @@ const CBT_PRESETS = [
     // Needs the whole history, not just the open session: a pattern is by
     // definition the thing that repeats across sessions.
     needsHistory: true,
-    label:   { ru: 'Найди мой паттерн',  en: 'Find my pattern' },
-    message: {
-      ru: 'Найди повторяющиеся паттерны в том, как я думаю.',
-      en: 'Find the recurring patterns in the way I think.',
-    },
+    label:   'Find my pattern',
+    message: 'Find the recurring patterns in the way I think.',
     directive: {
       ru: `Задача этого ответа: мягко показать повторяющиеся мыслительные паттерны и возможные когнитивные искажения (обесценивание позитива, катастрофизация, чёрно-белое мышление, чтение мыслей, персонализация, долженствование и другие) по материалам пользователя выше — транскриптам сессий, истории эмоций и этому разговору.
 
@@ -136,11 +120,8 @@ Tone — this is a hard requirement:
     id: 'reframe',
     icon: '🔄',
     needsHistory: false,
-    label:   { ru: 'Помоги переосмыслить', en: 'Help me reframe' },
-    message: {
-      ru: 'Помоги мне переосмыслить эту мысль.',
-      en: 'Help me reframe this thought.',
-    },
+    label:   'Help me reframe',
+    message: 'Help me reframe this thought.',
     directive: {
       ru: `Задача этого ответа: помочь мягко переосмыслить мысль или ситуацию из этого разговора (CBT-переформулирование).
 
@@ -252,8 +233,8 @@ function AudioLevelMeter({ stream, source, paused, A, MUTED, TEXT }) {
   }, [stream]);
   const active = bars.some(b => b > 0.08);
   const warning = source === 'tab'
-    ? '⚠️ Звук не поступает — проверьте, что включён доступ к звуку вкладки'
-    : '⚠️ Микрофон не слышит звук — проверьте, что выбран правильный микрофон';
+    ? '⚠️ No audio coming through — check that tab audio sharing is on'
+    : '⚠️ The microphone is picking up nothing — check the right one is selected';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, width: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 40 }}>
@@ -496,7 +477,7 @@ function SessionsPageInner() {
       selectSession(saved);
     } catch (err) {
       console.error('[Sessions] paste create:', err?.message, err?.code);
-      setPasteError('Не удалось создать сессию: ' + (err?.message || 'неизвестная ошибка'));
+      setPasteError('Could not create the session: ' + (err?.message || 'unknown error'));
     } finally { setPasteSaving(false); }
   }
 
@@ -532,7 +513,7 @@ function SessionsPageInner() {
   // ── recording ────────────────────────────────────────────────────────────────
   // Populate the microphone dropdown. Device labels are only exposed after mic
   // permission has been granted at least once (first recording), so they may show
-  // as "Микрофон N" until then.
+  // as "Microphone N" until then.
   async function refreshMicDevices() {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -614,7 +595,7 @@ function SessionsPageInner() {
         const audioTracks = display.getAudioTracks();
         if (audioTracks.length === 0) {
           display.getTracks().forEach(t => t.stop());
-          setSpeechError('Звук вкладки не захвачен — при выборе источника поставьте галочку «Поделиться звуком вкладки».');
+          setSpeechError('Tab audio was not captured — tick "Share tab audio" when choosing the source.');
           startGuardRef.current = false; return;
         }
         display.getVideoTracks().forEach(t => t.stop()); // record audio only, drop video
@@ -629,7 +610,7 @@ function SessionsPageInner() {
       }
     }
     catch {
-      setSpeechError(captureSource === 'tab' ? 'Доступ к звуку вкладки отклонён.' : 'Microphone access denied.');
+      setSpeechError(captureSource === 'tab' ? 'Tab audio access was denied.' : 'Microphone access denied.');
       startGuardRef.current = false; return;
     }
     refreshMicDevices(); // permission is now granted → device labels are available
@@ -765,7 +746,7 @@ function SessionsPageInner() {
       // recovery banner can still offer a fresh attempt.
       forgetPendingJob();
       setTranscribeFailed(true);
-      setSpeechError('Не удалось расшифровать: ' + err.message);
+      setSpeechError('Could not transcribe: ' + err.message);
       setTranscript('');
     } finally {
       setIsTranscribing(false); setIsReview(true); setUploadProgress(0);
@@ -824,7 +805,7 @@ function SessionsPageInner() {
       // mean "bot is out of the meeting" — either way the poll effect will observe
       // processing → done and save the transcript automatically.
     } catch (e) {
-      setZoomError('Не удалось остановить бота: ' + e.message);
+      setZoomError('Could not stop the bot: ' + e.message);
       setZoomStopping(false);
     }
   }
@@ -858,7 +839,7 @@ function SessionsPageInner() {
       setSelectedSession(saved);
       try { localStorage.removeItem(ZOOM_BOT_KEY); } catch {}
       setZoomStatus('done');
-    } catch (e) { setZoomStatus('error'); setZoomError('Не удалось сохранить сессию: ' + e.message); }
+    } catch (e) { setZoomStatus('error'); setZoomError('Could not save the session: ' + e.message); }
   }
 
   // ── Import audio (upload a recording → transcribe → session) ──────────────────
@@ -935,7 +916,7 @@ function SessionsPageInner() {
             try { localStorage.removeItem(ZOOM_BOT_KEY); } catch {}
             setZoomStatus('done'); // ONLY now — after Supabase confirmed the row exists
           } catch (e) {
-            if (!cancelled) { setZoomStatus('error'); setZoomError('Не удалось сохранить сессию: ' + e.message); }
+            if (!cancelled) { setZoomStatus('error'); setZoomError('Could not save the session: ' + e.message); }
             // keep zoomBotId + localStorage so the user can retry the save
           }
           return;
@@ -1003,7 +984,7 @@ function SessionsPageInner() {
         console.error('[transcribe] resume:', err?.message);
         forgetPendingJob();
         setTranscribeFailed(true);
-        setSpeechError('Не удалось возобновить расшифровку: ' + err.message);
+        setSpeechError('Could not resume transcription: ' + err.message);
       } finally {
         if (!cancelled) { setIsTranscribing(false); setIsReview(true); }
       }
@@ -1136,7 +1117,7 @@ function SessionsPageInner() {
       setEditingTranscript(false);
     } catch (e) {
       console.error('[Sessions] transcript save:', e?.message);
-      setTranscriptError('Не удалось сохранить: ' + (e?.message || 'unknown'));
+      setTranscriptError('Could not save: ' + (e?.message || 'unknown'));
     } finally { setSavingTranscript(false); }
   }
 
@@ -1264,18 +1245,18 @@ function SessionsPageInner() {
               rather than leaving the user to assume the session is gone. */}
           {recovered && !showModal && (
             <div style={{ margin: '0 14px 12px', background: A + '14', border: `1px solid ${A}55`, borderRadius: 14, padding: '12px 13px' }}>
-              <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT, margin: '0 0 4px' }}>Найдена нерасшифрованная запись</p>
+              <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT, margin: '0 0 4px' }}>An untranscribed recording was found</p>
               <p style={{ fontSize: 11.5, color: MUTED, margin: '0 0 10px', lineHeight: 1.5 }}>
-                {fmt(recovered.seconds || 0)} · {(recovered.blob.size / 1024 / 1024).toFixed(1)} МБ — расшифровка не завершилась.
+                {fmt(recovered.seconds || 0)} · {(recovered.blob.size / 1024 / 1024).toFixed(1)} MB — transcription never finished.
               </p>
               <div style={{ display: 'flex', gap: 7 }}>
                 <button onClick={resumeRecovered}
                   style={{ flex: 2, padding: '7px 0', borderRadius: 8, border: 'none', background: A, color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
-                  ↻ Расшифровать
+                  ↻ Transcribe
                 </button>
                 <button onClick={discardRecovered}
                   style={{ flex: 1, padding: '7px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 12, cursor: 'pointer' }}>
-                  Удалить
+                  Delete
                 </button>
               </div>
             </div>
@@ -1364,7 +1345,7 @@ function SessionsPageInner() {
                        borderBottom: `1px solid ${BORDER}`, background: SURFACE, color: A,
                        fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
                        flexShrink: 0, width: '100%', textAlign: 'left' }}>
-              ← Все сессии
+              ← All sessions
             </button>
           )}
           {showPaste ? (
@@ -1373,23 +1354,23 @@ function SessionsPageInner() {
               <div style={{ width: '100%', maxWidth: 720, height: 'fit-content', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32 }}>
                 <p style={{ fontFamily: 'var(--font-serif)', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>Paste transcript</p>
                 <p style={{ fontSize: 13, color: MUTED, margin: '0 0 24px', lineHeight: 1.5 }}>
-                  Уже есть текст — из записи Zoom, другого приложения или заметок? Вставьте его,
-                  и сессия будет вести себя как любая другая: поиск, AI-анализ, чат.
+                  Already have the text — from a Zoom recording, another app, or your notes? Paste it in
+                  and the session behaves like any other: search, AI analysis, chat.
                 </p>
 
-                <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Название</p>
+                <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Title</p>
                 <input value={pasteTitle} onChange={e => setPasteTitle(e.target.value)}
-                  placeholder="Необязательно — по умолчанию дата"
+                  placeholder="Optional — defaults to the date"
                   style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 14, outline: 'none', fontFamily: 'inherit', marginBottom: 18 }} />
 
-                <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Транскрипт</p>
+                <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Transcript</p>
                 <textarea value={pasteText} onChange={e => setPasteText(e.target.value)}
                   placeholder="Paste your transcript here…"
                   style={{ width: '100%', boxSizing: 'border-box', minHeight: 300, padding: '14px 16px', borderRadius: 12, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 14, resize: 'vertical', outline: 'none', fontFamily: 'inherit', lineHeight: 1.8 }} />
 
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 8 }}>
                   <span style={{ fontSize: 12, color: MUTED }}>
-                    {pasteText.trim() ? `${pasteText.trim().length.toLocaleString('ru-RU')} символов` : ''}
+                    {pasteText.trim() ? `${pasteText.trim().length.toLocaleString('en-US')} characters` : ''}
                   </span>
                 </div>
 
@@ -1428,7 +1409,7 @@ function SessionsPageInner() {
                       <>
                         <div style={{ width: 44, height: 44, border: `3px solid ${BORDER}`, borderTop: `3px solid ${A}`, borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 1s linear infinite' }} />
                         <p style={{ fontSize: 15, color: TEXT, margin: '0 0 6px' }}>Transcribing…</p>
-                        <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>Это может занять несколько минут для длинной записи.</p>
+                        <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>This can take a few minutes for a long recording.</p>
                       </>
                     )}
                     <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -1438,8 +1419,8 @@ function SessionsPageInner() {
                 {importStage === 'done' && (
                   <div style={{ textAlign: 'center', padding: '8px 0' }}>
                     <p style={{ fontSize: 30, margin: '0 0 8px', color: '#15803D' }}>✓</p>
-                    <p style={{ fontSize: 15, color: TEXT, margin: '0 0 6px' }}>Готово — сессия создана.</p>
-                    <p style={{ fontSize: 12, color: MUTED, margin: '0 0 20px' }}>Транскрипт сохранён в список сессий.</p>
+                    <p style={{ fontSize: 15, color: TEXT, margin: '0 0 6px' }}>Done — the session was created.</p>
+                    <p style={{ fontSize: 12, color: MUTED, margin: '0 0 20px' }}>The transcript is saved to your sessions.</p>
                     <button onClick={closeImport} style={{ padding: '10px 22px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Done</button>
                   </div>
                 )}
@@ -1449,7 +1430,7 @@ function SessionsPageInner() {
                     {/* Size errors carry a copy-pasteable ffmpeg command on a second
                         line — keep the newline and give the command a mono block. */}
                     {(() => {
-                      const [head, ...rest] = (importError || 'Не удалось обработать файл.').split('\n');
+                      const [head, ...rest] = (importError || 'Could not process the file.').split('\n');
                       const cmd = rest.join('\n').trim();
                       return (
                         <div style={{ margin: '0 0 16px', textAlign: cmd ? 'left' : 'center' }}>
@@ -1513,14 +1494,14 @@ function SessionsPageInner() {
                         ? 'Saving session…'
                         : zoomStopping
                           ? 'Processing transcript…'
-                          : zoomStatus === 'joining' ? 'Бот заходит в встречу…' : zoomStatus === 'recording' ? '🔴 Идёт запись сессии…' : 'Обработка транскрипта…'}
+                          : zoomStatus === 'joining' ? 'The bot is joining the meeting…' : zoomStatus === 'recording' ? '🔴 Recording the session…' : 'Processing the transcript…'}
                     </p>
                     <p style={{ fontSize: 12, color: MUTED, margin: 0, lineHeight: 1.5 }}>
                       {zoomStatus === 'saving'
-                        ? 'Сохраняем транскрипт в базу…'
+                        ? 'Saving the transcript…'
                         : zoomStopping
-                          ? 'Транскрипт готовится — это займёт 3–5 минут. Не закрывайте окно, сессия сохранится автоматически.'
-                          : 'Запись идёт. Сессия сохранится автоматически, даже если закрыть окно.'}
+                          ? 'The transcript is being prepared — 3–5 minutes. You can leave this open; the session saves itself.'
+                          : 'Recording. The session saves itself, even if you close this window.'}
                     </p>
                     {zoomError && <p style={{ fontSize: 12, color: '#DC2626', margin: '10px 0 0' }}>{zoomError}</p>}
                     {!zoomStopping && zoomStatus !== 'saving' && (
@@ -1536,15 +1517,15 @@ function SessionsPageInner() {
                 {zoomStatus === 'done' && (
                   <div style={{ textAlign: 'center', padding: '12px 0' }}>
                     <p style={{ fontSize: 30, margin: '0 0 8px', color: '#15803D' }}>✓</p>
-                    <p style={{ fontSize: 15, color: TEXT, margin: '0 0 6px' }}>Готово — сессия сохранена.</p>
-                    <p style={{ fontSize: 12, color: MUTED, margin: '0 0 20px' }}>Транскрипт появился в списке сессий.</p>
+                    <p style={{ fontSize: 15, color: TEXT, margin: '0 0 6px' }}>Done — the session was saved.</p>
+                    <p style={{ fontSize: 12, color: MUTED, margin: '0 0 20px' }}>The transcript is now in your sessions.</p>
                     <button onClick={closeZoom} style={{ padding: '10px 22px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Done</button>
                   </div>
                 )}
 
                 {zoomStatus === 'error' && (
                   <div style={{ textAlign: 'center', padding: '12px 0' }}>
-                    <p style={{ fontSize: 14, color: '#DC2626', margin: '0 0 16px', lineHeight: 1.6 }}>⚠️ {zoomError || 'Что-то пошло не так.'}</p>
+                    <p style={{ fontSize: 14, color: '#DC2626', margin: '0 0 16px', lineHeight: 1.6 }}>⚠️ {zoomError || 'Something went wrong.'}</p>
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
                       <button onClick={closeZoom} style={{ padding: '9px 18px', borderRadius: 11, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>Close</button>
                       {zoomBotId
@@ -1573,13 +1554,13 @@ function SessionsPageInner() {
                       ))}
                     </div>
 
-                    {/* Источник звука */}
+                    {/* Audio source */}
                     <div style={{ marginBottom: 24 }}>
-                      <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Источник звука</p>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Audio source</p>
                       <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
                         {[
-                          { id: 'mic', label: '🎤 Микрофон', hint: 'запись вживую' },
-                          { id: 'tab', label: '🔊 Звук вкладки', hint: 'Zoom / онлайн' },
+                          { id: 'mic', label: '🎤 Microphone', hint: 'recording in person' },
+                          { id: 'tab', label: '🔊 Tab audio', hint: 'Zoom / online' },
                         ].map(opt => {
                           const on = captureSource === opt.id;
                           return (
@@ -1595,15 +1576,15 @@ function SessionsPageInner() {
                       {captureSource === 'mic' && micDevices.length > 0 && (
                         <select value={selectedMicId} onChange={e => setSelectedMicId(e.target.value)}
                           style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}>
-                          <option value="">Микрофон по умолчанию</option>
+                          <option value="">Default microphone</option>
                           {micDevices.map((d, i) => (
-                            <option key={d.deviceId || i} value={d.deviceId}>{d.label || `Микрофон ${i + 1}`}</option>
+                            <option key={d.deviceId || i} value={d.deviceId}>{d.label || `Microphone ${i + 1}`}</option>
                           ))}
                         </select>
                       )}
                       {captureSource === 'tab' && (
                         <p style={{ fontSize: 11.5, color: MUTED, margin: 0, lineHeight: 1.5 }}>
-                          Откроется окно выбора — выберите вкладку со звонком и поставьте галочку «Поделиться звуком вкладки».
+                          A picker will open — choose the tab with the call and tick "Share tab audio".
                         </p>
                       )}
                     </div>
@@ -1623,7 +1604,7 @@ function SessionsPageInner() {
                     {/* A long session spends minutes just getting to the server —
                         show that it is moving instead of an opaque spinner. */}
                     <p style={{ fontSize: 16, color: TEXT, margin: 0 }}>
-                      {uploadProgress > 0 && uploadProgress < 100 ? `Загрузка записи… ${uploadProgress}%` : 'Transcribing…'}
+                      {uploadProgress > 0 && uploadProgress < 100 ? `Uploading the recording… ${uploadProgress}%` : 'Transcribing…'}
                     </p>
                     {uploadProgress > 0 && uploadProgress < 100 && (
                       <div style={{ width: '70%', height: 5, borderRadius: 3, background: BORDER, margin: '12px auto 0', overflow: 'hidden' }}>
@@ -1719,15 +1700,15 @@ function SessionsPageInner() {
                         one thing that actually helps: run it again. */}
                     {transcribeFailed && (
                       <div style={{ background: '#DC262610', border: '1px solid #DC262633', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
-                        <p style={{ fontSize: 13, fontWeight: 600, color: '#DC2626', margin: '0 0 6px' }}>⚠ Расшифровка не удалась</p>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: '#DC2626', margin: '0 0 6px' }}>⚠ Transcription failed</p>
                         <p style={{ fontSize: 12.5, color: MUTED, margin: '0 0 12px', lineHeight: 1.6 }}>
-                          Запись не потеряна — она сохранена на этом устройстве
-                          {pendingAudioRef.current?.blob ? ` (${(pendingAudioRef.current.blob.size / 1024 / 1024).toFixed(1)} МБ)` : ''}.
-                          Можно повторить попытку, или сохранить сессию сейчас и вписать текст вручную.
+                          The recording is not lost — it is saved on this device
+                          {pendingAudioRef.current?.blob ? ` (${(pendingAudioRef.current.blob.size / 1024 / 1024).toFixed(1)} MB)` : ''}.
+                          You can try again, or save the session now and type the text in yourself.
                         </p>
                         <button onClick={transcribePending} disabled={isTranscribing}
                           style={{ padding: '8px 18px', borderRadius: 9, border: 'none', background: A, color: '#fff', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' }}>
-                          ↻ Повторить расшифровку
+                          ↻ Retry transcription
                         </button>
                       </div>
                     )}
@@ -1819,7 +1800,7 @@ function SessionsPageInner() {
                           Session needs a transcript to analyse —{' '}
                           <button onClick={() => setActiveTab('transcript')}
                             style={{ padding: 0, border: 'none', background: 'none', color: A, fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', textDecoration: 'underline' }}>
-                            вставить вручную
+                            paste it manually
                           </button>
                         </p>
                       )}
@@ -1863,11 +1844,11 @@ function SessionsPageInner() {
                       <div>
                         {!hasTranscript && (
                           <p style={{ fontSize: 13.5, color: MUTED, margin: '0 0 12px', lineHeight: 1.6 }}>
-                            Транскрипта нет. Вставьте или напишите текст вручную — после сохранения станут доступны AI-анализ и поиск по сессии.
+                            No transcript yet. Paste or type the text — once saved, AI analysis and search become available for this session.
                           </p>
                         )}
                         <textarea value={transcriptDraft} onChange={e => setTranscriptDraft(e.target.value)}
-                          placeholder="Вставьте текст транскрипта…"
+                          placeholder="Paste the transcript text…"
                           style={{ width: '100%', boxSizing: 'border-box', minHeight: 340, padding: '14px 16px', borderRadius: 12, border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT, fontSize: 14, resize: 'vertical', outline: 'none', fontFamily: 'inherit', lineHeight: 1.8 }} />
                         {transcriptError && <p style={{ fontSize: 12.5, color: '#DC2626', margin: '10px 0 0' }}>⚠ {transcriptError}</p>}
                         <div style={{ marginTop: 12, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -1969,14 +1950,14 @@ function SessionsPageInner() {
               <div style={{ padding: '8px 2px' }}>
                 <p style={{ fontSize: 13, color: TEXT, fontWeight: 600, margin: '0 0 4px' }}>
                   {selectedSession
-                    ? CHAT_COPY[sessionLang].ask(selectedSession.title || (sessionLang === 'ru' ? 'этой сессии' : 'this session'))
-                    : CHAT_COPY[sessionLang].askSessions}
+                    ? CHAT_COPY.ask(selectedSession.title || 'this session')
+                    : CHAT_COPY.askSessions}
                 </p>
                 <p style={{ fontSize: 12, color: MUTED, margin: '0 0 16px', lineHeight: 1.6 }}>
-                  {CHAT_COPY[sessionLang].tryOne}
+                  {CHAT_COPY.tryOne}
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {CHAT_SUGGESTIONS[sessionLang].map(q => (
+                  {CHAT_SUGGESTIONS.map(q => (
                     <button key={q} onClick={() => sendChat(q)} disabled={chatLoading}
                       style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 13px', borderRadius: 11, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 12.5, lineHeight: 1.4, cursor: 'pointer', textAlign: 'left' }}
                       onMouseEnter={e => e.currentTarget.style.borderColor = A + '55'}
@@ -1991,16 +1972,16 @@ function SessionsPageInner() {
                     those retrieve something, these start a piece of work. Six
                     identical rows would have read as one undifferentiated list. */}
                 <p style={{ fontSize: 11, color: MUTED, margin: '18px 0 8px', letterSpacing: '0.04em' }}>
-                  {CHAT_COPY[sessionLang].cbtLabel}
+                  {CHAT_COPY.cbtLabel}
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {CBT_PRESETS.map(p => (
-                    <button key={p.id} onClick={() => sendChat(p.message[sessionLang], p)} disabled={chatLoading}
+                    <button key={p.id} onClick={() => sendChat(p.message, p)} disabled={chatLoading}
                       style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 13px', borderRadius: 11, border: `1px solid ${A}44`, background: A + '0F', color: TEXT, fontSize: 12.5, fontWeight: 500, lineHeight: 1.4, cursor: 'pointer', textAlign: 'left' }}
                       onMouseEnter={e => { e.currentTarget.style.borderColor = A + '99'; e.currentTarget.style.background = A + '1A'; }}
                       onMouseLeave={e => { e.currentTarget.style.borderColor = A + '44'; e.currentTarget.style.background = A + '0F'; }}>
                       <span style={{ fontSize: 14, flexShrink: 0 }}>{p.icon}</span>
-                      <span>{p.label[sessionLang]}</span>
+                      <span>{p.label}</span>
                     </button>
                   ))}
                 </div>
@@ -2037,12 +2018,12 @@ function SessionsPageInner() {
             {chatMessages.length > 0 && (
               <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
                 {CBT_PRESETS.map(p => (
-                  <button key={p.id} onClick={() => sendChat(p.message[sessionLang], p)} disabled={chatLoading}
+                  <button key={p.id} onClick={() => sendChat(p.message, p)} disabled={chatLoading}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, border: `1px solid ${A}44`, background: A + '0F', color: A, fontSize: 11.5, fontWeight: 500, cursor: chatLoading ? 'default' : 'pointer', opacity: chatLoading ? 0.5 : 1 }}
                     onMouseEnter={e => { if (!chatLoading) e.currentTarget.style.borderColor = A + '99'; }}
                     onMouseLeave={e => { e.currentTarget.style.borderColor = A + '44'; }}>
                     <span style={{ flexShrink: 0 }}>{p.icon}</span>
-                    <span>{p.label[sessionLang]}</span>
+                    <span>{p.label}</span>
                   </button>
                 ))}
               </div>
@@ -2084,7 +2065,7 @@ function SessionsPageInner() {
                 closest this app comes to clinical language, and the line that
                 says it is not clinical has to sit in the same frame. */}
             <p style={{ fontSize: 10.5, color: MUTED, margin: '9px 0 0', lineHeight: 1.5, textAlign: 'center' }}>
-              {CHAT_COPY[sessionLang].disclaimer}
+              {CHAT_COPY.disclaimer}
             </p>
           </div>
         </div>

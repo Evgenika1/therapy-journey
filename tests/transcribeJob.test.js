@@ -103,7 +103,7 @@ test('polling gives up after the timeout with an actionable message', async () =
   const { impl } = fakeStatus(Array.from({ length: 50 }, () => ({ status: 'processing' })));
   await assert.rejects(
     () => pollTranscript('job-1', opts(impl, { now: () => (clock += 60_000), timeoutMs: 120_000 })),
-    /не завершилась за отведённое время|Запись сохранена/,
+    /did not finish in time|recording is saved/,
   );
 });
 
@@ -112,14 +112,14 @@ test('cancellation stops the loop', async () => {
   let ticks = 0;
   await assert.rejects(
     () => pollTranscript('job-1', opts(impl, { isCancelled: () => ++ticks > 3 })),
-    /отменена/,
+    /cancelled/,
   );
 });
 
 test('a missing job id fails immediately instead of polling nothing', async () => {
   await assert.rejects(() => pollTranscript(undefined, opts(async () => {
     throw new Error('should never be called');
-  })), /идентификатора/);
+  })), /job id/);
 });
 
 test('the client timeout is generous enough for a long session', () => {

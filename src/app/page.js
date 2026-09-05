@@ -7,7 +7,6 @@ import { useTheme } from '@/lib/ThemeContext';
 import { sessions as sessionsApi, emotions as emotionsApi } from '@/lib/api';
 import { analysisHeadline } from '@/lib/analysisFormat';
 import { MoodTrendChart, EmotionHeatmap } from '@/components/DashboardCharts';
-import { detectSessionLang } from '@/lib/transcriptFormat';
 
 const MOOD_EMOJIS     = ['😞', '😟', '😐', '🙂', '😊'];
 const MOOD_INTENSITIES = [2,    4,    6,    8,    10];
@@ -52,7 +51,6 @@ export default function HomePage() {
   const [latestInsight, setLatestInsight] = useState(null);
   const [sessionPairs,  setSessionPairs]  = useState([]);
   const [emotionLogs,   setEmotionLogs]   = useState([]);
-  const [sessionList,   setSessionList]   = useState([]);
   const [showAllPairs,  setShowAllPairs]  = useState(false);
   const [moodBefore,    setMoodBefore]    = useState(null);
   const [insightOpen,   setInsightOpen]   = useState(false);
@@ -85,9 +83,6 @@ export default function HomePage() {
       setStats(s);
       setSessionPairs(pairs);
       setEmotionLogs(logs);
-      // Kept for detectSessionLang: the charts' copy follows the language the
-      // sessions are actually in, the same rule the session chat uses.
-      setSessionList(list);
       // This used to read `parsed.summary` — a field the analysis has never
       // contained — and fall through to the raw string, so the insight card
       // rendered the entire serialized JSON blob in quotes. analysisHeadline
@@ -138,8 +133,6 @@ export default function HomePage() {
   const avgDiff = sessionPairs.length
     ? (sessionPairs.reduce((a, p) => a + p.diff, 0) / sessionPairs.length).toFixed(1)
     : null;
-
-  const chartLang = detectSessionLang(sessionList);
 
   const visiblePairs = showAllPairs ? sessionPairs : sessionPairs.slice(0, IMPACT_PREVIEW);
 
@@ -195,8 +188,8 @@ export default function HomePage() {
             {/* Two charts side by side; the grid collapses to one column on a
                 narrow window (.dash-charts in globals.css). */}
             <div className="dash-charts">
-              <MoodTrendChart pairs={sessionPairs} lang={chartLang} />
-              <EmotionHeatmap emotions={emotionLogs} lang={chartLang} />
+              <MoodTrendChart pairs={sessionPairs} />
+              <EmotionHeatmap emotions={emotionLogs} />
             </div>
 
             {/* Session mood impact */}

@@ -43,7 +43,7 @@ export async function POST(req) {
       method: 'POST',
       headers: AAI_HEADERS(),
       body: JSON.stringify({ audio_url: upload_url, ...TRANSCRIBE_CONFIG }),
-    }, 'Создание транскрипта', 'transcribe');
+    }, 'Create transcript', 'transcribe');
     if (!createRes.ok) {
       const err = await createRes.text();
       return NextResponse.json({ error: `Transcript create failed: ${err}` }, { status: 500 });

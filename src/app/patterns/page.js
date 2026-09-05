@@ -43,7 +43,7 @@ export default function PatternsPage() {
       .then(([s, e]) => { setSessions(s); setEmotions(e); })
       .catch(err => {
         console.error('[Patterns] load:', err?.message);
-        setError('Не удалось загрузить историю: ' + (err?.message || 'неизвестная ошибка'));
+        setError('Could not load your history: ' + (err?.message || 'unknown error'));
       })
       .finally(() => setLoading(false));
   }, [supabase]);
@@ -73,7 +73,7 @@ export default function PatternsPage() {
       saveCache(entry);
     } catch (err) {
       console.error('[Patterns]', err);
-      setError(err.message || 'Не удалось найти паттерны');
+      setError(err.message || 'Could not find patterns');
     } finally { setRunning(false); }
   }, [running, enough, sessions, emotions]);
 
@@ -99,7 +99,7 @@ export default function PatternsPage() {
               What <em style={{ fontStyle: 'italic' }}>repeats</em>
             </h1>
             <p style={{ fontSize: 15, color: MUTED, margin: 0, lineHeight: 1.6 }}>
-              Всё, что видно только когда смотришь на сессии вместе, а не по одной.
+              What only shows up when your sessions are read together, rather than one at a time.
             </p>
           </div>
 
@@ -113,9 +113,9 @@ export default function PatternsPage() {
                 Need at least {MIN_ANALYSED_SESSIONS} analysed sessions to find patterns
               </p>
               <p style={{ fontSize: 14, color: MUTED, margin: 0, lineHeight: 1.7 }}>
-                Сейчас проанализировано: <strong style={{ color: A }}>{analysed.length}</strong> из {sessions.length}.
-                Паттерны строятся на анализах сессий — откройте сессию и нажмите Analyse,
-                чтобы добавить её в историю.
+                Analysed so far: <strong style={{ color: A }}>{analysed.length}</strong> of {sessions.length}.
+                Patterns are built from session analyses — open a session and press Analyse
+                to add it to the history.
               </p>
             </div>
           )}
@@ -130,20 +130,20 @@ export default function PatternsPage() {
                   </p>
                   <p style={{ fontSize: 13.5, color: MUTED, margin: 0, lineHeight: 1.6 }}>
                     {!analysis
-                      ? 'История готова — можно искать сквозные паттерны.'
+                      ? 'Your history is ready — patterns can be traced across it now.'
                       : stale
-                        ? 'С момента прошлого разбора появились новые сессии.'
-                        : `Последний разбор: ${new Date(cached.at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}`}
+                        ? 'New sessions have arrived since the last run.'
+                        : `Last run: ${new Date(cached.at).toLocaleDateString('en-US', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}`}
                   </p>
                 </div>
                 <button onClick={run} disabled={running} style={primaryBtn(!running)}>
-                  {running ? '⏳ Ищу паттерны…' : analysis ? '↻ Refresh' : '✦ Analyse patterns'}
+                  {running ? '⏳ Finding patterns…' : analysis ? '↻ Refresh' : '✦ Analyse patterns'}
                 </button>
               </div>
 
               {stale && !running && (
                 <p style={{ fontSize: 13, color: A, margin: '0 0 18px', lineHeight: 1.6 }}>
-                  ↻ Показан прошлый разбор. Нажмите Refresh, чтобы учесть новые сессии.
+                  ↻ Showing the previous run. Press Refresh to include the new sessions.
                 </p>
               )}
 
@@ -156,10 +156,10 @@ export default function PatternsPage() {
               {running && !analysis && (
                 <div style={{ ...card, textAlign: 'center', padding: '44px 28px' }}>
                   <p style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: 20, color: TEXT, margin: '0 0 8px' }}>
-                    Смотрю на всё сразу…
+                    Reading everything at once…
                   </p>
                   <p style={{ fontSize: 13, color: MUTED, margin: 0 }}>
-                    Разбор всей истории занимает несколько секунд.
+                    Working through the whole history takes a few seconds.
                   </p>
                 </div>
               )}
@@ -167,8 +167,8 @@ export default function PatternsPage() {
               {analysis && !hasAnyPattern(analysis) && (
                 <div style={{ ...card }}>
                   <p style={{ fontSize: 14.5, color: MUTED, margin: 0, lineHeight: 1.7 }}>
-                    Пока ничего устойчивого не набралось — сессии слишком разные.
-                    Это нормально на раннем этапе: паттерны проявляются с историей.
+                    Nothing steady has formed yet — the sessions are still too different.
+                    That is normal this early: patterns surface as the history grows.
                   </p>
                 </div>
               )}
