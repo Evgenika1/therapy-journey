@@ -28,8 +28,14 @@ export default function AppLayout({ children }) {
     <div style={{ display: 'flex', height: '100vh', background: BG, fontFamily: '"Plus Jakarta Sans", sans-serif', overflow: 'hidden' }}>
       {/* Sidebar */}
       <nav className="app-nav" style={{ background: SURFACE, borderRight: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-        {/* Logo */}
+        {/* Logo — the wordmark and the eye are one link home. A logo that does
+            nothing is a dead end on every screen but the dashboard, and this
+            one sits above a nav where everything else is clickable. */}
         <div style={{ padding: '22px 20px 18px', display: 'flex', alignItems: 'center' }}>
+          <Link href="/" aria-label="Miru — go to Dashboard"
+            style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', cursor: 'pointer', transition: 'opacity 0.12s' }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = '0.72'; }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}>
           <span style={{
             position: 'relative',
             fontSize: 23,
@@ -52,6 +58,7 @@ export default function AppLayout({ children }) {
               <circle cx="8.4" cy="6.6" r="0.62" fill={SURFACE} opacity="0.9"/>
             </svg>
           </span>
+          </Link>
         </div>
 
         {/* Nav links */}
