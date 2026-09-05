@@ -20,6 +20,7 @@ export default function AiChatPage() {
   // Set when a CBT preset is used, and kept for the rest of the thread so the
   // follow-up answers stay in the same register.
   const [directive, setDirective] = useState(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -38,6 +39,7 @@ export default function AiChatPage() {
     setMessages([]);
     setInput('');
     setDirective(null);
+    setShowSuggestions(false);
   }
 
   // "Find my pattern" cannot be answered from one message: it needs the history
@@ -229,11 +231,47 @@ export default function AiChatPage() {
 
           {/* Input */}
           <div style={{ padding: '16px 28px', borderTop: `1px solid ${BORDER}`, background: SURFACE }}>
+            {/* Inside a thread the empty-state block is gone, and this screen
+                offered nothing in its place — the quickest ways in existed only
+                before the first message. Same toggle as the session panel, so
+                the two surfaces behave alike. */}
+            {messages.length > 0 && (
+              <div style={{ maxWidth: 680, margin: '0 auto 10px' }}>
+                <button onClick={() => setShowSuggestions(v => !v)}
+                  style={{ background: 'none', border: 'none', padding: 0, color: MUTED, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  {showSuggestions ? '✕ Hide suggestions' : '✦ Suggestions'}
+                </button>
+                {showSuggestions && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                    {CHAT_SUGGESTIONS.map(q => (
+                      <button key={q} onClick={() => { send({ message: q }); setShowSuggestions(false); }} disabled={loading}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 9, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 12.5, lineHeight: 1.4, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
+                        onMouseEnter={e => e.currentTarget.style.borderColor = A + '55'}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = BORDER}>
+                        <span style={{ flexShrink: 0 }}>✦</span>
+                        <span>{q}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 7, marginTop: 8, flexWrap: 'wrap' }}>
+                  {CBT_PRESETS.map(preset => (
+                    <button key={preset.id} onClick={() => { send(preset); setShowSuggestions(false); }} disabled={loading}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 8, border: `1px solid ${A}44`, background: A + '0F', color: A, fontSize: 12, fontWeight: 500, cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.5 : 1, fontFamily: 'inherit' }}
+                      onMouseEnter={e => { if (!loading) e.currentTarget.style.borderColor = A + '99'; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = A + '44'; }}>
+                      <span style={{ flexShrink: 0 }}>{preset.icon}</span>
+                      <span>{preset.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div style={{ maxWidth: 680, margin: '0 auto', display: 'flex', gap: 10 }}>
               <input value={input} onChange={e => setInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
                 placeholder="Type a message…"
-                style={{ flex: 1, padding: '12px 16px', borderRadius: 12, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 15, outline: 'none' }} />
+                style={{ flex: 1, minWidth: 0, padding: '12px 16px', borderRadius: 12, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
               <button onClick={() => send()} disabled={!input.trim() || loading}
                 style={{ padding: '12px 24px', borderRadius: 12, border: 'none', background: input.trim() ? A : BORDER, color: '#fff', fontSize: 14, fontWeight: 500, cursor: input.trim() ? 'pointer' : 'default' }}>
                 Send
