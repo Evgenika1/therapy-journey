@@ -7,6 +7,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { sessions as sessionsApi, emotions as emotionsApi } from '@/lib/api';
 import { analysisHeadline } from '@/lib/analysisFormat';
 import { MoodTrendChart, EmotionHeatmap } from '@/components/DashboardCharts';
+import NextSessionTopics from '@/components/NextSessionTopics';
 
 const MOOD_EMOJIS     = ['😞', '😟', '😐', '🙂', '😊'];
 const MOOD_INTENSITIES = [2,    4,    6,    8,    10];
@@ -170,6 +171,8 @@ export default function HomePage() {
               </div>
             ))}
           </div>
+
+          <NextSessionTopics />
 
           {/* ── Progress ──────────────────────────────────────────────────────
               Folded in from the standalone /progress screen, and kept high on

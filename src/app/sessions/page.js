@@ -4,7 +4,8 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
-import { sessions as sessionsApi, emotions as emotionsApi, aiChats, homework as homeworkApi } from '@/lib/api';
+import { sessions as sessionsApi, emotions as emotionsApi, aiChats, homework as homeworkApi, topics as topicsApi } from '@/lib/api';
+import { pendingTopics, prefillNotes } from '@/lib/sessionTopics';
 import { ALLOWED_EXT, MAX_UPLOAD_BYTES, extOf, tooLargeMessage, unsupportedTypeMessage } from '@/lib/audioUpload';
 import { savePendingRecording, loadPendingRecording, clearPendingRecording } from '@/lib/recordingStore';
 import {
@@ -301,6 +302,11 @@ function SessionsPageInner() {
   const [seconds,            setSeconds]            = useState(0);
   const [transcript,         setTranscript]         = useState('');
   const [recNotes,           setRecNotes]           = useState('');
+  // The topics prefilled into the notes for this recording, so the saved panel
+  // can offer to tick them off afterwards.
+  const [prefilledTopics,    setPrefilledTopics]    = useState([]);
+  const [markingTopics,      setMarkingTopics]      = useState(false);
+  const [topicsMarked,       setTopicsMarked]       = useState(false);
   const [recTitle,           setRecTitle]           = useState(''); // name typed on the Dashboard
   const [saving,             setSaving]             = useState(false);
   const [saved,              setSaved]              = useState(false);
@@ -528,8 +534,25 @@ function SessionsPageInner() {
     setTranscript('');
     setRecNotes('');
     setRecTitle(title);
+    setPrefilledTopics([]);
+    setTopicsMarked(false);
     chunksRef.current = [];
     refreshMicDevices();
+    // What the Next Session page always promised and never did: the topics you
+    // collected during the week land in the notes for this session. Fetched
+    // here rather than on page load — this is the only thing that needs them,
+    // and most visits never record. prefillNotes refuses to overwrite anything
+    // already typed, so a slow response cannot clobber the user mid-sentence.
+    if (supabase) {
+      topicsApi.list(supabase)
+        .then(list => {
+          const pending = pendingTopics(list);
+          if (!pending.length) return;
+          setPrefilledTopics(pending);
+          setRecNotes(current => prefillNotes(current, pending));
+        })
+        .catch(e => console.error('[Sessions] prefill topics:', e?.message));
+    }
     // preMoodIntensity is set when navigating here from the Dashboard, which
     // already saved the "before" mood — skip re-asking/re-saving it here.
     if (typeof preMoodIntensity === 'number') {
@@ -1089,6 +1112,17 @@ function SessionsPageInner() {
     } finally { setAnalysing(false); }
   }
 
+  async function markTopicsDiscussed() {
+    if (markingTopics || !prefilledTopics.length) return;
+    setMarkingTopics(true);
+    try {
+      await Promise.all(prefilledTopics.map(t => topicsApi.update(supabase, t.id, { checked: true })));
+      setTopicsMarked(true);
+    } catch (e) {
+      console.error('[Sessions] mark topics:', e?.message);
+    } finally { setMarkingTopics(false); }
+  }
+
   // ── notes save ───────────────────────────────────────────────────────────────
   async function saveNotes() {
     if (!selectedSession || !user) return;
@@ -1518,6 +1552,20 @@ function SessionsPageInner() {
                   <div style={{ textAlign: 'center', padding: '12px 0' }}>
                     <p style={{ fontSize: 30, margin: '0 0 8px', color: '#15803D' }}>✓</p>
                     <p style={{ fontSize: 15, color: TEXT, margin: '0 0 6px' }}>Done — the session was saved.</p>
+                    {/* Offered, not automatic: prefilling a topic into the notes
+                        is not evidence it actually came up. */}
+                    {prefilledTopics.length > 0 && (
+                      topicsMarked ? (
+                        <p style={{ fontSize: 12, color: MUTED, margin: '0 0 14px' }}>
+                          {prefilledTopics.length} topic{prefilledTopics.length !== 1 ? 's' : ''} marked as discussed.
+                        </p>
+                      ) : (
+                        <button onClick={markTopicsDiscussed} disabled={markingTopics}
+                          style={{ margin: '0 0 14px', background: 'none', border: 'none', padding: 0, color: A, fontSize: 12.5, fontWeight: 600, cursor: markingTopics ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                          {markingTopics ? 'Marking…' : `Mark ${prefilledTopics.length} topic${prefilledTopics.length !== 1 ? 's' : ''} as discussed`}
+                        </button>
+                      )
+                    )}
                     <p style={{ fontSize: 12, color: MUTED, margin: '0 0 20px' }}>The transcript is now in your sessions.</p>
                     <button onClick={closeZoom} style={{ padding: '10px 22px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Done</button>
                   </div>

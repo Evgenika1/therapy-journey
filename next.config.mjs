@@ -7,6 +7,9 @@ const nextConfig = {
   async redirects() {
     return [
       { source: '/progress', destination: '/', permanent: false },
+      // Topics moved onto the dashboard; the countdown and the date did not
+      // survive the move, so there is no page left to send anyone to.
+      { source: '/next-session', destination: '/', permanent: false },
     ];
   },
 };
