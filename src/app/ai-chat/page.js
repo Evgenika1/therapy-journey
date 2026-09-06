@@ -4,7 +4,8 @@ import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
 import { aiChats, sessions as sessionsApi, emotions as emotionsApi } from '@/lib/api';
-import { CHAT_SUGGESTIONS, CBT_PRESETS } from '@/lib/chatPresets';
+import { CBT_PRESETS } from '@/lib/chatPresets';
+import SuggestionList from '@/components/SuggestionList';
 import { buildPatternsInput } from '@/lib/patternsInput';
 import { detectSessionLang } from '@/lib/transcriptFormat';
 
@@ -179,17 +180,7 @@ export default function AiChatPage() {
                     chat surface and not the other. */}
                 <div style={{ width: '100%', maxWidth: 420, textAlign: 'left' }}>
                   <p style={{ fontSize: 11.5, color: MUTED, margin: '0 0 8px' }}>Try one of these to get started:</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    {CHAT_SUGGESTIONS.map(q => (
-                      <button key={q} onClick={() => send({ message: q })} disabled={loading}
-                        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 13px', borderRadius: 10, border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT, fontSize: 13, lineHeight: 1.4, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
-                        onMouseEnter={e => e.currentTarget.style.borderColor = A + '55'}
-                        onMouseLeave={e => e.currentTarget.style.borderColor = BORDER}>
-                        <span style={{ flexShrink: 0 }}>✦</span>
-                        <span>{q}</span>
-                      </button>
-                    ))}
-                  </div>
+                  <SuggestionList onPick={q => send({ message: q })} disabled={loading} />
 
                   <p style={{ fontSize: 11.5, color: MUTED, margin: '16px 0 8px' }}>Or work with a thought:</p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
@@ -242,16 +233,9 @@ export default function AiChatPage() {
                   {showSuggestions ? '✕ Hide suggestions' : '✦ Suggestions'}
                 </button>
                 {showSuggestions && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-                    {CHAT_SUGGESTIONS.map(q => (
-                      <button key={q} onClick={() => { send({ message: q }); setShowSuggestions(false); }} disabled={loading}
-                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 9, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 12.5, lineHeight: 1.4, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
-                        onMouseEnter={e => e.currentTarget.style.borderColor = A + '55'}
-                        onMouseLeave={e => e.currentTarget.style.borderColor = BORDER}>
-                        <span style={{ flexShrink: 0 }}>✦</span>
-                        <span>{q}</span>
-                      </button>
-                    ))}
+                  <div style={{ marginTop: 8 }}>
+                    <SuggestionList disabled={loading}
+                      onPick={q => { send({ message: q }); setShowSuggestions(false); }} />
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: 7, marginTop: 8, flexWrap: 'wrap' }}>

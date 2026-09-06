@@ -20,7 +20,8 @@ import {
   ANALYSIS_FIELDS, LEGACY_ANALYSIS_FIELDS, analysisToText, hasValue,
 } from '@/lib/analysisFormat';
 import { buildPatternsInput } from '@/lib/patternsInput';
-import { CHAT_SUGGESTIONS, CBT_PRESETS } from '@/lib/chatPresets';
+import { CBT_PRESETS } from '@/lib/chatPresets';
+import SuggestionList from '@/components/SuggestionList';
 import { proposedTasks, reconcileHomework, describeTask } from '@/lib/sessionHomework';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -1668,21 +1669,11 @@ function SessionsPageInner() {
                 <p style={{ fontSize: 12, color: MUTED, margin: '0 0 16px', lineHeight: 1.6 }}>
                   {CHAT_COPY.tryOne}
                 </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {CHAT_SUGGESTIONS.map(q => (
-                    <button key={q} onClick={() => sendChat(q)} disabled={chatLoading}
-                      style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 13px', borderRadius: 11, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 12.5, lineHeight: 1.4, cursor: 'pointer', textAlign: 'left' }}
-                      onMouseEnter={e => e.currentTarget.style.borderColor = A + '55'}
-                      onMouseLeave={e => e.currentTarget.style.borderColor = BORDER}>
-                      <span style={{ fontSize: 14, flexShrink: 0 }}>✦</span>
-                      <span>{q}</span>
-                    </button>
-                  ))}
-                </div>
+                <SuggestionList compact onPick={q => sendChat(q)} disabled={chatLoading} />
 
-                {/* The CBT prompts are set apart from the four questions above:
-                    those retrieve something, these start a piece of work. Six
-                    identical rows would have read as one undifferentiated list. */}
+                {/* The CBT prompts are set apart from the questions above:
+                    those retrieve something, these start a piece of work. One
+                    undifferentiated list would have hidden the difference. */}
                 <p style={{ fontSize: 11, color: MUTED, margin: '18px 0 8px', letterSpacing: '0.04em' }}>
                   {CHAT_COPY.cbtLabel}
                 </p>
@@ -1739,16 +1730,9 @@ function SessionsPageInner() {
                   {showSuggestions ? '✕ Hide suggestions' : '✦ Suggestions'}
                 </button>
                 {showSuggestions && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 7 }}>
-                    {CHAT_SUGGESTIONS.map(q => (
-                      <button key={q} onClick={() => { sendChat(q); setShowSuggestions(false); }} disabled={chatLoading}
-                        style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 10px', borderRadius: 8, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 11.5, lineHeight: 1.35, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
-                        onMouseEnter={e => e.currentTarget.style.borderColor = A + '55'}
-                        onMouseLeave={e => e.currentTarget.style.borderColor = BORDER}>
-                        <span style={{ flexShrink: 0 }}>✦</span>
-                        <span>{q}</span>
-                      </button>
-                    ))}
+                  <div style={{ marginTop: 7 }}>
+                    <SuggestionList compact disabled={chatLoading}
+                      onPick={q => { sendChat(q); setShowSuggestions(false); }} />
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>

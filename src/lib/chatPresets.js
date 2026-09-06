@@ -5,12 +5,26 @@
 // them; two copies of prompts worded this carefully would drift apart on the
 // first edit to either one.
 
+// Ordered widest-first: the opening four are the ones that make sense on any
+// history, however thin, and are all that show until the list is expanded. The
+// rest reward a few sessions' worth of material.
 export const CHAT_SUGGESTIONS = [
-  'What emotions came up in my last session?',
+  'What emotions came up recently?',
   'Summarize the key themes across my sessions',
   'What patterns do you notice in my progress?',
-  'What should I focus on for next session?',
+  'What should I focus on next session?',
+  'What am I avoiding talking about?',
+  'How have I changed over the past month?',
+  'What did I discover about myself recently?',
+  'What keeps coming up for me?',
+  'What questions should I bring to my therapist?',
+  'Where am I making progress?',
+  "What's a recurring thought I have?",
 ];
+
+// How many show before the list is collapsed. Eleven buttons stacked in a
+// 320px panel is a wall; four is a menu.
+export const SUGGESTION_PREVIEW = 4;
 
 // ─── CBT presets ──────────────────────────────────────────────────────────────
 //
