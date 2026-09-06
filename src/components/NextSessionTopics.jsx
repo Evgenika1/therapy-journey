@@ -78,11 +78,34 @@ export default function NextSessionTopics() {
   const pending = pendingTopics(topics);
   const done    = discussedTopics(topics);
 
+  // Split by where a topic came from. A caption under every AI row would say
+  // the same sentence a dozen times; one heading above the group says it once
+  // and stays one line however long the list gets.
+  const mine     = pending.filter(t => t.source !== 'ai');
+  const suggested = pending.filter(t => t.source === 'ai');
+
   const row = {
     display: 'flex', alignItems: 'center', gap: 10,
     padding: '7px 10px', background: BG,
     border: `1px solid ${BORDER}`, borderRadius: 9,
   };
+
+  // Both groups render the same row. The ✦ is gone from inside it — the heading
+  // above the group carries that now, and repeating it per line was the noise
+  // this change is removing.
+  const TopicRow = ({ topic }) => (
+    <div style={row}>
+      <button onClick={() => toggle(topic.id, topic.checked)}
+        aria-label={`Mark "${topic.text}" as discussed`}
+        style={{ width: 17, height: 17, borderRadius: 5, flexShrink: 0, border: `2px solid ${BORDER}`, background: 'transparent', cursor: 'pointer', padding: 0 }}
+        onMouseEnter={e => e.currentTarget.style.borderColor = A}
+        onMouseLeave={e => e.currentTarget.style.borderColor = BORDER}
+      />
+      <p style={{ fontSize: 13, color: TEXT, margin: 0, flex: 1, lineHeight: 1.45, minWidth: 0 }}>{topic.text}</p>
+      <button onClick={() => remove(topic.id)} aria-label={`Delete "${topic.text}"`}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTED, fontSize: 16, padding: '0 2px', opacity: 0.5, lineHeight: 1, flexShrink: 0 }}>×</button>
+    </div>
+  );
 
   return (
     <section style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '13px 15px', marginBottom: 18 }}>
@@ -133,29 +156,31 @@ export default function NextSessionTopics() {
         </p>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {pending.map(topic => (
-          <div key={topic.id} style={row}>
-            <button onClick={() => toggle(topic.id, topic.checked)}
-              aria-label={`Mark "${topic.text}" as discussed`}
-              style={{ width: 17, height: 17, borderRadius: 5, flexShrink: 0, border: `2px solid ${BORDER}`, background: 'transparent', cursor: 'pointer', padding: 0 }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = A}
-              onMouseLeave={e => e.currentTarget.style.borderColor = BORDER}
-            />
-            <p style={{ fontSize: 13, color: TEXT, margin: 0, flex: 1, lineHeight: 1.45, minWidth: 0 }}>
-              {/* A quiet mark, not a label: it says the model raised this, and
-                  otherwise the row behaves exactly like one you typed. */}
-              {topic.source === 'ai' && (
-                <span title="Suggested by the session analysis"
-                  style={{ color: A, marginRight: 5, fontSize: 11 }}>✦</span>
-              )}
-              {topic.text}
+      {/* Yours first. It only needs naming when there is a second group under
+          it to be told apart from. */}
+      {mine.length > 0 && (
+        <>
+          {suggested.length > 0 && (
+            <p style={{ fontSize: 10.5, fontWeight: 600, color: MUTED, margin: '2px 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              Added by you
             </p>
-            <button onClick={() => remove(topic.id)} aria-label={`Delete "${topic.text}"`}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTED, fontSize: 16, padding: '0 2px', opacity: 0.5, lineHeight: 1, flexShrink: 0 }}>×</button>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {mine.map(topic => <TopicRow key={topic.id} topic={topic} />)}
           </div>
-        ))}
-      </div>
+        </>
+      )}
+
+      {suggested.length > 0 && (
+        <>
+          <p style={{ fontSize: 10.5, fontWeight: 600, color: A, margin: `${mine.length ? 12 : 2}px 0 6px`, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+            ✦ Suggested from your sessions
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {suggested.map(topic => <TopicRow key={topic.id} topic={topic} />)}
+          </div>
+        </>
+      )}
 
       {/* Discussed topics are kept but folded away. They are the record of what
           you did raise, which is worth keeping; they are not what this block is
@@ -173,8 +198,13 @@ export default function NextSessionTopics() {
                   <button onClick={() => toggle(topic.id, topic.checked)}
                     aria-label={`Move "${topic.text}" back to the list`}
                     style={{ width: 17, height: 17, borderRadius: 5, flexShrink: 0, border: 'none', background: A, color: '#fff', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, padding: 0 }}>✓</button>
+                  {/* Discussed topics are one mixed list, so the mark earns its
+                      place here — there is no heading to carry it. */}
                   <p style={{ fontSize: 13, color: MUTED, margin: 0, flex: 1, textDecoration: 'line-through', minWidth: 0 }}>
-                    {topic.source === 'ai' && <span style={{ marginRight: 5, fontSize: 11 }}>✦</span>}
+                    {topic.source === 'ai' && (
+                      <span title="Suggested from your session analysis"
+                        style={{ marginRight: 5, fontSize: 11 }}>✦</span>
+                    )}
                     {topic.text}
                   </p>
                   <button onClick={() => remove(topic.id)} aria-label={`Delete "${topic.text}"`}
