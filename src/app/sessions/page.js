@@ -100,27 +100,6 @@ const SPEECH_BITS_PER_SECOND = 32000;
 // destination, so it cannot alter the recorded signal. Uses requestAnimationFrame
 // (not setInterval, so it doesn't touch the recording timer) and lives in its own
 // component so the ~60fps updates don't re-render the whole page.
-// Persist the active Recall bot id so a page reload / navigation doesn't lose an
-// in-progress recording: on load we re-adopt it and resume polling until the
-// transcript is saved. (On localhost there's no webhook fallback, so this is the
-// safety net.) Cleared once the session is saved, discarded, or errors out.
-const ZOOM_BOT_KEY = 'miru_zoom_bot';
-
-// Recall.ai auto-detects the meeting platform from the URL server-side; this is
-// only a light client-side check to validate the link and show which platform we
-// recognised. Any of these hosts is accepted — the URL goes to Recall unchanged.
-const MEETING_PLATFORMS = [
-  { host: 'zoom.us',            name: 'Zoom' },
-  { host: 'meet.google.com',    name: 'Google Meet' },
-  { host: 'teams.microsoft.com', name: 'Microsoft Teams' },
-  { host: 'teams.live.com',     name: 'Microsoft Teams' },
-  { host: 'webex.com',          name: 'Webex' },
-];
-function detectPlatform(url) {
-  const u = (url || '').toLowerCase();
-  return MEETING_PLATFORMS.find(p => u.includes(p.host)) || null;
-}
-
 function AudioLevelMeter({ stream, source, paused, A, MUTED, TEXT }) {
   const [bars, setBars] = useState(() => new Array(9).fill(0));
   const [silentTooLong, setSilentTooLong] = useState(false);
@@ -250,15 +229,6 @@ function SessionsPageInner() {
   const [uploadProgress,   setUploadProgress]   = useState(0);
   const [recovered,        setRecovered]        = useState(null); // recording found in IndexedDB after a reload
 
-  // Zoom / Recall.ai notetaker
-  const [showZoom,           setShowZoom]           = useState(false);
-  const [zoomUrl,            setZoomUrl]            = useState('');
-  const [zoomConsent,        setZoomConsent]        = useState(false);
-  const [zoomBotId,          setZoomBotId]          = useState(null);
-  const [zoomStatus,         setZoomStatus]         = useState('idle'); // idle|joining|recording|processing|done|error
-  const [zoomError,          setZoomError]          = useState('');
-  const [zoomStopping,       setZoomStopping]       = useState(false); // "Stop & Save" pressed → waiting for transcript
-
   // Paste an existing transcript (Zoom export, notes, another app) — a session
   // with text but no audio.
   const [showPaste,   setShowPaste]   = useState(false);
@@ -363,12 +333,11 @@ function SessionsPageInner() {
     return () => { cancelled = true; };
   }, [supabase, selectedSession?.id]);
 
-  // All four capture panels render into the same centre column, so two open at
+  // The three capture panels render into the same centre column, so two open at
   // once would stack on top of each other. One switch keeps them exclusive
-  // instead of every opener remembering to close the other three.
+  // instead of every opener remembering to close the others.
   function closeOtherPanels(keep) {
     if (keep !== 'import') setShowImport(false);
-    if (keep !== 'zoom')   setShowZoom(false);
     if (keep !== 'record') setShowModal(false);
     if (keep !== 'paste')  setShowPaste(false);
   }
@@ -417,9 +386,9 @@ function SessionsPageInner() {
 
   // In single-column mode (<800px) the container needs to know which pane to
   // show. The centre is "occupied" not only by an open session but by the
-  // recording / import / meeting panels, which also live there — without those
+  // recording / import / paste panels, which also live there — without those
   // the narrow layout would hide the recorder the moment it opened.
-  const detailOpen = !!(selectedSession || showModal || showImport || showZoom || showPaste);
+  const detailOpen = !!(selectedSession || showModal || showImport || showPaste);
 
   // Back out of the centre pane. Deliberately refuses while a recording or an
   // upload is in flight: closeModal() stops the recorder, and losing a session
@@ -429,7 +398,6 @@ function SessionsPageInner() {
     if (!canGoBack) return;
     if (showPaste)       { closePaste();  return; }
     if (showImport)      { closeImport(); return; }
-    if (showZoom)        { setShowZoom(false); return; }
     if (showModal)       { closeModal(); return; }
     setSelectedSession(null);
   }
@@ -713,86 +681,6 @@ function SessionsPageInner() {
     finally { setSavingMood(false); }
   }
 
-  // ── Zoom / Recall.ai notetaker ───────────────────────────────────────────────
-  async function startZoom() {
-    if (!zoomUrl.trim() || !zoomConsent) return;
-    setZoomError('');
-    // Log consent (GDPR / therapy): both parties agreed before the bot joins.
-    console.log('[Zoom] recording consent given', new Date().toISOString(), 'meeting:', zoomUrl.trim());
-    try {
-      const res = await fetch('/api/recall/start', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meeting_url: zoomUrl.trim(), user_id: user?.id }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      setZoomBotId(data.bot_id);
-      setZoomStatus('joining');
-      try { localStorage.setItem(ZOOM_BOT_KEY, data.bot_id); } catch {}
-    } catch (e) { setZoomError(e.message); setZoomStatus('error'); }
-  }
-
-  function closeZoom() {
-    setShowZoom(false); setZoomUrl(''); setZoomConsent(false);
-    setZoomBotId(null); setZoomStatus('idle'); setZoomError(''); setZoomStopping(false);
-    try { localStorage.removeItem(ZOOM_BOT_KEY); } catch {}
-  }
-
-  // "Stop & Save": tell the bot to leave, then let the poll below carry it through
-  // processing → done and save the session. We keep the window in a "processing"
-  // state (no close button) so the local poll survives until the transcript lands.
-  async function stopAndSaveZoom() {
-    if (!zoomBotId) return;
-    setZoomError('');
-    setZoomStopping(true);
-    try {
-      const res = await fetch('/api/recall/leave', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bot_id: zoomBotId }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      // Success (200) OR already_done (bot finished on its own before leave) both
-      // mean "bot is out of the meeting" — either way the poll effect will observe
-      // processing → done and save the transcript automatically.
-    } catch (e) {
-      setZoomError('Could not stop the bot: ' + e.message);
-      setZoomStopping(false);
-    }
-  }
-
-  // "Cancel": confirm, tell the bot to leave, and do NOT save. Closing first nulls
-  // zoomBotId so the poll effect tears down before it can save this recording.
-  async function discardZoom() {
-    if (!window.confirm('Discard recording? The session will not be saved.')) return;
-    const botId = zoomBotId;
-    closeZoom();
-    if (botId) {
-      try {
-        await fetch('/api/recall/leave', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bot_id: botId }),
-        });
-      } catch { /* best-effort — the bot leaves on its own eventually */ }
-    }
-  }
-
-  // Re-attempt the save after a save failure (transcript is already on Recall).
-  async function retrySaveZoom() {
-    if (!zoomBotId) { closeZoom(); return; }
-    setZoomError(''); setZoomStatus('saving');
-    try {
-      const res = await fetch(`/api/recall/status?bot_id=${encodeURIComponent(zoomBotId)}`);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      const saved = await sessionsApi.saveFromRecall(supabase, { transcript: data.transcript, recall_bot_id: zoomBotId });
-      setSessions(list => list.some(s => s.id === saved.id) ? list : [saved, ...list]);
-      setSelectedSession(saved);
-      try { localStorage.removeItem(ZOOM_BOT_KEY); } catch {}
-      setZoomStatus('done');
-    } catch (e) { setZoomStatus('error'); setZoomError('Could not save the session: ' + e.message); }
-  }
-
   // ── Import audio (upload a recording → transcribe → session) ──────────────────
   function pickImportFile() { importInputRef.current?.click(); }
 
@@ -844,67 +732,6 @@ function SessionsPageInner() {
     setShowImport(false); setImportStage(''); setImportFileName(''); setImportError(''); setImportProgress(0);
   }
 
-  // Poll the bot until done/error. On done, save the session (upsert-dedup vs the
-  // webhook path). This is what makes it work locally where the webhook can't reach.
-  useEffect(() => {
-    if (!zoomBotId) return;
-    let cancelled = false, iv;
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/recall/status?bot_id=${encodeURIComponent(zoomBotId)}`);
-        const data = await res.json();
-        if (cancelled) return;
-        if (data.error) { clearInterval(iv); setZoomStatus('error'); setZoomError(data.error); try { localStorage.removeItem(ZOOM_BOT_KEY); } catch {} return; }
-        if (data.status === 'error') { clearInterval(iv); setZoomStatus('error'); setZoomError('Recording failed on Recall.'); try { localStorage.removeItem(ZOOM_BOT_KEY); } catch {} return; }
-        if (data.status === 'done') {
-          clearInterval(iv);
-          setZoomStatus('saving'); // transcript ready — now actually persist it; success is NOT shown yet
-          try {
-            const saved = await sessionsApi.saveFromRecall(supabase, { transcript: data.transcript, recall_bot_id: zoomBotId });
-            if (cancelled) return;
-            setSessions(list => list.some(s => s.id === saved.id) ? list : [saved, ...list]);
-            setSelectedSession(saved);
-            try { localStorage.removeItem(ZOOM_BOT_KEY); } catch {}
-            setZoomStatus('done'); // ONLY now — after Supabase confirmed the row exists
-          } catch (e) {
-            if (!cancelled) { setZoomStatus('error'); setZoomError('Could not save the session: ' + e.message); }
-            // keep zoomBotId + localStorage so the user can retry the save
-          }
-          return;
-        }
-        setZoomStatus(data.status); // non-terminal: joining / recording / processing
-      } catch (e) { if (!cancelled) { clearInterval(iv); setZoomStatus('error'); setZoomError(e.message); } }
-    };
-    poll();
-    iv = setInterval(poll, 5000);
-    return () => { cancelled = true; clearInterval(iv); };
-  }, [zoomBotId, supabase]);
-
-  // Resume on load: if a recording was in progress when the page was reloaded /
-  // navigated away (bot id persisted in localStorage), or a recovery link
-  // ?recall_bot=<id> is present, re-adopt the bot so the poll above resumes and
-  // saves the transcript once it's ready. Runs once on mount.
-  useEffect(() => {
-    let botId = '';
-    try {
-      const url = new URL(window.location.href);
-      const fromLink = url.searchParams.get('recall_bot');
-      botId = fromLink || localStorage.getItem(ZOOM_BOT_KEY) || '';
-      if (fromLink) {
-        localStorage.setItem(ZOOM_BOT_KEY, fromLink);
-        url.searchParams.delete('recall_bot');
-        window.history.replaceState({}, '', url.pathname + url.search);
-      }
-    } catch {}
-    if (botId) {
-      setShowImport(false); setShowModal(false); setSelectedSession(null);
-      setShowZoom(true);
-      setZoomStatus('processing'); // neutral until the first poll reports the real status
-      setZoomBotId(botId);         // arms the poll effect above
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // A transcription that was still running when the page was reloaded: the job
   // lives on AssemblyAI regardless of this tab, so rejoin it rather than making
   // the user upload a 90-minute recording a second time. On failure we fall
@@ -914,7 +741,7 @@ function SessionsPageInner() {
     if (!jobId) return;
     let cancelled = false;
     (async () => {
-      setShowImport(false); setShowZoom(false); setSelectedSession(null);
+      setShowImport(false); setSelectedSession(null);
       setShowModal(true); setIsTranscribing(true); setIsReview(false);
       setSaved(false); setSpeechError(''); setTranscript('');
       try {
@@ -1239,14 +1066,6 @@ function SessionsPageInner() {
             </button>
           </div>
 
-          {/* Record Zoom meeting (Recall.ai notetaker) */}
-          <div style={{ padding: '0 14px 12px' }}>
-            <button onClick={() => { closeOtherPanels('zoom'); setShowZoom(true); setSelectedSession(null); }}
-              style={{ width: '100%', padding: '8px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: A, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-              🎥 Record online session
-            </button>
-          </div>
-
           {/* Paste an existing transcript — no audio involved */}
           <div style={{ padding: '0 14px 12px' }}>
             <button onClick={openPaste}
@@ -1406,107 +1225,6 @@ function SessionsPageInner() {
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
                       <button onClick={closeImport} style={{ padding: '9px 18px', borderRadius: 11, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>Close</button>
                       <button onClick={() => { closeImport(); pickImportFile(); }} style={{ padding: '9px 18px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Choose another file</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : showZoom ? (
-            /* ── RECALL / ZOOM NOTETAKER ─────────────────────────────────────────── */
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', justifyContent: 'center', padding: 28 }}>
-              <div style={{ width: '100%', maxWidth: 560, height: 'fit-content', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32 }}>
-                <p style={{ fontFamily: 'var(--font-serif)', fontSize: 22, fontWeight: 300, color: TEXT, margin: '0 0 6px' }}>Record online session</p>
-                <p style={{ fontSize: 13, color: MUTED, margin: '0 0 24px', lineHeight: 1.5 }}>A notetaker bot joins your call and transcribes it. Works with Zoom, Google Meet, Microsoft Teams, and Webex.</p>
-
-                {zoomStatus === 'idle' && (() => {
-                  const platform = detectPlatform(zoomUrl);
-                  const hasUrl = zoomUrl.trim().length > 0;
-                  const invalid = hasUrl && !platform;
-                  const canSend = !!platform && zoomConsent;
-                  return (
-                  <>
-                    <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Meeting link</p>
-                    <input value={zoomUrl} onChange={e => setZoomUrl(e.target.value)}
-                      placeholder="Paste meeting link (Zoom, Google Meet, Teams...)"
-                      style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: `1px solid ${invalid ? '#DC2626' : BORDER}`, background: BG, color: TEXT, fontSize: 13, outline: 'none', fontFamily: 'inherit', marginBottom: 6 }} />
-                    {platform
-                      ? <p style={{ fontSize: 12, color: '#15803D', fontWeight: 500, margin: '0 0 16px' }}>✓ {platform.name} detected</p>
-                      : invalid
-                        ? <p style={{ fontSize: 12, color: '#DC2626', margin: '0 0 16px' }}>Please paste a valid meeting link</p>
-                        : <p style={{ fontSize: 12, color: MUTED, margin: '0 0 16px' }}>Zoom, Google Meet, Microsoft Teams, or Webex</p>}
-                    <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', marginBottom: 22 }}>
-                      <input type="checkbox" checked={zoomConsent} onChange={e => setZoomConsent(e.target.checked)} style={{ marginTop: 3 }} />
-                      <span style={{ fontSize: 13, color: TEXT, lineHeight: 1.5 }}>Both parties consent to recording this session.</span>
-                    </label>
-                    {zoomError && <p style={{ fontSize: 12, color: '#DC2626', margin: '0 0 12px' }}>{zoomError}</p>}
-                    <div style={{ display: 'flex', gap: 10 }}>
-                      <button onClick={closeZoom} style={{ flex: 1, padding: 11, borderRadius: 12, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 14, cursor: 'pointer' }}>Cancel</button>
-                      <button onClick={startZoom} disabled={!canSend}
-                        style={{ flex: 2, padding: 11, borderRadius: 12, border: 'none', background: canSend ? A : BORDER, color: '#fff', fontSize: 14, fontWeight: 500, cursor: canSend ? 'pointer' : 'default' }}>Send Notetaker</button>
-                    </div>
-                  </>
-                  );
-                })()}
-
-                {['joining', 'recording', 'processing', 'saving'].includes(zoomStatus) && (
-                  <div style={{ textAlign: 'center', padding: '12px 0' }}>
-                    <div style={{ width: 44, height: 44, border: `3px solid ${BORDER}`, borderTop: `3px solid ${A}`, borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 1s linear infinite' }} />
-                    <p style={{ fontSize: 15, color: TEXT, margin: '0 0 6px' }}>
-                      {zoomStatus === 'saving'
-                        ? 'Saving session…'
-                        : zoomStopping
-                          ? 'Processing transcript…'
-                          : zoomStatus === 'joining' ? 'The bot is joining the meeting…' : zoomStatus === 'recording' ? '🔴 Recording the session…' : 'Processing the transcript…'}
-                    </p>
-                    <p style={{ fontSize: 12, color: MUTED, margin: 0, lineHeight: 1.5 }}>
-                      {zoomStatus === 'saving'
-                        ? 'Saving the transcript…'
-                        : zoomStopping
-                          ? 'The transcript is being prepared — 3–5 minutes. You can leave this open; the session saves itself.'
-                          : 'Recording. The session saves itself, even if you close this window.'}
-                    </p>
-                    {zoomError && <p style={{ fontSize: 12, color: '#DC2626', margin: '10px 0 0' }}>{zoomError}</p>}
-                    {!zoomStopping && zoomStatus !== 'saving' && (
-                      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 20 }}>
-                        <button onClick={discardZoom} style={{ padding: '9px 18px', borderRadius: 11, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
-                        <button onClick={stopAndSaveZoom} style={{ padding: '9px 20px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Stop &amp; Save</button>
-                      </div>
-                    )}
-                    <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-                  </div>
-                )}
-
-                {zoomStatus === 'done' && (
-                  <div style={{ textAlign: 'center', padding: '12px 0' }}>
-                    <p style={{ fontSize: 30, margin: '0 0 8px', color: '#15803D' }}>✓</p>
-                    <p style={{ fontSize: 15, color: TEXT, margin: '0 0 6px' }}>Done — the session was saved.</p>
-                    {/* Offered, not automatic: prefilling a topic into the notes
-                        is not evidence it actually came up. */}
-                    {prefilledTopics.length > 0 && (
-                      topicsMarked ? (
-                        <p style={{ fontSize: 12, color: MUTED, margin: '0 0 14px' }}>
-                          {prefilledTopics.length} topic{prefilledTopics.length !== 1 ? 's' : ''} marked as discussed.
-                        </p>
-                      ) : (
-                        <button onClick={markTopicsDiscussed} disabled={markingTopics}
-                          style={{ margin: '0 0 14px', background: 'none', border: 'none', padding: 0, color: A, fontSize: 12.5, fontWeight: 600, cursor: markingTopics ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-                          {markingTopics ? 'Marking…' : `Mark ${prefilledTopics.length} topic${prefilledTopics.length !== 1 ? 's' : ''} as discussed`}
-                        </button>
-                      )
-                    )}
-                    <p style={{ fontSize: 12, color: MUTED, margin: '0 0 20px' }}>The transcript is now in your sessions.</p>
-                    <button onClick={closeZoom} style={{ padding: '10px 22px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Done</button>
-                  </div>
-                )}
-
-                {zoomStatus === 'error' && (
-                  <div style={{ textAlign: 'center', padding: '12px 0' }}>
-                    <p style={{ fontSize: 14, color: '#DC2626', margin: '0 0 16px', lineHeight: 1.6 }}>⚠️ {zoomError || 'Something went wrong.'}</p>
-                    <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-                      <button onClick={closeZoom} style={{ padding: '9px 18px', borderRadius: 11, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>Close</button>
-                      {zoomBotId
-                        ? <button onClick={retrySaveZoom} style={{ padding: '9px 18px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Retry save</button>
-                        : <button onClick={() => { setZoomStatus('idle'); setZoomError(''); }} style={{ padding: '9px 18px', borderRadius: 11, border: 'none', background: A, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Try again</button>}
                     </div>
                   </div>
                 )}
