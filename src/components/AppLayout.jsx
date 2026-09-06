@@ -16,7 +16,10 @@ const NAV = [
 ];
 
 export default function AppLayout({ children }) {
-  const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL, ACCENT_DEEP, GLOW, isDark } = useTheme();
+  // ACCENT_DEEP, GLOW and isDark went with the eye SVG that was the only thing
+  // reading them; a destructured name nothing uses misstates what this
+  // component depends on.
+  const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL } = useTheme();
   const { supabase, user } = useAuth();
   const pathname = usePathname();
 
@@ -28,36 +31,29 @@ export default function AppLayout({ children }) {
     <div style={{ display: 'flex', height: '100vh', background: BG, fontFamily: '"Plus Jakarta Sans", sans-serif', overflow: 'hidden' }}>
       {/* Sidebar */}
       <nav className="app-nav" style={{ background: SURFACE, borderRight: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-        {/* Logo — the wordmark and the eye are one link home. A logo that does
-            nothing is a dead end on every screen but the dashboard, and this
-            one sits above a nav where everything else is clickable. */}
-        <div style={{ padding: '22px 20px 18px', display: 'flex', alignItems: 'center' }}>
+        {/* Logo. Just the word, set in italic serif — no eye, no halo, no
+            plaque behind it. It takes the text colour, so it darkens in the
+            morning and lightens for the evening palette along with everything
+            else, and it is the one link home from every other screen. */}
+        <div style={{ padding: '20px 20px 16px', display: 'flex', alignItems: 'center' }}>
           <Link href="/" aria-label="Miru — go to Dashboard"
-            style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', cursor: 'pointer', transition: 'opacity 0.12s' }}
+            style={{ textDecoration: 'none', display: 'inline-block', cursor: 'pointer', transition: 'opacity 0.12s' }}
             onMouseEnter={e => { e.currentTarget.style.opacity = '0.72'; }}
             onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}>
-          <span style={{
-            position: 'relative',
-            fontSize: 23,
-            fontWeight: 400,
-            letterSpacing: '0.01em',
-            color: TEXT,
-            fontFamily: 'var(--font-serif)',
-            display: 'flex',
-            alignItems: 'center',
-          }}>
-            {/* Halo sits behind the wordmark and is strongest in the evening,
-                where --glow is heaviest. */}
-            <span className="eye-glow" style={{ width: 74, height: 74, left: -8, top: '50%', transform: 'translateY(-50%)' }} />
-            <span style={{ position: 'relative' }}>miru</span>
-            <svg style={{ marginLeft: 5, marginBottom: 7, position: 'relative', overflow: 'visible' }}
-                 width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
-              <ellipse cx="7.5" cy="7.5" rx="7" ry="4.6" fill="none" stroke={CORAL} strokeWidth="1.1" opacity="0.55"/>
-              <ellipse cx="7.5" cy="7.5" rx="4.6" ry="3.1" fill="none" stroke={CORAL} strokeWidth="1.3"/>
-              <circle cx="7.5" cy="7.5" r="1.9" fill={ACCENT_DEEP}/>
-              <circle cx="8.4" cy="6.6" r="0.62" fill={SURFACE} opacity="0.9"/>
-            </svg>
-          </span>
+            <span style={{
+              fontFamily: 'var(--font-serif)',
+              fontStyle: 'italic',
+              fontSize: 34,
+              fontWeight: 400,
+              // Italic serif at this size sets loose; a touch negative brings
+              // the four letters back together as one mark.
+              letterSpacing: '-0.015em',
+              lineHeight: 1.1,
+              color: TEXT,
+              display: 'block',
+            }}>
+              miru
+            </span>
           </Link>
         </div>
 
