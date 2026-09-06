@@ -20,10 +20,20 @@ export const CHAT_SUGGESTIONS = [
   'What questions should I bring to my therapist?',
   'Where am I making progress?',
   "What's a recurring thought I have?",
+  'What am I not saying out loud?',
+  'What would I tell my younger self?',
+  'What patterns show up in my relationships?',
+  'What am I grateful for lately?',
+  "What's draining my energy?",
+  'Where do I feel stuck?',
+  'What small step could I take this week?',
+  'How did I handle a hard moment recently?',
+  'What do I need more of right now?',
 ];
 
-// How many show before the list is collapsed. Eleven buttons stacked in a
-// 320px panel is a wall; four is a menu.
+// How many show before the list is collapsed. Twenty buttons stacked in a
+// 320px panel is a wall; four is a menu. Expanding scrolls rather than growing
+// without limit — see SuggestionList.
 export const SUGGESTION_PREVIEW = 4;
 
 // ─── CBT presets ──────────────────────────────────────────────────────────────

@@ -25,7 +25,17 @@ export default function SuggestionList({ onPick, disabled = false, compact = fal
     : { pad: '10px 13px', font: 13,   gap: 7, radius: 10, icon: 13 };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: size.gap, minWidth: 0 }}>
+    // A fragment: the scrolling list and the "Show fewer" control are siblings,
+    // because a toggle inside the scroll box scrolls away from the reader who
+    // needs it.
+    <>
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: size.gap, minWidth: 0,
+      // Expanded, the full list is longer than any panel wants to be, so it
+      // scrolls in place instead of pushing the input off the screen. Collapsed
+      // it is four rows and needs no cap at all.
+      ...(showAll ? { maxHeight: compact ? 240 : 300, overflowY: 'auto', paddingRight: 2 } : {}),
+    }}>
       {visible.map(q => (
         <button key={q} onClick={() => onPick(q)} disabled={disabled}
           style={{
@@ -43,16 +53,27 @@ export default function SuggestionList({ onPick, disabled = false, compact = fal
         </button>
       ))}
 
-      {hidden > 0 && (
-        <button onClick={() => setShowAll(v => !v)}
+      {hidden > 0 && !showAll && (
+        <button onClick={() => setShowAll(true)}
           style={{
             alignSelf: 'flex-start', marginTop: 1, background: 'none', border: 'none',
             padding: '2px 0', color: MUTED, fontSize: compact ? 11 : 12,
             cursor: 'pointer', fontFamily: 'inherit',
           }}>
-          {showAll ? 'Show fewer' : `${hidden} more…`}
+          {`${hidden} more…`}
         </button>
       )}
     </div>
+    {showAll && (
+      <button onClick={() => setShowAll(false)}
+        style={{
+          alignSelf: 'flex-start', marginTop: 6, background: 'none', border: 'none',
+          padding: '2px 0', color: MUTED, fontSize: compact ? 11 : 12,
+          cursor: 'pointer', fontFamily: 'inherit',
+        }}>
+        Show fewer
+      </button>
+    )}
+    </>
   );
 }

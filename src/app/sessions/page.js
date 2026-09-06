@@ -878,10 +878,20 @@ function SessionsPageInner() {
         const { toInsert, toDelete } = reconcileTopics(existing, proposed);
 
         await Promise.all(toDelete.map(id => topicsApi.delete(supabase, id)));
+        const saved = [];
         for (const text of toInsert) {
-          await topicsApi.save(supabase, text, { source: 'ai', session_id: selectedSession.id });
+          saved.push(await topicsApi.save(supabase, text, { source: 'ai', session_id: selectedSession.id }));
         }
-      } catch (e) { console.error('[Sessions] auto-topics:', e?.message); }
+        // Says whether the row came back marked. Without migration 018 the
+        // column is dropped on insert and the topic saves as 'manual' — which
+        // looks identical in the list, so the log is the only place the
+        // difference shows.
+        console.log('[Sessions] auto-topics:', {
+          proposed: proposed.length, existing: existing.length,
+          inserted: saved.length, deleted: toDelete.length,
+          savedAs: saved.map(t => t.source),
+        });
+      } catch (e) { console.error('[Sessions] auto-topics failed:', e?.message); }
     } catch (err) {
       console.error('[analyse]', err);
       setAnalyseError(err.message);
