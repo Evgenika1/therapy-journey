@@ -436,18 +436,46 @@ export const topics = {
       ...t,
       text:    t.text    ?? t.text_enc ?? '',
       checked: t.checked ?? false,
+      // Rows written before migration 018 have no source; they were all typed.
+      source:  t.source  ?? 'manual',
     }));
   },
 
-  async save(supabase, text) {
-    const { data: { user } } = await supabase.auth.getUser();
+  // Every topic for one session — what re-analysing needs to see before it can
+  // tell a stale suggestion from one that is still proposed.
+  async listForSession(supabase, sessionId) {
     const { data, error } = await supabase
       .from('next_session_topics')
-      .insert({ user_id: user.id, text })
-      .select()
-      .single();
+      .select('*')
+      .eq('session_id', sessionId);
+    // Before migration 018 there is no session_id to filter on. No column also
+    // means no AI topics exist yet, so an empty list is the truthful answer.
+    if (error) {
+      if (isMissingColumn(error)) return [];
+      throw toError(error);
+    }
+    return data.map(t => ({ ...t, text: t.text ?? t.text_enc ?? '', checked: t.checked ?? false }));
+  },
+
+  async save(supabase, text, meta = {}) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const insert = { user_id: user.id, text };
+    if (meta.source)     insert.source     = meta.source;
+    if (meta.session_id) insert.session_id = meta.session_id;
+
+    let { data, error } = await supabase.from('next_session_topics').insert(insert).select().single();
+
+    // Migration 018 adds source and session_id. On a database that has not run
+    // it, drop whichever column the error names and retry: a topic the user
+    // just typed matters more than recording where it came from.
+    for (let i = 0; i < 2 && error && isMissingColumn(error); i++) {
+      const column = missingColumnName(error);
+      if (!column || !(column in insert)) break;
+      delete insert[column];
+      ({ data, error } = await supabase.from('next_session_topics').insert(insert).select().single());
+    }
     if (error) throw toError(error);
-    return { ...data, text, checked: false };
+    return { ...data, text, checked: false, source: meta.source || 'manual' };
   },
 
   async update(supabase, id, fields) {

@@ -23,6 +23,7 @@ import { buildPatternsInput } from '@/lib/patternsInput';
 import { CBT_PRESETS } from '@/lib/chatPresets';
 import SuggestionList from '@/components/SuggestionList';
 import { proposedTasks, reconcileHomework, describeTask } from '@/lib/sessionHomework';
+import { aiTopics, reconcileTopics } from '@/lib/sessionTopics';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const SESSION_MOODS = [
@@ -866,6 +867,21 @@ function SessionsPageInner() {
           });
         }
       } catch (e) { console.error('[Sessions] auto-homework:', e?.message); }
+
+      // "for_next_session" is the analysis naming the threads left hanging —
+      // which is exactly what the Dashboard's topic list is for. They go in
+      // marked as the model's, and are reconciled per session on a re-run so a
+      // second Analyse replaces them rather than adding another set.
+      try {
+        const proposed = aiTopics(data.analysis);
+        const existing = await topicsApi.listForSession(supabase, selectedSession.id);
+        const { toInsert, toDelete } = reconcileTopics(existing, proposed);
+
+        await Promise.all(toDelete.map(id => topicsApi.delete(supabase, id)));
+        for (const text of toInsert) {
+          await topicsApi.save(supabase, text, { source: 'ai', session_id: selectedSession.id });
+        }
+      } catch (e) { console.error('[Sessions] auto-topics:', e?.message); }
     } catch (err) {
       console.error('[analyse]', err);
       setAnalyseError(err.message);

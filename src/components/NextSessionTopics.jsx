@@ -142,7 +142,15 @@ export default function NextSessionTopics() {
               onMouseEnter={e => e.currentTarget.style.borderColor = A}
               onMouseLeave={e => e.currentTarget.style.borderColor = BORDER}
             />
-            <p style={{ fontSize: 13, color: TEXT, margin: 0, flex: 1, lineHeight: 1.45, minWidth: 0 }}>{topic.text}</p>
+            <p style={{ fontSize: 13, color: TEXT, margin: 0, flex: 1, lineHeight: 1.45, minWidth: 0 }}>
+              {/* A quiet mark, not a label: it says the model raised this, and
+                  otherwise the row behaves exactly like one you typed. */}
+              {topic.source === 'ai' && (
+                <span title="Suggested by the session analysis"
+                  style={{ color: A, marginRight: 5, fontSize: 11 }}>✦</span>
+              )}
+              {topic.text}
+            </p>
             <button onClick={() => remove(topic.id)} aria-label={`Delete "${topic.text}"`}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTED, fontSize: 16, padding: '0 2px', opacity: 0.5, lineHeight: 1, flexShrink: 0 }}>×</button>
           </div>
@@ -165,7 +173,10 @@ export default function NextSessionTopics() {
                   <button onClick={() => toggle(topic.id, topic.checked)}
                     aria-label={`Move "${topic.text}" back to the list`}
                     style={{ width: 17, height: 17, borderRadius: 5, flexShrink: 0, border: 'none', background: A, color: '#fff', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, padding: 0 }}>✓</button>
-                  <p style={{ fontSize: 13, color: MUTED, margin: 0, flex: 1, textDecoration: 'line-through', minWidth: 0 }}>{topic.text}</p>
+                  <p style={{ fontSize: 13, color: MUTED, margin: 0, flex: 1, textDecoration: 'line-through', minWidth: 0 }}>
+                    {topic.source === 'ai' && <span style={{ marginRight: 5, fontSize: 11 }}>✦</span>}
+                    {topic.text}
+                  </p>
                   <button onClick={() => remove(topic.id)} aria-label={`Delete "${topic.text}"`}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTED, fontSize: 16, padding: '0 2px', opacity: 0.5, lineHeight: 1, flexShrink: 0 }}>×</button>
                 </div>

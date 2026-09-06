@@ -5,6 +5,8 @@
 // whatever the user may have already typed, so "when do we write, and exactly
 // what" is not something to decide inline at the call site.
 
+import { normalizeTitle } from './sessionHomework.js';
+
 // Unchecked first and unchecked only: a topic already marked discussed has
 // served its purpose and should not come back in the next session's notes.
 export function pendingTopics(topics = []) {
@@ -31,4 +33,36 @@ export function topicsToNotes(topics = []) {
 export function prefillNotes(existingNotes, topics = []) {
   if (typeof existingNotes === 'string' && existingNotes.trim()) return existingNotes;
   return topicsToNotes(topics);
+}
+
+// ── topics proposed by the session analysis ──────────────────────────────────
+//
+// "for_next_session" is the analysis's list of threads left hanging. They are
+// exactly what the Dashboard block is for, so they go in it — marked as the
+// model's suggestion rather than something you wrote, and replaced rather than
+// duplicated when the same session is analysed again.
+
+export function aiTopics(analysis) {
+  const raw = analysis?.for_next_session;
+  const list = Array.isArray(raw) ? raw : (raw == null ? [] : [raw]);
+  return list
+    .filter(x => typeof x === 'string' && x.trim())
+    .map(x => x.trim().slice(0, 300));
+}
+
+// Same shape of decision as the homework reconciliation, and the same rule at
+// its centre: a topic already ticked off is never deleted. Checking one is the
+// user saying "raised it" — a re-analysis must not quietly undo that record.
+export function reconcileTopics(existing = [], proposed = []) {
+  const rows = (Array.isArray(existing) ? existing : []).filter(Boolean);
+  const wanted = new Set(proposed.map(normalizeTitle));
+
+  const toDelete = rows
+    .filter(r => r.id != null && !r.checked && !wanted.has(normalizeTitle(r.text)))
+    .map(r => r.id);
+
+  const present = new Set(rows.map(r => normalizeTitle(r.text)));
+  const toInsert = proposed.filter(t => !present.has(normalizeTitle(t)));
+
+  return { toInsert, toDelete };
 }

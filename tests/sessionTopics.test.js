@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {
   pendingTopics, discussedTopics, topicsToNotes, prefillNotes,
 } from '../src/lib/sessionTopics.js';
+import { aiTopics, reconcileTopics } from '../src/lib/sessionTopics.js';
 
 const t = (text, checked = false) => ({ id: text, text, checked });
 
@@ -58,4 +59,50 @@ test('whitespace-only notes still count as empty and get the prefill', () => {
 
 test('an empty field with no topics stays empty', () => {
   assert.equal(prefillNotes('', []), '');
+});
+
+// ── topics proposed by the analysis ──────────────────────────────────────────
+
+const topicRow = (id, text, checked = false) => ({ id, text, checked });
+
+test('for_next_session becomes one topic per item', () => {
+  assert.deepEqual(
+    aiTopics({ for_next_session: ['вернуться к теме матери', 'страх открыться'] }),
+    ['вернуться к теме матери', 'страх открыться'],
+  );
+});
+
+test('a single string is one topic, not a list of characters', () => {
+  // Older analyses returned a bare string for this field.
+  assert.deepEqual(aiTopics({ for_next_session: 'one deferred thread' }), ['one deferred thread']);
+});
+
+test('blank and malformed entries are dropped', () => {
+  assert.deepEqual(aiTopics({ for_next_session: ['  ', '', null, 42, 'real'] }), ['real']);
+  for (const a of [null, {}, { for_next_session: null }]) assert.deepEqual(aiTopics(a), []);
+});
+
+test('re-analysing the same session does not duplicate its topics', () => {
+  const existing = [topicRow(1, 'вернуться к теме матери')];
+  const { toInsert, toDelete } = reconcileTopics(existing, ['вернуться к теме матери']);
+  assert.deepEqual(toInsert, []);
+  assert.deepEqual(toDelete, []);
+});
+
+test('a topic already ticked off is never deleted', () => {
+  // Checking it is the user saying they raised it. A re-run must not undo that.
+  const existing = [topicRow(1, 'raised already', true), topicRow(2, 'still pending', false)];
+  const { toDelete } = reconcileTopics(existing, ['something else']);
+  assert.deepEqual(toDelete, [2]);
+});
+
+test('a stale AI topic is replaced, not piled on', () => {
+  const { toInsert, toDelete } = reconcileTopics([topicRow(1, 'no longer relevant')], ['the new one']);
+  assert.deepEqual(toInsert, ['the new one']);
+  assert.deepEqual(toDelete, [1]);
+});
+
+test('wording that differs only in case or punctuation is the same topic', () => {
+  const { toInsert } = reconcileTopics([topicRow(1, 'Страх открыться.')], ['страх открыться']);
+  assert.deepEqual(toInsert, []);
 });
