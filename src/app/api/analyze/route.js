@@ -47,7 +47,12 @@ Return a JSON object with EXACTLY these fields. Use arrays where indicated; retu
 - "key_theme": string or null — the single connecting psychological pattern across topics, if one exists (1-2 sentences)
 - "breakthroughs": array of strings — each insight, realisation, or emotional shift reached (one per item; empty array if none)
 - "emotions_identified": array of strings — named emotions with brief context, e.g. "envy — toward a friend's new relationship"
-- "action_items": array of strings — concrete next steps or practices, ideally one per relevant topic
+- "homework": array of 2-4 objects, each {"task": string, "context": string} — practices to try before the next session, drawn from what was ACTUALLY discussed
+  * "task": one small, concrete thing to try, doable within a week
+  * "context": one sentence naming what in the session it came from — "you spoke about being afraid to open up, so..."
+  * TONE (required): an invitation, never an instruction. Write "you might try...", "it could be worth noticing..." — never "you must", "do this every day".
+  * Never prescribe clinical interventions, medication, or anything that is a therapist's judgement to make. These supplement the work with a therapist; they never replace it.
+  * Ground every item in the transcript. If the session does not support two concrete practices, return fewer — an empty array is better than a generic suggestion like "practise self-care".
 - "patterns_triggers": array of strings — recurring behavioural or emotional patterns and their triggers
 - "continuity_notes": array of strings — anything connecting to previous sessions or earlier topics
 - "for_next_session": array of strings — explicitly deferred threads or unresolved questions

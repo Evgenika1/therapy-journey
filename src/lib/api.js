@@ -290,14 +290,19 @@ export const emotions = {
 
 // ─── Homework ─────────────────────────────────────────────────────────────────
 export const homework = {
-  async forSession(supabase, sessionId) {
+  // Every row for one session, not just the first: re-analysing has to see the
+  // whole set to know what is stale and what is already there.
+  async listForSession(supabase, sessionId) {
     const { data, error } = await supabase
       .from('homework')
-      .select('id')
-      .eq('session_id', sessionId)
-      .limit(1);
+      .select('*')
+      .eq('session_id', sessionId);
     if (error) throw toError(error);
-    return data?.[0] ?? null;
+    return data.map(h => ({
+      ...h,
+      title:       h.title       ?? h.title_enc       ?? null,
+      description: h.description ?? h.description_enc ?? null,
+    }));
   },
 
   async list(supabase) {

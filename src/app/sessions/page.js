@@ -21,6 +21,7 @@ import {
 } from '@/lib/analysisFormat';
 import { buildPatternsInput } from '@/lib/patternsInput';
 import { CHAT_SUGGESTIONS, CBT_PRESETS } from '@/lib/chatPresets';
+import { proposedTasks, reconcileHomework, describeTask } from '@/lib/sessionHomework';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const SESSION_MOODS = [
@@ -842,25 +843,28 @@ function SessionsPageInner() {
       setSelectedSession(withAI);
       setSessions(list => list.map(s => s.id === selectedSession.id ? { ...s, ai_analysis: JSON.stringify(data.analysis) } : s));
 
-      // The first action item becomes a homework task. This read `analysis.action`
-      // — a field the model has never been asked to return — so the hook was
-      // dead: analysing a session silently created no homework at all.
-      const firstAction = [data.analysis?.action_items, data.analysis?.action]
-        .flat()
-        .find(a => typeof a === 'string' && a.trim());
-      if (firstAction) {
-        try {
-          const existing = await homeworkApi.forSession(supabase, selectedSession.id);
-          if (!existing) {
-            await homeworkApi.save(supabase, {
-              title:       firstAction.trim().slice(0, 120),
-              description: `Auto-created from AI analysis of "${selectedSession.title || 'this session'}".`,
-              session_id:  selectedSession.id,
-              due_date:    null,
-            });
-          }
-        } catch (e) { console.error('[Sessions] auto-homework:', e?.message); }
-      }
+      // Each suggested practice becomes its own homework row. Re-analysing is
+      // normal — a transcript gets corrected, the model improves — so the set is
+      // reconciled rather than appended: nothing duplicates, stale suggestions
+      // go, and anything already ticked off stays as a record of the work done.
+      try {
+        const tasks    = proposedTasks(data.analysis);
+        const existing = await homeworkApi.listForSession(supabase, selectedSession.id);
+        const { toInsert, toDelete } = reconcileHomework(existing, tasks);
+
+        await Promise.all(toDelete.map(id => homeworkApi.delete(supabase, id)));
+        for (const t of toInsert) {
+          await homeworkApi.save(supabase, {
+            title:       t.task,
+            // sessionTitle(), not .title: an untitled session derives its name
+            // from created_at at display time, so reading the raw column gives
+            // the badge nothing to show.
+            description: describeTask(t, sessionTitle(selectedSession)),
+            session_id:  selectedSession.id,
+            due_date:    null,
+          });
+        }
+      } catch (e) { console.error('[Sessions] auto-homework:', e?.message); }
     } catch (err) {
       console.error('[analyse]', err);
       setAnalyseError(err.message);
@@ -1516,7 +1520,21 @@ function SessionsPageInner() {
                           {Array.isArray(ai[key])
                             ? <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6 }}>
                                 {ai[key].map((item, i) => (
-                                  <li key={i} style={{ fontSize: 14, color: TEXT, lineHeight: 1.6 }}>{typeof item === 'string' ? item : JSON.stringify(item)}</li>
+                                  <li key={i} style={{ fontSize: 14, color: TEXT, lineHeight: 1.6 }}>
+                                    {typeof item === 'string' ? item : (
+                                      // A practice carries the reason it exists;
+                                      // showing the task alone turns it back into
+                                      // the generic advice this was meant to avoid.
+                                      <>
+                                        {item?.task}
+                                        {item?.context && (
+                                          <span style={{ display: 'block', fontSize: 12.5, color: MUTED, marginTop: 3, lineHeight: 1.5 }}>
+                                            {item.context}
+                                          </span>
+                                        )}
+                                      </>
+                                    )}
+                                  </li>
                                 ))}
                               </ul>
                             : <p style={{ fontSize: 14, color: TEXT, margin: 0, lineHeight: 1.7 }}>{ai[key]}</p>}

@@ -18,7 +18,7 @@ const FULL = {
   key_theme: 'страх отвержения',
   breakthroughs: ['осознал паттерн'],
   emotions_identified: ['тревога — перед встречей'],
-  action_items: ['вести дневник тревоги'],
+  homework: [{ task: 'вести дневник тревоги', context: 'вы говорили о тревоге перед встречами' }],
   patterns_triggers: ['избегание конфликта'],
   continuity_notes: [],
   for_next_session: ['вернуться к теме матери'],
@@ -72,8 +72,17 @@ test('schema satisfies the structured-outputs constraints', () => {
   assert.equal(ANALYSIS_SCHEMA.type, 'object');
   for (const f of ANALYSIS_FIELDS) {
     const p = ANALYSIS_SCHEMA.properties[f.key];
-    if (f.type === 'array') assert.deepEqual(p, { type: 'array', items: { type: 'string' } });
-    else assert.deepEqual(p, { type: ['string', 'null'] });
+    if (f.type === 'objects') {
+      assert.equal(p.type, 'array');
+      assert.equal(p.items.type, 'object');
+      assert.equal(p.items.additionalProperties, false, `${f.key} items must forbid extra properties`);
+      assert.deepEqual(p.items.required, f.itemFields, `${f.key} items must require every declared field`);
+      assert.deepEqual(Object.keys(p.items.properties), f.itemFields);
+    } else if (f.type === 'array') {
+      assert.deepEqual(p, { type: 'array', items: { type: 'string' } });
+    } else {
+      assert.deepEqual(p, { type: ['string', 'null'] });
+    }
   }
 });
 
@@ -83,6 +92,22 @@ test('a model response matching the schema is fully readable', () => {
   for (const { key } of ANALYSIS_FIELDS) {
     assert.ok(key in parsed, `analysis is missing ${key}`);
   }
+});
+
+test('an analysis from before suggested practices still renders its action items', () => {
+    // action_items moved to the legacy list rather than being deleted: an old
+    // session must not lose a section because the shape moved on.
+  const legacy = { ...FULL, homework: [], action_items: ['вести дневник тревоги'] };
+  const text = analysisToText(legacy);
+  assert.match(text, /ACTION ITEMS\n• вести дневник тревоги/);
+});
+
+test('a suggested practice reads as text, not as JSON', () => {
+  // The old renderer fell through to JSON.stringify and leaked braces into the
+  // copied summary.
+  const text = analysisToText(FULL);
+  assert.match(text, /SUGGESTED PRACTICES\n• вести дневник тревоги — вы говорили о тревоге перед встречами/);
+  assert.ok(!text.includes('{'), 'no raw JSON in the copied summary');
 });
 
 // ── headline (Dashboard) ─────────────────────────────────────────────────────
@@ -118,9 +143,9 @@ test('copy text renders arrays as bullets, not comma runs', () => {
   assert.ok(!text.includes('Клиент говорил о тревоге.,'), 'arrays must not be comma-joined');
 });
 
-test('copy text includes action items and skips empty sections', () => {
+test('copy text includes the practices and skips empty sections', () => {
   const text = analysisToText(FULL);
-  assert.match(text, /ACTION ITEMS\n• вести дневник тревоги/);
+  assert.match(text, /SUGGESTED PRACTICES\n• вести дневник тревоги/);
   assert.ok(!text.includes('CONTINUITY NOTES'), 'empty arrays should be omitted');
 });
 

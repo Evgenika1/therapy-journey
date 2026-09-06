@@ -15,7 +15,7 @@ export const ANALYSIS_FIELDS = [
   { key: 'key_theme',                   label: 'KEY THEME',           color: '#8B5CF6', type: 'string' },
   { key: 'breakthroughs',               label: 'BREAKTHROUGHS',       color: '#10B981', type: 'array'  },
   { key: 'emotions_identified',         label: 'EMOTIONS IDENTIFIED', color: '#EC4899', type: 'array'  },
-  { key: 'action_items',                label: 'ACTION ITEMS',        color: '#F59E0B', type: 'array'  },
+  { key: 'homework',                    label: 'SUGGESTED PRACTICES', color: '#F59E0B', type: 'objects', itemFields: ['task', 'context'] },
   { key: 'patterns_triggers',           label: 'PATTERNS / TRIGGERS', color: '#EF4444', type: 'array'  },
   { key: 'continuity_notes',            label: 'CONTINUITY NOTES',    color: '#14B8A6', type: 'array'  },
   { key: 'for_next_session',            label: 'FOR NEXT SESSION',    color: '#6366F1', type: 'array'  },
@@ -25,8 +25,12 @@ export const ANALYSIS_FIELDS = [
 // Keys produced by analyses generated before the 10-section rewrite. Rendered
 // when present so old sessions don't go blank, but never requested from the model.
 export const LEGACY_ANALYSIS_FIELDS = [
-  { key: 'breakthrough', label: 'BREAKTHROUGH', color: '#10B981', type: 'string' },
-  { key: 'action',       label: 'ACTION',       color: '#F59E0B', type: 'string' },
+  { key: 'breakthrough', label: 'BREAKTHROUGH',  color: '#10B981', type: 'string' },
+  { key: 'action',       label: 'ACTION',        color: '#F59E0B', type: 'string' },
+  // Every analysis run before suggested practices existed carries these. Still
+  // rendered, never requested — an old session must not go blank because the
+  // shape moved on.
+  { key: 'action_items', label: 'ACTION ITEMS',  color: '#F59E0B', type: 'array'  },
 ];
 
 // Structured-outputs JSON schema, built from the field list above. Structured
@@ -36,9 +40,22 @@ export const ANALYSIS_SCHEMA = {
   type: 'object',
   properties: Object.fromEntries(ANALYSIS_FIELDS.map(f => [
     f.key,
-    f.type === 'array'
-      ? { type: 'array', items: { type: 'string' } }
-      : { type: ['string', 'null'] },
+    f.type === 'objects'
+      // An array of small objects rather than strings: a practice that does not
+      // say which part of the session it came from reads as generic advice, and
+      // generic advice is what this feature exists to avoid.
+      ? {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: Object.fromEntries(f.itemFields.map(k => [k, { type: 'string' }])),
+            required: f.itemFields,
+            additionalProperties: false,
+          },
+        }
+      : f.type === 'array'
+        ? { type: 'array', items: { type: 'string' } }
+        : { type: ['string', 'null'] },
   ])),
   required: ANALYSIS_FIELDS.map(f => f.key),
   additionalProperties: false,
@@ -68,6 +85,21 @@ export function analysisHeadline(ai) {
 // Full plain-text rendering, used by "copy summary". Arrays become bullet
 // lines; the previous version interpolated them straight into a template and
 // produced comma-joined runs.
+// One analysis item as a line of text. Objects (a suggested practice) read as
+// "task — context"; anything else falls back to its string form rather than to
+// JSON.stringify, which used to leak braces into the copied summary.
+export function itemToText(item) {
+  if (item == null) return '';
+  if (typeof item === 'string') return item.trim();
+  if (typeof item === 'object') {
+    const task = typeof item.task === 'string' ? item.task.trim() : '';
+    const ctx  = typeof item.context === 'string' ? item.context.trim() : '';
+    if (task && ctx) return `${task} — ${ctx}`;
+    return task || ctx || '';
+  }
+  return String(item);
+}
+
 export function analysisToText(ai) {
   if (!ai || typeof ai !== 'object') return '';
   const blocks = [];
@@ -75,7 +107,7 @@ export function analysisToText(ai) {
     const v = ai[key];
     if (!hasValue(v)) continue;
     const body = Array.isArray(v)
-      ? v.filter(x => hasValue(x)).map(x => `• ${typeof x === 'string' ? x : JSON.stringify(x)}`).join('\n')
+      ? v.filter(x => hasValue(x)).map(x => `• ${itemToText(x)}`).join('\n')
       : String(v).trim();
     blocks.push(`${label}\n${body}`);
   }

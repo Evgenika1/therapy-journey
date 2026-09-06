@@ -5,6 +5,16 @@ import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
 import { homework as hwApi } from '@/lib/api';
 
+// describeTask writes the reason and the provenance into one field, separated
+// by a blank line. Splitting them back out keeps the badge out of the prose
+// without needing a second column in the table.
+function splitDescription(text) {
+  if (typeof text !== 'string' || !text.trim()) return { reason: '', from: '' };
+  const m = text.match(/^([\s\S]*?)\n\n(From .+)$/);
+  if (m) return { reason: m[1].trim(), from: m[2].trim() };
+  return /^From /.test(text.trim()) ? { reason: '', from: text.trim() } : { reason: text.trim(), from: '' };
+}
+
 export default function HomeworkPage() {
   const { supabase } = useAuth();
   const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL: A } = useTheme();
@@ -105,7 +115,16 @@ export default function HomeworkPage() {
                       onMouseLeave={e => e.currentTarget.style.borderColor = BORDER} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontSize: 15, fontWeight: 500, color: TEXT, margin: '0 0 2px' }}>{item.title}</p>
-                      {item.description && <p style={{ fontSize: 13, color: MUTED, margin: '0 0 2px' }}>{item.description}</p>}
+                      {(() => { const d = splitDescription(item.description); return (<>
+                        {d.reason && <p style={{ fontSize: 13, color: MUTED, margin: '0 0 4px', lineHeight: 1.5 }}>{d.reason}</p>}
+                        {/* Where it came from, as a quiet mark rather than a
+                            sentence — it is provenance, not content. */}
+                        {(d.from || item.session_id) && (
+                          <span style={{ display: 'inline-block', fontSize: 10.5, fontWeight: 600, color: A, background: A + '14', border: `1px solid ${A}33`, borderRadius: 6, padding: '2px 7px', margin: '0 0 4px', letterSpacing: '0.03em' }}>
+                            ✦ {d.from || 'From a session'}
+                          </span>
+                        )}
+                      </>); })()}
                       {item.due_date && <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>Due: {new Date(item.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>}
                     </div>
                     <button onClick={() => del(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTED, fontSize: 18, opacity: 0.5 }}>×</button>
