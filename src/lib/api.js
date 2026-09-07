@@ -20,6 +20,17 @@ function normalizeEmotion(e) {
   return { ...e, category, emotion_name, sub_emotions: subs };
 }
 
+// PostgREST answers an UPDATE that matched no row with PGRST116, "Cannot coerce
+// the result to a single JSON object" — which then reaches the user verbatim
+// and explains nothing. A zero-row update is not a coercion problem: the row is
+// gone, or it belongs to someone else, or the filter is wrong. Say that.
+function updatedRow(data, what) {
+  if (data) return data;
+  const err = new Error(`This ${what} could not be updated — it may have been deleted, or it belongs to another account. Reload and try again.`);
+  err.code = 'NO_ROW';
+  throw err;
+}
+
 // PostgREST reports an unknown column either as Postgres 42703 ("column \"note\"
 // of relation ... does not exist") or as PGRST204 ("Could not find the 'note'
 // column ... in the schema cache"). Both name the column in quotes.
@@ -344,18 +355,21 @@ export const homework = {
     if (fields.session_id  !== undefined) updates.session_id      = fields.session_id;
     if (fields.title       !== undefined) updates.title_enc       = fields.title;
     if (fields.description !== undefined) updates.description_enc = fields.description;
+    // Same zero-row trap as topics.update, and the same control behind it: the
+    // checkbox on the Homework page.
     const { data, error } = await supabase
       .from('homework')
       .update(updates)
       .eq('id', id)
       .eq('user_id', user.id)
       .select()
-      .single();
+      .maybeSingle();
     if (error) throw toError(error);
+    const row = updatedRow(data, 'assignment');
     return {
-      ...data,
-      title:       fields.title       ?? data.title       ?? data.title_enc       ?? null,
-      description: fields.description ?? data.description ?? data.description_enc ?? null,
+      ...row,
+      title:       fields.title       ?? row.title       ?? row.title_enc       ?? null,
+      description: fields.description ?? row.description ?? row.description_enc ?? null,
     };
   },
 
@@ -483,15 +497,19 @@ export const topics = {
     const updates = {};
     if (fields.checked !== undefined) updates.checked = fields.checked;
     if (fields.text    !== undefined) updates.text    = fields.text;
+    // maybeSingle, not single: zero rows is a state to report, not an exception
+    // to translate. Toggling a topic is the most-used control in this list and
+    // it was failing with a PostgREST internal message.
     const { data, error } = await supabase
       .from('next_session_topics')
       .update(updates)
       .eq('id', id)
       .eq('user_id', user.id)
       .select()
-      .single();
+      .maybeSingle();
     if (error) throw toError(error);
-    return { ...data, text: fields.text ?? data.text ?? data.text_enc ?? '' };
+    const row = updatedRow(data, 'topic');
+    return { ...row, text: fields.text ?? row.text ?? row.text_enc ?? '' };
   },
 
   async delete(supabase, id) {

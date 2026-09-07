@@ -351,3 +351,37 @@ test('an error that is not a missing column is not retried away', async () => {
     () => emotions.save(sb, { category: 'Joy', sub_emotions: ['proud'], intensity: 5, note: 'x' }),
     /RLS denied/);
 });
+
+// ── an update that matches no row ────────────────────────────────────────────
+//
+// PostgREST answers a zero-row UPDATE with PGRST116, "Cannot coerce the result
+// to a single JSON object". That reached the user verbatim from the topic
+// checkbox — the most-used control in the Dashboard list — and explains nothing
+// about what went wrong or what to do.
+
+test('toggling a topic that no longer exists explains itself', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: null } } });
+  await assert.rejects(
+    () => topics.update(sb, 'gone', { checked: true }),
+    err => {
+      assert.equal(err.code, 'NO_ROW');
+      assert.match(err.message, /deleted|another account/i);
+      assert.ok(!/coerce/i.test(err.message), 'the PostgREST wording must not reach the user');
+      return true;
+    },
+  );
+});
+
+test('a homework checkbox on a missing row fails the same readable way', async () => {
+  const sb = fakeSupabase({ responses: { homework: { data: null } } });
+  await assert.rejects(
+    () => homework.update(sb, 'gone', { completed: true }),
+    err => { assert.equal(err.code, 'NO_ROW'); return true; },
+  );
+});
+
+test('a normal update still returns the row', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: row({ text: 'Boundaries', checked: true }) } } });
+  const updated = await topics.update(sb, 'row-1', { checked: true });
+  assert.equal(updated.text, 'Boundaries');
+});
