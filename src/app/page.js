@@ -8,6 +8,7 @@ import { sessions as sessionsApi, emotions as emotionsApi } from '@/lib/api';
 import { analysisHeadline } from '@/lib/analysisFormat';
 import { MoodTrendChart, EmotionHeatmap } from '@/components/DashboardCharts';
 import NextSessionTopics from '@/components/NextSessionTopics';
+import { myUsage } from '@/lib/usageClient';
 
 const MOOD_EMOJIS     = ['😞', '😟', '😐', '🙂', '😊'];
 const MOOD_INTENSITIES = [2,    4,    6,    8,    10];
@@ -49,6 +50,7 @@ export default function HomePage() {
   const router = useRouter();
 
   const [stats,         setStats]         = useState(null);
+  const [usage,         setUsage]         = useState(null);
   const [latestInsight, setLatestInsight] = useState(null);
   const [sessionPairs,  setSessionPairs]  = useState([]);
   const [emotionLogs,   setEmotionLogs]   = useState([]);
@@ -69,6 +71,9 @@ export default function HomePage() {
     || 'there';
 
   useEffect(() => {
+    // Failing to read the balance must not blank the dashboard, so this is its
+    // own effect and its own catch: the card falls back to a dash.
+    if (supabase) myUsage(supabase).then(setUsage).catch(e => console.error('[Dashboard] usage:', e?.message));
     if (!supabase) return;
     // moodPairs joins the former /progress page's data to this one: the whole
     // dashboard now loads in a single round of requests rather than two screens'
@@ -124,10 +129,20 @@ export default function HomePage() {
     router.push(`/sessions?record=true${preMoodQuery}${nameQuery}`);
   }
 
+  // What the account has left this month. One number, deliberately: the four
+  // things that cost money are converted to a single currency so there is one
+  // figure to read rather than four meters nobody looks at. The honest cost of
+  // that choice, said plainly in the caption: a long AI Chat does move it.
+  const minutesLeft = usage
+    ? `${Math.max(0, Math.round(usage.remaining))}`
+    : '—';
+
   const STAT_CARDS = [
     { label: 'SESSIONS',    value: loading ? '—' : String(stats?.total ?? 0),                              color: 'var(--accent-deep)' },
     { label: 'AVG LIFT',    value: loading ? '—' : (stats?.avgLift ? `+${stats.avgLift}` : '—'),           color: 'var(--accent)' },
     { label: 'AI ANALYSES', value: loading ? '—' : String(stats?.breakthroughs ?? 0),                      color: 'var(--accent-deep)' },
+    { label: 'MINUTES LEFT', value: minutesLeft,
+      color: usage?.status === 'warn' ? 'var(--err)' : 'var(--accent-deep)' },
     { label: 'ENCRYPTED',   value: '100%',                                                                  color: 'var(--accent)' },
   ];
 

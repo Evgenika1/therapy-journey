@@ -868,7 +868,7 @@ function SessionsPageInner() {
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: stripSpeakerMarkers(selectedSession.transcript), notes: selectedSession.notes }),
+        body: JSON.stringify({ transcript: stripSpeakerMarkers(selectedSession.transcript), notes: selectedSession.notes, session_id: selectedSession.id }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);

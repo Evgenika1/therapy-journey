@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server';
+import { getServerUser } from '@/lib/supabaseServer';
+import { usageThisMonth, recordUsage } from '@/lib/usageLedger';
+import { BLOCKED_MESSAGE } from '@/lib/usageQuota';
 import { parseAnalysis } from '@/lib/analysisParse';
 import { PATTERNS_SCHEMA, MIN_ANALYSED_SESSIONS } from '@/lib/patternsInput';
 
@@ -26,6 +29,16 @@ export async function POST(req) {
   }
 
   try {
+        const { supabase, user } = await getServerUser();
+    if (!user) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
+
+    // The limit is soft: an account only stops here once it is past the
+    // overdraft, and work already in flight is never interrupted.
+    const quota = await usageThisMonth(supabase, user.id);
+    if (quota.status === 'blocked') {
+      return NextResponse.json({ error: BLOCKED_MESSAGE, quota: { status: quota.status, remaining: quota.remaining } }, { status: 402 });
+    }
+
     const { history } = await req.json();
     if (!history || !Array.isArray(history.sessions) || history.sessions.length === 0) {
       return NextResponse.json({ error: 'No history to analyse' }, { status: 400 });
@@ -85,6 +98,9 @@ ${languageDirective(serialized)}`;
     // Shape, not content: this is therapy material and must not reach the log.
     console.log('[patterns] stop_reason:', data.stop_reason,
       '| output_tokens:', data.usage?.output_tokens, '| chars:', raw.length);
+
+    await recordUsage(supabase, { userId: user.id, kind: 'patterns', sessionId: null,
+      model: 'claude-haiku-4-5-20251001', usage: data.usage });
 
     const analysis = parseAnalysis(raw);
     if (!analysis) {

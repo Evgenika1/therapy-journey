@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { getServerUser } from '@/lib/supabaseServer';
+import { recordUsage } from '@/lib/usageLedger';
 import { aaiFetch } from '@/lib/assemblyai';
 import {
   AAI_BASE, AAI_HEADERS, FORCED_RU_CONFIG,
@@ -19,6 +21,12 @@ import {
 export const maxDuration = 60;
 
 export async function GET(req) {
+  // Polled, not gated: a job already running is already paid for, and stopping
+  // a poll would only lose the transcript the account has been billed for. The
+  // gate lives on the two routes that START a job.
+  const { supabase, user } = await getServerUser();
+  if (!user) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
+
   if (!process.env.ASSEMBLYAI_API_KEY) {
     return NextResponse.json({ error: 'ASSEMBLYAI_API_KEY not configured' }, { status: 500 });
   }
@@ -41,6 +49,15 @@ export async function GET(req) {
       'len:', transcript.text?.length ?? 0);
 
     if (transcript.status === 'completed') {
+      // Bill here, and only here. The duration comes from AssemblyAI's own
+      // audio_duration rather than the browser's timer — the client's number is
+      // what its tab believes happened, and anyone wanting free transcription
+      // can edit it. externalId makes the write idempotent, so the re-poll after
+      // a reload cannot bill the same audio twice.
+      await recordUsage(supabase, {
+        userId: user.id, kind: 'transcribe', externalId: jobId,
+        audioSeconds: Math.round(transcript.audio_duration ?? 0),
+      });
       return NextResponse.json(completedPayload(transcript));
     }
 

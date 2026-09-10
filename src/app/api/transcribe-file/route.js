@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server';
+import { getServerUser } from '@/lib/supabaseServer';
+import { usageThisMonth, recordUsage } from '@/lib/usageLedger';
+import { BLOCKED_MESSAGE } from '@/lib/usageQuota';
 import {
   ALLOWED_EXT, MAX_UPLOAD_BYTES, fmtSize, extOf, tooLargeMessage, unsupportedTypeMessage,
 } from '@/lib/audioUpload';
@@ -12,6 +15,16 @@ import { AAI_BASE, AAI_HEADERS, TRANSCRIBE_CONFIG } from '@/lib/transcribeJob';
 export const maxDuration = 300;
 
 export async function POST(req) {
+  // Transcription is the largest single cost in the app, so this is the gate
+  // that matters most. Anonymous before now: knowing the URL was enough to
+  // spend the AssemblyAI budget.
+  const { supabase, user } = await getServerUser();
+  if (!user) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
+  const quota = await usageThisMonth(supabase, user.id);
+  if (quota.status === 'blocked') {
+    return NextResponse.json({ error: BLOCKED_MESSAGE, quota: { status: quota.status, remaining: quota.remaining } }, { status: 402 });
+  }
+
   if (!process.env.ASSEMBLYAI_API_KEY) {
     return NextResponse.json({ error: 'ASSEMBLYAI_API_KEY not configured' }, { status: 500 });
   }
