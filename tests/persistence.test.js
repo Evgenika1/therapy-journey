@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 
 import {
   sessions, diary, emotions, homework, journals, customJournals, topics, aiChats,
+  ARCHIVE_PAGE,
 } from '../src/lib/api.js';
 import { fakeSupabase, pgError } from './helpers/fakeSupabase.js';
 
@@ -474,17 +475,17 @@ test('archiving still works on a database without archived_at', async () => {
 
 test('the archive view asks only for archived rows', async () => {
   const sb = fakeSupabase({ responses: { next_session_topics: { data: [row({ text: 'Boundaries' })] } } });
-  const list = await topics.listArchived(sb);
+  const { items } = await topics.listArchived(sb);
   const call = sb.lastCall();
   assert.ok(call.filters.some(([op, c, v]) => op === 'eq' && c === 'archived' && v === true));
-  assert.deepEqual(list.map(t => t.text), ['Boundaries']);
+  assert.deepEqual(items.map(t => t.text), ['Boundaries']);
 });
 
 test('an un-migrated database has an empty archive rather than an error', async () => {
   const sb = fakeSupabase({
     responses: { next_session_topics: { error: pgError('42703', 'column "archived" does not exist') } },
   });
-  assert.deepEqual(await topics.listArchived(sb), []);
+  assert.deepEqual(await topics.listArchived(sb), { items: [], hasMore: false });
 });
 
 test('restoring puts a topic back among the active ones', async () => {
@@ -550,4 +551,60 @@ test('an archived topic comes back shaped for the archive view', async () => {
   assert.equal(filed.archived, true);
   assert.equal(filed.checked, true);
   assert.equal(filed.source, 'ai', 'the ✦ mark must survive the trip into the archive');
+});
+
+// ── the archive is paged ─────────────────────────────────────────────────────
+//
+// It grows by every topic ever ticked off, so the block asks for one screenful
+// and says whether there is more. Fetching the whole table to show twenty rows
+// gets slower every week and is invisible until it is bad.
+
+const rows = n => Array.from({ length: n }, (_, i) => row({ id: `row-${i}`, text: `topic ${i}` }));
+
+test('the archive asks for one page, newest first', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: rows(5) } } });
+  await topics.listArchived(sb);
+  const call = sb.lastCall();
+  assert.equal(call.order[0], 'archived_at');
+  assert.equal(call.order[1].ascending, false, 'the most recently filed come first');
+  // One more than the page, so "is there more" costs no second query.
+  assert.equal(call.limit, ARCHIVE_PAGE + 1);
+});
+
+test('a full page reports that there is more, and does not leak the probe row', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: rows(ARCHIVE_PAGE + 1) } } });
+  const { items, hasMore } = await topics.listArchived(sb);
+  assert.equal(hasMore, true);
+  assert.equal(items.length, ARCHIVE_PAGE, 'the extra row was only ever a probe');
+});
+
+test('a short page reports that there is no more', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: rows(3) } } });
+  const { items, hasMore } = await topics.listArchived(sb);
+  assert.equal(hasMore, false);
+  assert.equal(items.length, 3);
+});
+
+test('Show all drops the limit entirely', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: rows(50) } } });
+  const { items, hasMore } = await topics.listArchived(sb, { limit: null });
+  assert.equal(sb.lastCall().limit, undefined, 'no limit is sent at all');
+  assert.equal(items.length, 50);
+  assert.equal(hasMore, false, 'everything was asked for, so nothing is left');
+});
+
+test('a database without archived_at is still ordered, by when the topic was added', async () => {
+  // Without migration 020 there is nothing to sort by but created_at. Ordering
+  // by a column that does not exist would fail the whole query, so it retries.
+  const sb = fakeSupabase({
+    responses: {
+      next_session_topics: [
+        { error: pgError('42703', 'column "archived_at" does not exist') },
+        { data: rows(2) },
+      ],
+    },
+  });
+  const { items } = await topics.listArchived(sb);
+  assert.equal(items.length, 2);
+  assert.equal(sb.lastCall().order[0], 'created_at');
 });

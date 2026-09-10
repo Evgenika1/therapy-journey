@@ -27,6 +27,11 @@ export default function NextSessionTopics() {
   const [archived,     setArchived]     = useState([]);
   const [showArchived, setShowArchived] = useState(false);
   const [hoverId,      setHoverId]      = useState(null);
+  const [moreArchived, setMoreArchived] = useState(false);
+  const [loadingAll,   setLoadingAll]   = useState(false);
+  // null means "the default": newest day open, everything older folded. It
+  // becomes a Set the moment the user disagrees with that.
+  const [openDays,     setOpenDays]     = useState(null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -35,7 +40,7 @@ export default function NextSessionTopics() {
     // show, and how much". A failure here is silent — the archive link simply
     // does not appear, which must never take the block itself down.
     topicsApi.listArchived(supabase)
-      .then(setArchived)
+      .then(({ items, hasMore }) => { setArchived(items); setMoreArchived(hasMore); })
       .catch(err => console.error('[Topics] archive:', err?.message));
     topicsApi.list(supabase)
       .then(l => { setTopics(l); setLoading(false); })
@@ -106,13 +111,39 @@ export default function NextSessionTopics() {
   // The heading can only claim an archive date when every row in the day has
   // one; otherwise it says when the thought was captured. See groupArchivedByDate.
   const archiveGroups = groupArchivedByDate(archived);
-  const dayLabel = (date, source) => {
-    if (!date) return 'Undated';
+  const dayLabel = ({ date, source, items }) => {
+    const count = ` · ${items.length}`;
+    if (!date) return `Undated${count}`;
     const when = new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', {
       day: 'numeric', month: 'long', year: 'numeric',
     });
-    return `${source === 'archived_at' ? 'Archived' : 'Added'} ${when}`;
+    // Every heading would otherwise read "Archived", which is noise on a list
+    // of archived topics. Only the weaker claim — a date that is really just
+    // when the thought was captured — needs saying out loud.
+    return `${source === 'archived_at' ? '' : 'Added '}${when}${count}`;
   };
+
+  const dayKey    = g => g.date ?? 'undated';
+  const isDayOpen = (g, i) => (openDays ? openDays.has(dayKey(g)) : i === 0);
+  const toggleDay = (g) => setOpenDays(prev => {
+    const next = new Set(prev ?? (archiveGroups[0] ? [dayKey(archiveGroups[0])] : []));
+    if (next.has(dayKey(g))) next.delete(dayKey(g)); else next.add(dayKey(g));
+    return next;
+  });
+
+  // "Show all" is a deliberate second query, not a bigger first one.
+  async function showAllArchived() {
+    if (loadingAll) return;
+    setLoadingAll(true);
+    try {
+      const { items } = await topicsApi.listArchived(supabase, { limit: null });
+      setArchived(items);
+      setMoreArchived(false);
+    } catch (err) {
+      console.error('[Topics] archive all:', err?.message);
+      setError('Could not load the rest of the archive: ' + (err?.message || 'unknown error'));
+    } finally { setLoadingAll(false); }
+  }
 
   const pending = pendingTopics(topics);
 
@@ -244,39 +275,57 @@ export default function NextSessionTopics() {
 
           {showArchived && (
             <div style={{ marginTop: 9, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {archiveGroups.map(group => (
-                <div key={group.date ?? 'undated'}>
-                  <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-                    {dayLabel(group.date, group.source)}
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {group.items.map(topic => (
-                      <div key={topic.id} style={row}
-                        onMouseEnter={() => setHoverId(topic.id)}
-                        onMouseLeave={() => setHoverId(h => (h === topic.id ? null : h))}>
-                        <span aria-hidden="true"
-                          style={{ width: 17, height: 17, borderRadius: 5, flexShrink: 0, background: A, color: '#fff', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>✓</span>
-                        <p style={{ fontSize: 13, color: TEXT, opacity: 0.75, margin: 0, flex: 1, lineHeight: 1.45, textDecoration: 'line-through', minWidth: 0 }}>
-                          {topic.source === 'ai' && (
-                            <span title="Suggested from your session analysis" style={{ marginRight: 5, fontSize: 11 }}>✦</span>
-                          )}
-                          {topic.text}
-                        </p>
-                        {/* Kept in the DOM rather than mounted on hover, so it
-                            is reachable by keyboard and on a touch screen;
-                            hover only brings it forward. */}
-                        <button onClick={() => restore(topic.id)}
-                          aria-label={`Restore "${topic.text}" to the list`}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: A, fontSize: 11.5, padding: '0 2px', flexShrink: 0, fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: hoverId === topic.id ? 1 : 0.45 }}
-                          onFocus={() => setHoverId(topic.id)}
-                          onBlur={() => setHoverId(h => (h === topic.id ? null : h))}>
-                          ↩ restore
-                        </button>
+              {archiveGroups.map((group, i) => {
+                const open = isDayOpen(group, i);
+                return (
+                  <div key={dayKey(group)}>
+                    {/* Days are folded because the archive is read backwards:
+                        the last session is what you came for, the rest is
+                        history you occasionally go looking through. */}
+                    <button onClick={() => toggleDay(group)}
+                      aria-expanded={open}
+                      style={{ background: 'none', border: 'none', padding: 0, margin: '0 0 6px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                      {dayLabel(group)} <span style={{ fontSize: 9, opacity: 0.7 }}>{open ? '▾' : '▸'}</span>
+                    </button>
+
+                    {open && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {group.items.map(topic => (
+                          <div key={topic.id} style={row}
+                            onMouseEnter={() => setHoverId(topic.id)}
+                            onMouseLeave={() => setHoverId(h => (h === topic.id ? null : h))}>
+                            <span aria-hidden="true"
+                              style={{ width: 17, height: 17, borderRadius: 5, flexShrink: 0, background: A, color: '#fff', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>✓</span>
+                            <p style={{ fontSize: 13, color: TEXT, opacity: 0.75, margin: 0, flex: 1, lineHeight: 1.45, textDecoration: 'line-through', minWidth: 0 }}>
+                              {topic.source === 'ai' && (
+                                <span title="Suggested from your session analysis" style={{ marginRight: 5, fontSize: 11 }}>✦</span>
+                              )}
+                              {topic.text}
+                            </p>
+                            {/* Kept in the DOM rather than mounted on hover, so it
+                                is reachable by keyboard and on a touch screen;
+                                hover only brings it forward. */}
+                            <button onClick={() => restore(topic.id)}
+                              aria-label={`Restore "${topic.text}" to the list`}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: A, fontSize: 11.5, padding: '0 2px', flexShrink: 0, fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: hoverId === topic.id ? 1 : 0.45 }}
+                              onFocus={() => setHoverId(topic.id)}
+                              onBlur={() => setHoverId(h => (h === topic.id ? null : h))}>
+                              ↩ restore
+                            </button>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
+
+              {moreArchived && (
+                <button onClick={showAllArchived} disabled={loadingAll}
+                  style={{ alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, color: A, fontSize: 12.5, cursor: loadingAll ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                  {loadingAll ? 'Loading…' : 'Show all'}
+                </button>
+              )}
             </div>
           )}
         </>

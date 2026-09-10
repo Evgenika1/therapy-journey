@@ -439,6 +439,10 @@ export const customJournals = {
 };
 
 // ─── Next Session Topics ──────────────────────────────────────────────────────
+// One screenful of archive. Big enough that most people never need "Show all",
+// small enough that opening the block stays cheap as the archive grows.
+export const ARCHIVE_PAGE = 20;
+
 export const topics = {
   async list(supabase) {
     // Only the live shortlist. Archived rows belong to sessions that already
@@ -584,23 +588,47 @@ export const topics = {
   // The archive is read only when the user opens it, so this is a second query
   // rather than a wider first one: the Dashboard's hot path stays the short
   // live list.
-  async listArchived(supabase) {
-    const { data, error } = await supabase
-      .from('next_session_topics')
-      .select('*')
-      .eq('archived', true)
-      .order('created_at', { ascending: false });
-    // No column means nothing has ever been archived — an empty archive is the
-    // truthful answer, not an error to show the user.
+  //
+  // It is also paged. The archive grows by every topic ever ticked off, and
+  // fetching the whole table to render twenty rows is the kind of cost that is
+  // invisible until it is bad. `limit: null` is the explicit "Show all".
+  //
+  // One row beyond the page is requested and then dropped: it answers "is there
+  // more" without a second round trip, and must never reach the caller.
+  async listArchived(supabase, { limit = ARCHIVE_PAGE } = {}) {
+    const query = (orderBy) => {
+      let q = supabase
+        .from('next_session_topics')
+        .select('*')
+        .eq('archived', true)
+        .order(orderBy, { ascending: false });
+      if (limit != null) q = q.limit(limit + 1);
+      return q;
+    };
+
+    // Ordering by archived_at is what makes the newest page the newest page.
+    // Without migration 020 that column does not exist, and ordering by it
+    // fails the whole query rather than being ignored — so fall back.
+    let { data, error } = await query('archived_at');
+    if (error && isMissingColumn(error)) ({ data, error } = await query('created_at'));
+
+    // Still a missing column means `archived` itself is absent: nothing has
+    // ever been archived, which is an empty archive, not an error to show.
     if (error) {
-      if (isMissingColumn(error)) return [];
+      if (isMissingColumn(error)) return { items: [], hasMore: false };
       throw toError(error);
     }
-    return (data ?? []).map(t => ({
-      ...t,
-      text:    t.text ?? t.text_enc ?? '',
-      source:  t.source ?? 'manual',
-    }));
+
+    const all = data ?? [];
+    const hasMore = limit != null && all.length > limit;
+    return {
+      items: (hasMore ? all.slice(0, limit) : all).map(t => ({
+        ...t,
+        text:   t.text ?? t.text_enc ?? '',
+        source: t.source ?? 'manual',
+      })),
+      hasMore,
+    };
   },
 
   // Back into the live list, ready to be raised again. Un-checking matters as
