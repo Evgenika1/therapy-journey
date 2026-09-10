@@ -13,7 +13,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
 import { topics as topicsApi } from '@/lib/api';
-import { pendingTopics, discussedTopics } from '@/lib/sessionTopics';
+import { pendingTopics, discussedTopics, groupArchivedByDate } from '@/lib/sessionTopics';
 
 export default function NextSessionTopics() {
   const { supabase } = useAuth();
@@ -25,9 +25,19 @@ export default function NextSessionTopics() {
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState('');
   const [showDone, setShowDone] = useState(false);
+  const [archived,     setArchived]     = useState([]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [hoverId,      setHoverId]      = useState(null);
 
   useEffect(() => {
     if (!supabase) return;
+    // The archive is a second query rather than a wider first one: the live list
+    // is the hot path, and this only needs to answer "is there anything to
+    // show, and how much". A failure here is silent — the archive link simply
+    // does not appear, which must never take the block itself down.
+    topicsApi.listArchived(supabase)
+      .then(setArchived)
+      .catch(err => console.error('[Topics] archive:', err?.message));
     topicsApi.list(supabase)
       .then(l => { setTopics(l); setLoading(false); })
       .catch(err => {
@@ -74,6 +84,32 @@ export default function NextSessionTopics() {
       setError('Could not delete the topic: ' + (err?.message || 'unknown error'));
     }
   }
+
+  // Back into the live list. Both flags have to go: an archived topic is
+  // checked by definition, so un-archiving alone would land it in the "done"
+  // fold rather than among the topics to raise.
+  async function restore(id) {
+    setError('');
+    try {
+      const back = await topicsApi.restore(supabase, id);
+      setArchived(a => a.filter(x => x.id !== id));
+      setTopics(t => [...t, { ...back, checked: false, archived: false }]);
+    } catch (err) {
+      console.error('[Topics] restore:', err?.message);
+      setError('Could not restore the topic: ' + (err?.message || 'unknown error'));
+    }
+  }
+
+  // The heading can only claim an archive date when every row in the day has
+  // one; otherwise it says when the thought was captured. See groupArchivedByDate.
+  const archiveGroups = groupArchivedByDate(archived);
+  const dayLabel = (date, source) => {
+    if (!date) return 'Undated';
+    const when = new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    });
+    return `${source === 'archived_at' ? 'Archived' : 'Added'} ${when}`;
+  };
 
   const pending = pendingTopics(topics);
   const done    = discussedTopics(topics);
@@ -211,6 +247,62 @@ export default function NextSessionTopics() {
                   </p>
                   <button onClick={() => remove(topic.id)} aria-label={`Delete "${topic.text}"`}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTED, fontSize: 16, padding: '0 2px', opacity: 0.5, lineHeight: 1, flexShrink: 0 }}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      {/* The archive: what past sessions actually raised. Collapsed by default —
+          it is a record to look back on, not part of the daily job of the
+          block. Nothing is shown at all until there is something in it.
+
+          Readability is the point here, and it is why these rows do NOT reuse
+          the muted grey of the "done" fold. MUTED is already tuned to sit just
+          above the contrast floor (see timeTheme.js), so dimming it further
+          would put archived text below it in every theme. Body colour at 0.7
+          reads as recessed while staying comfortably legible on the pale
+          morning background and the indigo evening one alike. */}
+      {archiveGroups.length > 0 && (
+        <>
+          <button onClick={() => setShowArchived(v => !v)}
+            style={{ marginTop: pending.length || done.length ? 10 : 0, background: 'none', border: 'none', padding: 0, color: MUTED, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Past topics · {archived.length} <span style={{ fontSize: 9, opacity: 0.7 }}>{showArchived ? '▾' : '▸'}</span>
+          </button>
+
+          {showArchived && (
+            <div style={{ marginTop: 9, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {archiveGroups.map(group => (
+                <div key={group.date ?? 'undated'}>
+                  <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                    {dayLabel(group.date, group.source)}
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {group.items.map(topic => (
+                      <div key={topic.id} style={row}
+                        onMouseEnter={() => setHoverId(topic.id)}
+                        onMouseLeave={() => setHoverId(h => (h === topic.id ? null : h))}>
+                        <span aria-hidden="true"
+                          style={{ width: 17, height: 17, borderRadius: 5, flexShrink: 0, background: A, color: '#fff', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>✓</span>
+                        <p style={{ fontSize: 13, color: TEXT, opacity: 0.7, margin: 0, flex: 1, lineHeight: 1.45, textDecoration: 'line-through', minWidth: 0 }}>
+                          {topic.source === 'ai' && (
+                            <span title="Suggested from your session analysis" style={{ marginRight: 5, fontSize: 11 }}>✦</span>
+                          )}
+                          {topic.text}
+                        </p>
+                        {/* Kept in the DOM rather than mounted on hover, so it
+                            is reachable by keyboard and on a touch screen;
+                            hover only brings it forward. */}
+                        <button onClick={() => restore(topic.id)}
+                          aria-label={`Restore "${topic.text}" to the list`}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: A, fontSize: 11.5, padding: '0 2px', flexShrink: 0, fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: hoverId === topic.id ? 1 : 0.45 }}
+                          onFocus={() => setHoverId(topic.id)}
+                          onBlur={() => setHoverId(h => (h === topic.id ? null : h))}>
+                          ↩ restore
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>

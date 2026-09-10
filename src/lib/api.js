@@ -522,13 +522,23 @@ export const topics = {
   // raised, so they carry over to the next session.
   async archiveDiscussed(supabase) {
     const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase
+    // The stamp is what the archive view groups by. Migration 020 may not have
+    // run, so a missing archived_at drops to a plain archive rather than
+    // failing — losing the date is recoverable, losing the archive is not.
+    const updates = { archived: true, archived_at: new Date().toISOString() };
+    const run = () => supabase
       .from('next_session_topics')
-      .update({ archived: true })
+      .update(updates)
       .eq('user_id', user.id)
       .eq('checked', true)
       .eq('archived', false)
       .select();
+
+    let { data, error } = await run();
+    if (error && isMissingColumn(error) && 'archived_at' in updates) {
+      delete updates.archived_at;
+      ({ data, error } = await run());
+    }
     // Without migration 019 there is nothing to archive and nothing to report;
     // any other error is real and must not be swallowed behind a save.
     if (error) {
@@ -536,6 +546,46 @@ export const topics = {
       throw toError(error);
     }
     return data ?? [];
+  },
+
+  // The archive is read only when the user opens it, so this is a second query
+  // rather than a wider first one: the Dashboard's hot path stays the short
+  // live list.
+  async listArchived(supabase) {
+    const { data, error } = await supabase
+      .from('next_session_topics')
+      .select('*')
+      .eq('archived', true)
+      .order('created_at', { ascending: false });
+    // No column means nothing has ever been archived — an empty archive is the
+    // truthful answer, not an error to show the user.
+    if (error) {
+      if (isMissingColumn(error)) return [];
+      throw toError(error);
+    }
+    return (data ?? []).map(t => ({
+      ...t,
+      text:    t.text ?? t.text_enc ?? '',
+      source:  t.source ?? 'manual',
+    }));
+  },
+
+  // Back into the live list, ready to be raised again. Un-checking matters as
+  // much as un-archiving: an archived topic is checked by definition, and
+  // leaving it so would drop it into the "done" fold rather than the list the
+  // user restored it to.
+  async restore(supabase, id) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data, error } = await supabase
+      .from('next_session_topics')
+      .update({ archived: false, checked: false, archived_at: null })
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select()
+      .maybeSingle();
+    if (error) throw toError(error);
+    const restored = updatedRow(data, 'topic');
+    return { ...restored, text: restored.text ?? restored.text_enc ?? '', checked: false, archived: false };
   },
 
   async delete(supabase, id) {

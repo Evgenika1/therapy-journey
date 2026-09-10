@@ -422,7 +422,7 @@ test('archiving files away the discussed topics and nothing else', async () => {
   await topics.archiveDiscussed(sb);
   const call = sb.lastCall();
   assert.equal(call.op, 'update');
-  assert.deepEqual(call.payload, { archived: true });
+  assert.equal(call.payload.archived, true);
   const has = (col, val) => call.filters.some(([op, c, v]) => op === 'eq' && c === col && v === val);
   assert.ok(has('checked', true),   'only topics actually raised are filed away');
   assert.ok(has('archived', false), 'already-archived rows are left alone');
@@ -441,4 +441,64 @@ test('a real archiving failure is not swallowed', async () => {
     responses: { next_session_topics: { error: pgError('42501', 'RLS denied') } },
   });
   await assert.rejects(() => topics.archiveDiscussed(sb), /RLS denied/);
+});
+
+// ── reading and undoing the archive ──────────────────────────────────────────
+
+test('archiving stamps when it happened', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: [row()] } } });
+  await topics.archiveDiscussed(sb);
+  const call = sb.lastCall();
+  assert.equal(call.payload.archived, true);
+  assert.ok(call.payload.archived_at, 'the archive view groups by this date');
+  assert.ok(!Number.isNaN(Date.parse(call.payload.archived_at)));
+});
+
+test('archiving still works on a database without archived_at', async () => {
+  // Migration 020 may not have run. Dropping the stamp is better than losing
+  // the archive: the view falls back to created_at and says so.
+  const sb = fakeSupabase({
+    responses: {
+      next_session_topics: [
+        { error: pgError('PGRST204', "Could not find the 'archived_at' column in the schema cache") },
+        { data: [row()] },
+      ],
+    },
+  });
+  const archived = await topics.archiveDiscussed(sb);
+  assert.equal(archived.length, 1);
+  const call = sb.lastCall();
+  assert.equal(call.payload.archived, true);
+  assert.ok(!('archived_at' in call.payload), 'the retry drops only the missing column');
+});
+
+test('the archive view asks only for archived rows', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: [row({ text: 'Boundaries' })] } } });
+  const list = await topics.listArchived(sb);
+  const call = sb.lastCall();
+  assert.ok(call.filters.some(([op, c, v]) => op === 'eq' && c === 'archived' && v === true));
+  assert.deepEqual(list.map(t => t.text), ['Boundaries']);
+});
+
+test('an un-migrated database has an empty archive rather than an error', async () => {
+  const sb = fakeSupabase({
+    responses: { next_session_topics: { error: pgError('42703', 'column "archived" does not exist') } },
+  });
+  assert.deepEqual(await topics.listArchived(sb), []);
+});
+
+test('restoring puts a topic back among the active ones', async () => {
+  // Not merely un-archived: an archived topic is also checked, and leaving it
+  // checked would drop it straight into the "done" fold instead of the list
+  // the user restored it to raise again.
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: row({ text: 'Boundaries' }) } } });
+  await topics.restore(sb, 'row-1');
+  const call = sb.lastCall();
+  assert.equal(call.payload.archived, false);
+  assert.equal(call.payload.checked, false);
+});
+
+test('restoring a row that is gone explains itself', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: null } } });
+  await assert.rejects(() => topics.restore(sb, 'gone'), err => err.code === 'NO_ROW');
 });

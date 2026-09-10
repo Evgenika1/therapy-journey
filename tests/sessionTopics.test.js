@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {
   pendingTopics, discussedTopics, topicsToNotes, prefillNotes,
 } from '../src/lib/sessionTopics.js';
-import { aiTopics, reconcileTopics } from '../src/lib/sessionTopics.js';
+import { aiTopics, reconcileTopics, groupArchivedByDate } from '../src/lib/sessionTopics.js';
 
 const t = (text, checked = false) => ({ id: text, text, checked });
 
@@ -136,4 +136,60 @@ test('archiving does not stop unrelated stale topics being cleaned up', () => {
   const existing = [archivedRow(1, 'filed away'), topicRow(2, 'stale suggestion')];
   const { toDelete } = reconcileTopics(existing, ['a fresh one']);
   assert.deepEqual(toDelete, [2], 'only the live stale row goes');
+});
+
+// ── the archive view ─────────────────────────────────────────────────────────
+//
+// Archived topics are the record of what past sessions raised. They are shown
+// grouped by the day they were filed, newest first — a flat list of forty rows
+// sorted by nothing in particular is not a record anyone reads.
+
+const arch = (id, text, archived_at, created_at = '2026-08-01T09:00:00Z') =>
+  ({ id, text, checked: true, archived: true, archived_at, created_at });
+
+test('archived topics are grouped by day, newest group first', () => {
+  const groups = groupArchivedByDate([
+    arch(1, 'older',  '2026-09-07T21:00:00Z'),
+    arch(2, 'newest', '2026-09-09T10:00:00Z'),
+    arch(3, 'same day as newest', '2026-09-09T18:00:00Z'),
+  ]);
+  assert.deepEqual(groups.map(g => g.date), ['2026-09-09', '2026-09-07']);
+  assert.deepEqual(groups[0].items.map(i => i.text), ['same day as newest', 'newest'],
+    'within a day the most recent is first');
+});
+
+test('a group says whether its date is a real archive date', () => {
+  const [real] = groupArchivedByDate([arch(1, 'x', '2026-09-09T10:00:00Z')]);
+  assert.equal(real.source, 'archived_at');
+
+  // Without migration 020 there is no archived_at. Falling back to created_at
+  // is fine, but the heading must not then claim to be an archive date.
+  const [fallback] = groupArchivedByDate([
+    { id: 2, text: 'y', archived: true, created_at: '2026-09-05T10:00:00Z' },
+  ]);
+  assert.equal(fallback.date, '2026-09-05');
+  assert.equal(fallback.source, 'created_at');
+});
+
+test('a day holding both kinds makes the weaker claim', () => {
+  const [g] = groupArchivedByDate([
+    arch(1, 'stamped', '2026-09-09T10:00:00Z'),
+    { id: 2, text: 'unstamped', archived: true, created_at: '2026-09-09T11:00:00Z' },
+  ]);
+  assert.equal(g.source, 'created_at', 'one unstamped row makes the whole heading unprovable');
+});
+
+test('rows with no usable date are kept, in a trailing group', () => {
+  const groups = groupArchivedByDate([
+    { id: 1, text: 'no dates at all', archived: true },
+    arch(2, 'dated', '2026-09-09T10:00:00Z'),
+  ]);
+  assert.equal(groups[0].date, '2026-09-09');
+  assert.equal(groups[groups.length - 1].date, null);
+  assert.deepEqual(groups[groups.length - 1].items.map(i => i.text), ['no dates at all']);
+});
+
+test('blank and malformed archived rows never reach the view', () => {
+  assert.deepEqual(groupArchivedByDate([null, { archived: true }, arch(1, '   ', '2026-09-09T10:00:00Z')]), []);
+  assert.deepEqual(groupArchivedByDate(), []);
 });

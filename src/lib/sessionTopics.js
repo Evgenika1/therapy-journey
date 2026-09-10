@@ -71,3 +71,41 @@ export function reconcileTopics(existing = [], proposed = []) {
 
   return { toInsert, toDelete };
 }
+
+// ── the archive ──────────────────────────────────────────────────────────────
+//
+// Recording a session files away the topics it raised. What is left is a record
+// worth reading — "this is what the 7th was about" — and that only works if it
+// is grouped by when things were filed. A flat list of forty ticked-off lines
+// is not a record, it is a heap.
+//
+// `source` tells the caller which date it got. Rows archived before migration
+// 020 have no archived_at, and created_at — when the thought was first captured,
+// often weeks earlier — must not be presented as the day it was archived. One
+// unstamped row in a day makes the whole heading unprovable, so the group makes
+// the weaker claim rather than a confident wrong one.
+export function groupArchivedByDate(topics = []) {
+  const rows = (Array.isArray(topics) ? topics : [])
+    .filter(t => t && typeof t.text === 'string' && t.text.trim());
+
+  const groups = new Map();
+  for (const t of rows) {
+    const stamp = t.archived_at ?? t.created_at ?? null;
+    const date = stamp ? String(stamp).slice(0, 10) : null;
+    if (!groups.has(date)) groups.set(date, { date, source: 'archived_at', items: [] });
+    const group = groups.get(date);
+    if (!t.archived_at) group.source = 'created_at';
+    group.items.push(t);
+  }
+
+  const at = t => Date.parse(t.archived_at ?? t.created_at ?? 0) || 0;
+  for (const group of groups.values()) group.items.sort((a, b) => at(b) - at(a));
+
+  // Newest day first; the undated group trails, since there is nowhere in the
+  // order it could honestly sit.
+  return [...groups.values()].sort((a, b) => {
+    if (a.date === null) return 1;
+    if (b.date === null) return -1;
+    return a.date < b.date ? 1 : a.date > b.date ? -1 : 0;
+  });
+}
