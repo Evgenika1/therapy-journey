@@ -17,7 +17,19 @@ import { ASSEMBLYAI_USD_PER_HOUR } from './usagePricing.js';
 // per-user column: the design is a flat monthly quota, and a per-user override
 // table can be added later without migrating anything, since an absent row
 // would simply mean "the default".
-export const MONTHLY_MINUTES = 300;
+//
+// 400 comes from arithmetic at the real AssemblyAI rate ($0.23/hour), not from
+// a round number. A 60-minute session costs ~68 minutes of allowance — 60 for
+// the audio plus ~8 for the analysis that follows it — so:
+//
+//   4 sessions/month  = 270 min   (+20 chats -> 296)
+//   5 sessions/month  = 338 min   (+20 chats -> 364)
+//
+// 300 was the first guess and is wrong: weekly therapy plus a little chat lands
+// at 296, so an ordinary month would end at 99% and the 20% warning would fire
+// after the third session. 400 leaves a fifth session, or a talkative month,
+// inside the quota.
+export const MONTHLY_MINUTES = 400;
 
 // Warn while there is still real headroom. A warning that fires at zero is not
 // a warning, it is an obituary.

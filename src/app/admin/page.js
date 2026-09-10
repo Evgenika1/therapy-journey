@@ -125,15 +125,15 @@ export default function AdminPage() {
                 </table>
               </div>
 
-              {/* The rate is a guess until it is checked against a real invoice,
-                  and every minutes figure above and on every user's dashboard is
-                  proportional to it. Saying so here is cheaper than discovering
-                  it from a surprising bill. */}
+              {/* Where the exchange rate comes from, and what it means in
+                  practice. Without the second sentence the first is a number
+                  nobody can sanity-check. */}
               <p style={{ fontSize: 11.5, color: MUTED, margin: '14px 0 0', lineHeight: 1.6 }}>
                 Minutes are derived from cost at {usd(USD_PER_MINUTE)}/min, anchored to
-                an AssemblyAI rate of ${ASSEMBLYAI_USD_PER_HOUR.toFixed(2)}/hour. That rate is a
-                placeholder in <code>src/lib/usagePricing.js</code> — set it from your
-                invoice before trusting any minutes figure.
+                AssemblyAI at ${ASSEMBLYAI_USD_PER_HOUR.toFixed(2)}/hour (Universal-3.5 Pro with
+                diarization). A 60-minute session costs about 68 minutes of allowance —
+                60 for the audio, ~8 for the analysis. A chat reply costs roughly 0.7–2.4,
+                depending on its length.
               </p>
             </>
           )}

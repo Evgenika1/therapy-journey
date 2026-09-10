@@ -10,16 +10,16 @@
 // the cost is computed at write time. Recomputing an old row against today's
 // price list would quietly rewrite what last month actually cost.
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TODO — SET THIS FROM YOUR ASSEMBLYAI INVOICE BEFORE TRUSTING ANY NUMBER.
+// Transcription is the largest single cost in the app — larger than every
+// Claude call combined — and it anchors the exchange rate for the whole
+// "minutes" display, so it is worth stating exactly what this figure covers.
 //
-// This is a placeholder, not a quote. Transcription is the largest single cost
-// in the app — larger than every Claude call combined — so it sets the exchange
-// rate for the whole "minutes" display. Read the real per-hour figure off your
-// AssemblyAI billing page and put it here; until then every minutes balance in
-// the UI is proportional to a made-up number.
-export const ASSEMBLYAI_USD_PER_HOUR = 0.37;
-// ─────────────────────────────────────────────────────────────────────────────
+// $0.23/hour: Universal-3.5 Pro with speaker diarization, taken from the
+// account's own billing page rather than a list price. Both parts matter —
+// TRANSCRIBE_CONFIG sends speaker_labels, and the tier is not the cheapest one
+// — so a rate copied off a pricing page would understate what we actually pay.
+// Re-check it if either the tier or that config changes.
+export const ASSEMBLYAI_USD_PER_HOUR = 0.23;
 
 // USD per 1M tokens. The routes currently send the dated snapshot id, so both
 // spellings are listed — a model id missing here throws rather than billing at
