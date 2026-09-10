@@ -502,3 +502,52 @@ test('restoring a row that is gone explains itself', async () => {
   const sb = fakeSupabase({ responses: { next_session_topics: { data: null } } });
   await assert.rejects(() => topics.restore(sb, 'gone'), err => err.code === 'NO_ROW');
 });
+
+// ── ticking a topic off ──────────────────────────────────────────────────────
+//
+// There is one place for a finished topic now: the archive. Ticking the box
+// files it away in a single write rather than parking it in a second, separate
+// list of checked-but-not-archived rows — which was invisible in both views the
+// moment the "done" fold was removed.
+
+test('ticking a topic off archives it in one write', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: row({ text: 'Boundaries' }) } } });
+  await topics.archive(sb, 'row-1');
+  const call = sb.lastCall();
+  assert.equal(call.op, 'update');
+  assert.equal(call.payload.checked, true);
+  assert.equal(call.payload.archived, true);
+  assert.ok(call.payload.archived_at, 'the archive groups by this date');
+  assert.ok(!Number.isNaN(Date.parse(call.payload.archived_at)));
+});
+
+test('ticking off still works without the archived_at column', async () => {
+  const sb = fakeSupabase({
+    responses: {
+      next_session_topics: [
+        { error: pgError('PGRST204', "Could not find the 'archived_at' column in the schema cache") },
+        { data: row({ text: 'Boundaries' }) },
+      ],
+    },
+  });
+  const filed = await topics.archive(sb, 'row-1');
+  assert.equal(filed.text, 'Boundaries');
+  const call = sb.lastCall();
+  assert.equal(call.payload.archived, true);
+  assert.ok(!('archived_at' in call.payload));
+});
+
+test('ticking off a topic that is gone explains itself', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: null } } });
+  await assert.rejects(() => topics.archive(sb, 'gone'), err => err.code === 'NO_ROW');
+});
+
+test('an archived topic comes back shaped for the archive view', async () => {
+  const sb = fakeSupabase({
+    responses: { next_session_topics: { data: row({ text: 'Boundaries', source: 'ai' }) } },
+  });
+  const filed = await topics.archive(sb, 'row-1');
+  assert.equal(filed.archived, true);
+  assert.equal(filed.checked, true);
+  assert.equal(filed.source, 'ai', 'the ✦ mark must survive the trip into the archive');
+});

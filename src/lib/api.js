@@ -548,6 +548,39 @@ export const topics = {
     return data ?? [];
   },
 
+  // Ticking a topic off files it away, in one write. There used to be two
+  // resting places for a finished topic — a "done" fold for checked rows and
+  // the archive for archived ones — and a row could sit in the first forever.
+  // With the fold gone, checked-but-not-archived is visible nowhere at all, so
+  // the two flags are set together and never apart.
+  async archive(supabase, id) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const updates = { checked: true, archived: true, archived_at: new Date().toISOString() };
+    const run = () => supabase
+      .from('next_session_topics')
+      .update(updates)
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select()
+      .maybeSingle();
+
+    let { data, error } = await run();
+    // Migration 020 may not have run; losing the date beats losing the archive.
+    if (error && isMissingColumn(error) && 'archived_at' in updates) {
+      delete updates.archived_at;
+      ({ data, error } = await run());
+    }
+    if (error) throw toError(error);
+    const filed = updatedRow(data, 'topic');
+    return {
+      ...filed,
+      text:     filed.text ?? filed.text_enc ?? '',
+      source:   filed.source ?? 'manual',
+      checked:  true,
+      archived: true,
+    };
+  },
+
   // The archive is read only when the user opens it, so this is a second query
   // rather than a wider first one: the Dashboard's hot path stays the short
   // live list.

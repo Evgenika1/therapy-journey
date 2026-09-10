@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  pendingTopics, discussedTopics, topicsToNotes, prefillNotes,
+  pendingTopics, topicsToNotes, prefillNotes,
 } from '../src/lib/sessionTopics.js';
 import { aiTopics, reconcileTopics, groupArchivedByDate } from '../src/lib/sessionTopics.js';
 
@@ -15,7 +15,6 @@ const t = (text, checked = false) => ({ id: text, text, checked });
 test('only unchecked topics are pending', () => {
   const list = [t('boundaries'), t('mum', true), t('sleep')];
   assert.deepEqual(pendingTopics(list).map(x => x.text), ['boundaries', 'sleep']);
-  assert.deepEqual(discussedTopics(list).map(x => x.text), ['mum']);
 });
 
 test('blank and malformed topics never reach the notes', () => {

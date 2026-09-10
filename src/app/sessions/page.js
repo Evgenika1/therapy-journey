@@ -935,7 +935,10 @@ function SessionsPageInner() {
     if (markingTopics || !prefilledTopics.length) return;
     setMarkingTopics(true);
     try {
-      await Promise.all(prefilledTopics.map(t => topicsApi.update(supabase, t.id, { checked: true })));
+      // Archive rather than merely check. A checked-but-unarchived topic is
+      // visible in neither list now that finished topics live only in the
+      // archive, so marking one discussed has to file it away in the same move.
+      await Promise.all(prefilledTopics.map(t => topicsApi.archive(supabase, t.id)));
       setTopicsMarked(true);
     } catch (e) {
       console.error('[Sessions] mark topics:', e?.message);

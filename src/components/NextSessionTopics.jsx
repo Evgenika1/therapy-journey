@@ -13,7 +13,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
 import { topics as topicsApi } from '@/lib/api';
-import { pendingTopics, discussedTopics, groupArchivedByDate } from '@/lib/sessionTopics';
+import { pendingTopics, groupArchivedByDate } from '@/lib/sessionTopics';
 
 export default function NextSessionTopics() {
   const { supabase } = useAuth();
@@ -24,7 +24,6 @@ export default function NextSessionTopics() {
   const [adding,   setAdding]   = useState(false);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState('');
-  const [showDone, setShowDone] = useState(false);
   const [archived,     setArchived]     = useState([]);
   const [showArchived, setShowArchived] = useState(false);
   const [hoverId,      setHoverId]      = useState(null);
@@ -63,14 +62,18 @@ export default function NextSessionTopics() {
     } finally { setAdding(false); }
   }
 
-  async function toggle(id, checked) {
+  // Ticking the box files the topic away. There is one place for a finished
+  // topic now — Past topics — so this moves it there rather than parking it in
+  // a second list on the way.
+  async function archive(id) {
     setError('');
     try {
-      await topicsApi.update(supabase, id, { checked: !checked });
-      setTopics(t => t.map(x => x.id === id ? { ...x, checked: !checked } : x));
+      const filed = await topicsApi.archive(supabase, id);
+      setTopics(t => t.filter(x => x.id !== id));
+      setArchived(a => [filed, ...a]);
     } catch (err) {
-      console.error('[Topics] toggle:', err?.message);
-      setError('Could not update the topic: ' + (err?.message || 'unknown error'));
+      console.error('[Topics] archive:', err?.message);
+      setError('Could not file the topic away: ' + (err?.message || 'unknown error'));
     }
   }
 
@@ -86,8 +89,8 @@ export default function NextSessionTopics() {
   }
 
   // Back into the live list. Both flags have to go: an archived topic is
-  // checked by definition, so un-archiving alone would land it in the "done"
-  // fold rather than among the topics to raise.
+  // checked by definition, and a checked row is not pending — un-archiving
+  // alone would leave it visible nowhere at all.
   async function restore(id) {
     setError('');
     try {
@@ -112,7 +115,6 @@ export default function NextSessionTopics() {
   };
 
   const pending = pendingTopics(topics);
-  const done    = discussedTopics(topics);
 
   // Split by where a topic came from. A caption under every AI row would say
   // the same sentence a dozen times; one heading above the group says it once
@@ -131,7 +133,7 @@ export default function NextSessionTopics() {
   // this change is removing.
   const TopicRow = ({ topic }) => (
     <div style={row}>
-      <button onClick={() => toggle(topic.id, topic.checked)}
+      <button onClick={() => archive(topic.id)}
         aria-label={`Mark "${topic.text}" as discussed`}
         style={{ width: 17, height: 17, borderRadius: 5, flexShrink: 0, border: `2px solid ${BORDER}`, background: 'transparent', cursor: 'pointer', padding: 0 }}
         onMouseEnter={e => e.currentTarget.style.borderColor = A}
@@ -156,7 +158,7 @@ export default function NextSessionTopics() {
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: 7, marginBottom: pending.length || done.length ? 10 : 0 }}>
+      <div style={{ display: 'flex', gap: 7, marginBottom: pending.length ? 10 : 0 }}>
         <input
           value={text}
           onChange={e => setText(e.target.value)}
@@ -185,7 +187,7 @@ export default function NextSessionTopics() {
 
       {loading && <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>Loading…</p>}
 
-      {!loading && pending.length === 0 && done.length === 0 && (
+      {!loading && pending.length === 0 && archived.length === 0 && (
         <p style={{ fontSize: 12, color: MUTED, margin: '8px 0 0', lineHeight: 1.5 }}>
           Anything you want to raise with your therapist — catch it here while it is fresh,
           and it will be waiting in your notes when you record.
@@ -218,55 +220,25 @@ export default function NextSessionTopics() {
         </>
       )}
 
-      {/* Discussed topics are kept but folded away. They are the record of what
-          you did raise, which is worth keeping; they are not what this block is
-          for on a Tuesday morning. Recording a session archives them, so this
-          fold holds what you have ticked off since — not every session's
-          history. Unticking one puts it back in the list above. */}
-      {done.length > 0 && (
-        <>
-          <button onClick={() => setShowDone(v => !v)}
-            style={{ marginTop: pending.length ? 9 : 0, background: 'none', border: 'none', padding: 0, color: MUTED, fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit' }}>
-            ✓ {done.length} done <span style={{ fontSize: 9, opacity: 0.7 }}>{showDone ? '▾' : '▸'}</span>
-          </button>
-          {showDone && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 7 }}>
-              {done.map(topic => (
-                <div key={topic.id} style={{ ...row, opacity: 0.5 }}>
-                  <button onClick={() => toggle(topic.id, topic.checked)}
-                    aria-label={`Move "${topic.text}" back to the list`}
-                    style={{ width: 17, height: 17, borderRadius: 5, flexShrink: 0, border: 'none', background: A, color: '#fff', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, padding: 0 }}>✓</button>
-                  {/* Discussed topics are one mixed list, so the mark earns its
-                      place here — there is no heading to carry it. */}
-                  <p style={{ fontSize: 13, color: MUTED, margin: 0, flex: 1, textDecoration: 'line-through', minWidth: 0 }}>
-                    {topic.source === 'ai' && (
-                      <span title="Suggested from your session analysis"
-                        style={{ marginRight: 5, fontSize: 11 }}>✦</span>
-                    )}
-                    {topic.text}
-                  </p>
-                  <button onClick={() => remove(topic.id)} aria-label={`Delete "${topic.text}"`}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTED, fontSize: 16, padding: '0 2px', opacity: 0.5, lineHeight: 1, flexShrink: 0 }}>×</button>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
       {/* The archive: what past sessions actually raised. Collapsed by default —
           it is a record to look back on, not part of the daily job of the
           block. Nothing is shown at all until there is something in it.
 
-          Readability is the point here, and it is why these rows do NOT reuse
-          the muted grey of the "done" fold. MUTED is already tuned to sit just
+          Readability is the point here, and it is why these rows are body
+          colour at 0.75 rather than MUTED. MUTED is already tuned to sit just
           above the contrast floor (see timeTheme.js), so dimming it further
-          would put archived text below it in every theme. Body colour at 0.7
-          reads as recessed while staying comfortably legible on the pale
-          morning background and the indigo evening one alike. */}
+          fails badly: MUTED at 0.75 measures 2.19 / 2.60 / 3.35 across
+          morning / day / evening, against the 4.5:1 needed at this size.
+
+          Body colour at 0.75 measures 4.78 / 5.58 / 7.85 — recessed to the eye,
+          still legible on the pale morning ground and the indigo evening one.
+          0.70 was the first choice and is why the number is not rounder: it
+          measures 4.20 in morning, just under the floor. The accent tick is not
+          dimmed at all (3.34 / 5.16 / 6.00, over the 3:1 a glyph needs). */}
       {archiveGroups.length > 0 && (
         <>
           <button onClick={() => setShowArchived(v => !v)}
-            style={{ marginTop: pending.length || done.length ? 10 : 0, background: 'none', border: 'none', padding: 0, color: MUTED, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ marginTop: pending.length ? 10 : 0, background: 'none', border: 'none', padding: 0, color: MUTED, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>
             Past topics · {archived.length} <span style={{ fontSize: 9, opacity: 0.7 }}>{showArchived ? '▾' : '▸'}</span>
           </button>
 
@@ -284,7 +256,7 @@ export default function NextSessionTopics() {
                         onMouseLeave={() => setHoverId(h => (h === topic.id ? null : h))}>
                         <span aria-hidden="true"
                           style={{ width: 17, height: 17, borderRadius: 5, flexShrink: 0, background: A, color: '#fff', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>✓</span>
-                        <p style={{ fontSize: 13, color: TEXT, opacity: 0.7, margin: 0, flex: 1, lineHeight: 1.45, textDecoration: 'line-through', minWidth: 0 }}>
+                        <p style={{ fontSize: 13, color: TEXT, opacity: 0.75, margin: 0, flex: 1, lineHeight: 1.45, textDecoration: 'line-through', minWidth: 0 }}>
                           {topic.source === 'ai' && (
                             <span title="Suggested from your session analysis" style={{ marginRight: 5, fontSize: 11 }}>✦</span>
                           )}

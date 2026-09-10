@@ -14,10 +14,6 @@ export function pendingTopics(topics = []) {
     .filter(t => t && !t.checked && typeof t.text === 'string' && t.text.trim());
 }
 
-export function discussedTopics(topics = []) {
-  return (Array.isArray(topics) ? topics : []).filter(t => t && t.checked);
-}
-
 // The block that lands in a session's notes. A heading and bullets, because it
 // is dropped into a free-text field the user keeps writing in — without the
 // heading, their own first line would read as one of the topics.
