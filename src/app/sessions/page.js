@@ -8,6 +8,7 @@ import { sessions as sessionsApi, emotions as emotionsApi, aiChats, homework as 
 import { pendingTopics, prefillNotes } from '@/lib/sessionTopics';
 import { ALLOWED_EXT, MAX_UPLOAD_BYTES, extOf, tooLargeMessage, unsupportedTypeMessage } from '@/lib/audioUpload';
 import { savePendingRecording, loadPendingRecording, clearPendingRecording } from '@/lib/recordingStore';
+import { finishRecording, shouldClearHeldAudioOnClose } from '@/lib/recordingOutcome';
 import {
   uploadForTranscription, pollTranscript,
   rememberPendingJob, forgetPendingJob, loadPendingJob,
@@ -83,8 +84,7 @@ const CHAT_COPY = {
 // AND the sample peak both indicate silence, so a genuinely quiet-but-real
 // recording is never dropped — a false skip loses data, a false pass merely
 // costs one API round-trip that returns empty.
-const SPEECH_WINDOW_RMS  = 0.02;  // loudest ~1s window must reach this to be "speech"
-const SILENCE_PEAK_FLOOR = 0.05;  // ...and no sample exceeds this → truly silent
+// (thresholds live in @/lib/recordingOutcome, next to the rule that uses them)
 
 function getSupportedMimeType() {
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
@@ -468,6 +468,7 @@ function SessionsPageInner() {
   function closeModal() {
     if (isCapturing) stopRecording();
     clearInterval(timerRef.current);
+    const heldSeconds = seconds; // read before the resets below zero it
     setShowModal(false); setIsCapturing(false); setIsPaused(false); setIsTranscribing(false); setIsReview(false);
     setSeconds(0); setTranscript(''); setRecNotes(''); setRecTitle(''); setSaved(false);
     setShowPreMood(false); setPreRecordMoodIdx(null);
@@ -475,13 +476,23 @@ function SessionsPageInner() {
     setSpeechError(''); setSaveError('');
     setTranscribeFailed(false); setUploadProgress(0);
     chunksRef.current = [];
-    // Closing with a failed transcription and nothing saved is NOT a discard —
-    // keep the audio so the recovery banner can offer it again. Anything else
-    // (saved, or transcribed fine) has served its purpose and can go.
-    if (!(transcribeFailed && !saved)) {
+    // Closing the modal is NOT a discard. The audio is deleted in exactly two
+    // places — a successful save (which clears it itself) and an explicit
+    // Discard on the recovery banner. The old rule keyed on transcribeFailed,
+    // so it destroyed every recording whose transcription had *succeeded*
+    // without the session ever being saved.
+    if (shouldClearHeldAudioOnClose({ saved })) {
       pendingAudioRef.current = null;
       forgetPendingJob();
       clearPendingRecording();
+      return;
+    }
+    // Still holding audio — hand it straight to the recovery banner. The mount
+    // effect only looks in IndexedDB once, so without this the recording would
+    // stay hidden until the next page load.
+    const held = pendingAudioRef.current;
+    if (held?.blob) {
+      setRecovered(prev => prev || { blob: held.blob, mimeType: held.mimeType, seconds: heldSeconds });
     }
   }
 
@@ -590,41 +601,51 @@ function SessionsPageInner() {
       setIsReview(true); return;
     }
 
-    // Silence detection: measure the loudest ~1s window of the recorded audio.
-    // A whole-file mean would be diluted by pauses, so we take the loudest window.
-    let loudestWindowRms = null, peak = 0;
-    try {
+    // Measure the loudest ~1s window of the recorded audio, so the silence
+    // guard can run off it. This only *reads* the blob — by the time it runs,
+    // finishRecording has already put the recording safely on disk.
+    async function measureLoudestWindow(blob) {
       const ac = new (window.AudioContext || window.webkitAudioContext)();
-      const decoded = await ac.decodeAudioData(await audioBlob.arrayBuffer());
-      const ch = decoded.getChannelData(0);
-      const win = Math.max(1, Math.floor(decoded.sampleRate)); // ~1s window
-      loudestWindowRms = 0;
-      for (let start = 0; start < ch.length; start += win) {
-        const end = Math.min(start + win, ch.length);
-        let sumSq = 0;
-        for (let i = start; i < end; i++) { const a = Math.abs(ch[i]); sumSq += a * a; if (a > peak) peak = a; }
-        const wRms = Math.sqrt(sumSq / (end - start));
-        if (wRms > loudestWindowRms) loudestWindowRms = wRms;
-      }
-      ac.close();
-    } catch { /* decode failed — skip the guard and let the server decide */ }
+      try {
+        const decoded = await ac.decodeAudioData(await blob.arrayBuffer());
+        const ch = decoded.getChannelData(0);
+        const win = Math.max(1, Math.floor(decoded.sampleRate)); // ~1s window
+        let loudestWindowRms = 0, peak = 0;
+        for (let start = 0; start < ch.length; start += win) {
+          const end = Math.min(start + win, ch.length);
+          let sumSq = 0;
+          for (let i = start; i < end; i++) { const a = Math.abs(ch[i]); sumSq += a * a; if (a > peak) peak = a; }
+          const wRms = Math.sqrt(sumSq / (end - start));
+          if (wRms > loudestWindowRms) loudestWindowRms = wRms;
+        }
+        return { loudestWindowRms, peak };
+      } finally { ac.close(); }
+    }
 
-    // Silence guard — skip /api/transcribe only when BOTH signals agree it's silent.
-    if (loudestWindowRms !== null && loudestWindowRms < SPEECH_WINDOW_RMS && peak < SILENCE_PEAK_FLOOR) {
+    // The order below is the whole point, so it lives in one tested place:
+    // the audio is held — in memory AND on disk — before anything is allowed to
+    // judge or reject it. The silence guard used to return before the save, so
+    // a recording it misjudged (a quiet mic, not a silent room) was destroyed
+    // with no recovery banner to offer it back. The 91-minute session was lost
+    // the same way, to an upload error on a blob that lived only in a ref.
+    const { outcome } = await finishRecording(
+      { blob: audioBlob, mimeType, seconds },
+      {
+        hold: async (rec) => {
+          pendingAudioRef.current = { blob: rec.blob, mimeType: rec.mimeType };
+          const ok = await savePendingRecording(rec);
+          if (!ok) throw new Error('savePendingRecording failed');
+        },
+        measure: measureLoudestWindow,
+        transcribe: transcribePending,
+      },
+    );
+
+    if (outcome === 'silent') {
       setTranscript('');
       setSpeechError('No speech detected — the recording was silent. You can type manually.');
       setIsReview(true);
-      return;
     }
-
-    // Hold the audio BEFORE attempting transcription, in memory and on disk. The
-    // 91-minute session was lost because the blob lived only in a ref, so the
-    // upload error took the recording with it. It is cleared once the session is
-    // saved (or explicitly discarded) — not merely once transcription succeeds.
-    pendingAudioRef.current = { blob: audioBlob, mimeType };
-    await savePendingRecording({ blob: audioBlob, mimeType, seconds });
-
-    await transcribePending();
   }
 
   // Upload the held recording and transcribe it. Split out of stopRecording so
