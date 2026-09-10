@@ -441,10 +441,13 @@ export const customJournals = {
 // ─── Next Session Topics ──────────────────────────────────────────────────────
 export const topics = {
   async list(supabase) {
-    const { data, error } = await supabase
-      .from('next_session_topics')
-      .select('*')
-      .order('created_at', { ascending: true });
+    // Only the live shortlist. Archived rows belong to sessions that already
+    // happened — kept as the record of what was raised, but not what this block
+    // is asking about. Migration 019 adds the column; without it there is
+    // nothing archived yet, so an unfiltered query is the same answer.
+    const query = () => supabase.from('next_session_topics').select('*').order('created_at', { ascending: true });
+    let { data, error } = await query().eq('archived', false);
+    if (error && isMissingColumn(error)) ({ data, error } = await query());
     if (error) throw toError(error);
     return data.map(t => ({
       ...t,
@@ -510,6 +513,29 @@ export const topics = {
     if (error) throw toError(error);
     const row = updatedRow(data, 'topic');
     return { ...row, text: fields.text ?? row.text ?? row.text_enc ?? '' };
+  },
+
+  // Recording a session files away the topics it raised: the block is "what to
+  // bring next time", so it has to start empty again. Archiving, not deleting —
+  // these rows are the record of what was actually discussed, and that is not
+  // recoverable once dropped. Unticked topics are left alone: they were never
+  // raised, so they carry over to the next session.
+  async archiveDiscussed(supabase) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data, error } = await supabase
+      .from('next_session_topics')
+      .update({ archived: true })
+      .eq('user_id', user.id)
+      .eq('checked', true)
+      .eq('archived', false)
+      .select();
+    // Without migration 019 there is nothing to archive and nothing to report;
+    // any other error is real and must not be swallowed behind a save.
+    if (error) {
+      if (isMissingColumn(error)) return [];
+      throw toError(error);
+    }
+    return data ?? [];
   },
 
   async delete(supabase, id) {

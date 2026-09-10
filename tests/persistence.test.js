@@ -385,3 +385,60 @@ test('a normal update still returns the row', async () => {
   const updated = await topics.update(sb, 'row-1', { checked: true });
   assert.equal(updated.text, 'Boundaries');
 });
+
+// ── archiving discussed topics ───────────────────────────────────────────────
+//
+// Recording a session files away the topics it raised. The list is "what to
+// bring next time", so it has to start empty again; the rows themselves are
+// the record of what was discussed and are kept, never deleted.
+
+test('the dashboard list asks only for topics that are not archived', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: [row({ text: 'Boundaries' })] } } });
+  await topics.list(sb);
+  const call = sb.lastCall();
+  assert.ok(
+    call.filters.some(([op, col, val]) => op === 'eq' && col === 'archived' && val === false),
+    'archived rows belong to past sessions and must not come back into the block',
+  );
+});
+
+test('a database without the archived column still lists topics', async () => {
+  // Same contract as migration 018: an un-migrated database keeps working, it
+  // simply has nothing archived yet.
+  const sb = fakeSupabase({
+    responses: {
+      next_session_topics: [
+        { error: pgError('42703', 'column "archived" does not exist') },
+        { data: [row({ text: 'Boundaries' })] },
+      ],
+    },
+  });
+  const list = await topics.list(sb);
+  assert.deepEqual(list.map(t => t.text), ['Boundaries']);
+});
+
+test('archiving files away the discussed topics and nothing else', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: [row({ text: 'Boundaries' })] } } });
+  await topics.archiveDiscussed(sb);
+  const call = sb.lastCall();
+  assert.equal(call.op, 'update');
+  assert.deepEqual(call.payload, { archived: true });
+  const has = (col, val) => call.filters.some(([op, c, v]) => op === 'eq' && c === col && v === val);
+  assert.ok(has('checked', true),   'only topics actually raised are filed away');
+  assert.ok(has('archived', false), 'already-archived rows are left alone');
+  assert.ok(has('user_id', 'user-1'));
+});
+
+test('archiving is a no-op on a database without the column', async () => {
+  const sb = fakeSupabase({
+    responses: { next_session_topics: { error: pgError('42703', 'column "archived" does not exist') } },
+  });
+  assert.deepEqual(await topics.archiveDiscussed(sb), []);
+});
+
+test('a real archiving failure is not swallowed', async () => {
+  const sb = fakeSupabase({
+    responses: { next_session_topics: { error: pgError('42501', 'RLS denied') } },
+  });
+  await assert.rejects(() => topics.archiveDiscussed(sb), /RLS denied/);
+});

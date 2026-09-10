@@ -836,6 +836,18 @@ function SessionsPageInner() {
       });
       setSessions(s => [result, ...s]);
       setSaved(true);
+      // The session just happened, so the topics ticked off before it have been
+      // raised. File them away: the Dashboard block is the shortlist for the
+      // NEXT session, and left alone it silently accumulates every session's
+      // history. Archived, never deleted — they are the record of what was
+      // actually discussed. Unticked topics carry over untouched.
+      try {
+        const archived = await topicsApi.archiveDiscussed(supabase);
+        console.log('[Sessions] archived discussed topics:', archived.length);
+      } catch (e) {
+        // A failed archive must not turn a saved session into an error.
+        console.error('[Sessions] archive topics:', e?.message);
+      }
       // The transcript is safely in the database — the audio copy can go now.
       pendingAudioRef.current = null;
       setRecovered(null);

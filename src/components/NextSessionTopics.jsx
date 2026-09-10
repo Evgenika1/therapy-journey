@@ -184,17 +184,19 @@ export default function NextSessionTopics() {
 
       {/* Discussed topics are kept but folded away. They are the record of what
           you did raise, which is worth keeping; they are not what this block is
-          for on a Tuesday morning. */}
+          for on a Tuesday morning. Recording a session archives them, so this
+          fold holds what you have ticked off since — not every session's
+          history. Unticking one puts it back in the list above. */}
       {done.length > 0 && (
         <>
           <button onClick={() => setShowDone(v => !v)}
             style={{ marginTop: pending.length ? 9 : 0, background: 'none', border: 'none', padding: 0, color: MUTED, fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit' }}>
-            {showDone ? 'Hide' : 'Show'} {done.length} discussed
+            ✓ {done.length} done <span style={{ fontSize: 9, opacity: 0.7 }}>{showDone ? '▾' : '▸'}</span>
           </button>
           {showDone && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 7 }}>
               {done.map(topic => (
-                <div key={topic.id} style={{ ...row, opacity: 0.55 }}>
+                <div key={topic.id} style={{ ...row, opacity: 0.5 }}>
                   <button onClick={() => toggle(topic.id, topic.checked)}
                     aria-label={`Move "${topic.text}" back to the list`}
                     style={{ width: 17, height: 17, borderRadius: 5, flexShrink: 0, border: 'none', background: A, color: '#fff', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, padding: 0 }}>✓</button>

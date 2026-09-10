@@ -106,3 +106,34 @@ test('wording that differs only in case or punctuation is the same topic', () =>
   const { toInsert } = reconcileTopics([topicRow(1, 'Страх открыться.')], ['страх открыться']);
   assert.deepEqual(toInsert, []);
 });
+
+// ── archived topics ──────────────────────────────────────────────────────────
+//
+// Archiving happens when a session is recorded: the discussed topics are filed
+// away rather than deleted, so the list starts fresh for the next session while
+// the record of what was raised survives. Re-analysing that session must not
+// undo either half of that — the rows are neither deleted nor proposed again.
+
+const archivedRow = (id, text, extra = {}) =>
+  ({ id, text, checked: false, archived: true, ...extra });
+
+test('an archived topic is never deleted by a re-analysis', () => {
+  // Unchecked and no longer proposed — every reason the old rule had to delete
+  // it — but archived, so it is the record of a session that already happened.
+  const existing = [archivedRow(1, 'вернуться к теме матери')];
+  const { toDelete } = reconcileTopics(existing, ['something else entirely']);
+  assert.deepEqual(toDelete, []);
+});
+
+test('an archived topic is not resurrected when the analysis proposes it again', () => {
+  const existing = [archivedRow(1, 'Страх открыться.')];
+  const { toInsert, toDelete } = reconcileTopics(existing, ['страх открыться']);
+  assert.deepEqual(toInsert, [], 'the archived row already covers this text');
+  assert.deepEqual(toDelete, []);
+});
+
+test('archiving does not stop unrelated stale topics being cleaned up', () => {
+  const existing = [archivedRow(1, 'filed away'), topicRow(2, 'stale suggestion')];
+  const { toDelete } = reconcileTopics(existing, ['a fresh one']);
+  assert.deepEqual(toDelete, [2], 'only the live stale row goes');
+});

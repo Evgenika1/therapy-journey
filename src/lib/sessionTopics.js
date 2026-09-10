@@ -57,8 +57,13 @@ export function reconcileTopics(existing = [], proposed = []) {
   const rows = (Array.isArray(existing) ? existing : []).filter(Boolean);
   const wanted = new Set(proposed.map(normalizeTitle));
 
+  // Archived rows are the record of a session that already happened, so they
+  // are exempt from both halves of the reconciliation: never deleted, and
+  // never proposed again. They stay in `rows` — and therefore in `present`
+  // below — precisely so a re-analysis cannot resurrect one as a "new"
+  // suggestion the user had already filed away.
   const toDelete = rows
-    .filter(r => r.id != null && !r.checked && !wanted.has(normalizeTitle(r.text)))
+    .filter(r => r.id != null && !r.checked && !r.archived && !wanted.has(normalizeTitle(r.text)))
     .map(r => r.id);
 
   const present = new Set(rows.map(r => normalizeTitle(r.text)));
