@@ -145,19 +145,40 @@ test('the specified colours are carried through exactly', () => {
   assert.equal(THEMES.evening.glow, 'rgba(126,168,220,0.20)');
 });
 
-test('only the two morning colours that failed contrast were adjusted', () => {
-  // Pinned because these two are an agreed departure from the design's hexes:
-  // the originals measured 2.47:1 and 2.84:1 against #EEF8F6, under the 3:1
-  // floor for secondary text. Reverting them would re-break legibility.
-  assert.equal(THEMES.morning.textMuted, '#609894'); // spec: #6BA9A5
-  assert.equal(THEMES.morning.accent,    '#299C97'); // spec: #2CA6A0
-  assert.ok(contrast(THEMES.morning.textMuted, THEMES.morning.bg) >= 3);
-  assert.ok(contrast(THEMES.morning.accent,    THEMES.morning.bg) >= 3);
-  // Everything else is exactly as specified.
-  assert.equal(THEMES.day.textMuted,     '#4F827F');
-  assert.equal(THEMES.day.accent,        '#127A76');
-  assert.equal(THEMES.evening.textMuted, '#8A9BBE');
-  assert.equal(THEMES.evening.accent,    '#7EA8DC');
+test('muted text clears the small-text contrast floor in every theme', () => {
+  // This used to pin hexes against a 3:1 floor. 3:1 is the threshold for LARGE
+  // text and UI components; nearly every use of textMuted in the app is small
+  // secondary text — stat captions, dates, empty states, timestamps — and that
+  // needs 4.5:1. The morning value measured 3.27:1 against the surface, so
+  // those labels were failing while the test said they passed.
+  //
+  // Asserting the ratio rather than the hex is the point: it is the property
+  // that matters, and it keeps holding if the hue is ever retuned.
+  for (const [name, t] of Object.entries(THEMES)) {
+    for (const behind of ['bg', 'surface']) {
+      const ratio = contrast(t.textMuted, t[behind]);
+      assert.ok(ratio >= 4.5,
+        `${name} textMuted on ${behind}: ${ratio.toFixed(2)}:1 is under the 4.5:1 small text needs`);
+    }
+  }
+});
+
+test('the accent stays usable for fills, whatever it measures as text', () => {
+  // The accent is a fill colour — buttons, ticks, the checkbox — where 3:1 is
+  // the right floor. It is deliberately NOT held to 4.5:1: where it carries
+  // small text instead, the call site uses accentDeep. See the two dashboard
+  // links in src/app/page.js.
+  for (const [name, t] of Object.entries(THEMES)) {
+    const ratio = contrast(t.accent, t.surface);
+    assert.ok(ratio >= 3, `${name} accent on surface: ${ratio.toFixed(2)}:1`);
+  }
+});
+
+test('accentDeep can carry small text on every background', () => {
+  for (const [name, t] of Object.entries(THEMES)) {
+    const ratio = contrast(t.accentDeep, t.surface);
+    assert.ok(ratio >= 4.5, `${name} accentDeep on surface: ${ratio.toFixed(2)}:1`);
+  }
 });
 
 // ── CSS variables ────────────────────────────────────────────────────────────

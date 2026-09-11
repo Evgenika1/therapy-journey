@@ -14,12 +14,15 @@ export const THEMES = {
     bg:         '#EEF8F6',
     surface:    '#FFFFFF',
     text:       '#0E4F4B',
-    // Deliberately ~6% darker than the #6BA9A5 / #2CA6A0 the design called for.
-    // Against this mode's very pale background those measured 2.47:1 and
-    // 2.84:1, under the 3:1 floor for secondary text. Readability won over the
-    // exact hex — a decision taken with the designer, not a slip to tidy up.
-    // The other two modes needed no adjustment.
-    textMuted:  '#609894',
+    // Darker again, and for the same reason the first adjustment was made: the
+    // earlier pass aimed at a 3:1 floor, which is the threshold for LARGE text
+    // and UI components. Almost every use of this token in the app is small
+    // secondary text — stat captions, dates, empty states — and that needs
+    // 4.5:1. Measured against the worse of the two grounds this text sits on —
+    // the page background, not the card — #609894 came to 3.02:1, so those
+    // labels were failing while the comment said they passed. #4C7976 reaches
+    // 4.51:1 on both; the hue is unchanged.
+    textMuted:  '#4C7976',
     accent:     '#299C97',
     accentDeep: '#127A76',
     glow:       'rgba(95,199,196,0.22)',
@@ -34,7 +37,8 @@ export const THEMES = {
     bg:         '#D9EDEB',
     surface:    '#FFFFFF',
     text:       '#0A3F3D',
-    textMuted:  '#4F827F',
+    // 3.57:1 before — close enough to look fine and still short of the floor.
+    textMuted:  '#44706D',
     accent:     '#127A76',
     accentDeep: '#0A3F3D',
     glow:       'rgba(44,166,160,0.24)',

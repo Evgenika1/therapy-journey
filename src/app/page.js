@@ -255,7 +255,7 @@ export default function HomePage() {
                   onClick={() => setShowAllPairs(v => !v)}
                   style={{
                     marginTop: 10, background: 'none', border: 'none', padding: 0,
-                    color: CORAL, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    color: ACCENT_DEEP, fontSize: 12, fontWeight: 600, cursor: 'pointer',
                     fontFamily: 'inherit',
                   }}>
                   {showAllPairs
@@ -346,7 +346,7 @@ export default function HomePage() {
               </p>
               {(insightClamped || insightOpen) && (
                 <button onClick={() => setInsightOpen(v => !v)}
-                  style={{ marginTop: 7, background: 'none', border: 'none', padding: 0, color: CORAL, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  style={{ marginTop: 7, background: 'none', border: 'none', padding: 0, color: ACCENT_DEEP, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                   {insightOpen ? 'Show less' : 'Show more'}
                 </button>
               )}
