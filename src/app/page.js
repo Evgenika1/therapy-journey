@@ -187,6 +187,79 @@ export default function HomePage() {
             ))}
           </div>
 
+          {/* The primary action of the whole app, so it sits above everything
+              that merely reports on it. It used to come after the Progress
+              section — charts, emotion grid and the session-impact list — which
+              put it off the bottom of the screen on a laptop.
+
+              Above the topics block rather than below it: that list runs to
+              fifteen or twenty rows, and anything after it is below the fold
+              again. */}
+          {/* ── Record card ──────────────────────────────────────────────────── */}
+          <div style={{ background: SURFACE, borderRadius: 14, padding: '18px 22px', marginBottom: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}` }}>
+
+            {/* Session name */}
+            <input
+              value={sessionName}
+              onChange={e => setSessionName(e.target.value)}
+              style={{
+                fontSize: 15, fontWeight: 500, color: TEXT,
+                border: 'none', borderBottom: `1px solid ${BORDER}`,
+                outline: 'none', background: 'transparent',
+                width: '100%', paddingBottom: 6, marginBottom: 16,
+                fontFamily: 'inherit', boxSizing: 'border-box',
+              }}
+            />
+
+            {/* Mood before comes BEFORE the button, because handleStartRecording
+                reads it and then navigates away — a control you must use first has
+                no business sitting under the one that ends the screen.
+
+                Centred to match the mic below it: left-aligned under a centred
+                button, the row read as a mistake. */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 18 }}>
+              <p style={{ fontSize: 10.5, fontWeight: 600, color: MUTED, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.09em', textAlign: 'center' }}>
+                Mood before
+              </p>
+              <div style={{ display: 'flex', gap: 7, justifyContent: 'center' }}>
+                {MOOD_EMOJIS.map((emoji, i) => (
+                  <button key={i} onClick={() => setMoodBefore(moodBefore === i ? null : i)}
+                    style={{
+                      width: 34, height: 34, borderRadius: 9,
+                      border: `1.5px solid ${moodBefore === i ? CORAL : BORDER}`,
+                      background: moodBefore === i ? CORAL + '18' : 'transparent',
+                      fontSize: 17, cursor: 'pointer', transition: 'all 0.1s',
+                    }}>
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Mic button */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+              <button
+                onClick={handleStartRecording}
+                style={{
+                  width: 58, height: 58, borderRadius: '50%',
+                  background: ACCENT_DEEP, border: 'none', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: '0 5px 20px var(--glow)',
+                  transition: 'transform 0.12s, box-shadow 0.12s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.07)'; e.currentTarget.style.boxShadow = '0 10px 34px var(--glow)'; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)';    e.currentTarget.style.boxShadow = '0 6px 26px var(--glow)'; }}
+              >
+                <svg width="23" height="23" viewBox="0 0 24 24" fill="none">
+                  <rect x="9" y="2" width="6" height="12" rx="3" fill="white"/>
+                  <path d="M5 10a7 7 0 0 0 14 0" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <line x1="12" y1="17" x2="12" y2="21" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <line x1="8"  y1="21" x2="16" y2="21" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+              </button>
+              <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>Tap to begin your therapy session</p>
+            </div>
+          </div>
+
           <NextSessionTopics />
 
           {/* ── Progress ──────────────────────────────────────────────────────
@@ -265,67 +338,6 @@ export default function HomePage() {
               )}
             </div>
           </section>
-
-          {/* ── Record card ──────────────────────────────────────────────────── */}
-          <div style={{ background: SURFACE, borderRadius: 14, padding: '18px 22px', marginBottom: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}` }}>
-
-            {/* Session name */}
-            <input
-              value={sessionName}
-              onChange={e => setSessionName(e.target.value)}
-              style={{
-                fontSize: 15, fontWeight: 500, color: TEXT,
-                border: 'none', borderBottom: `1px solid ${BORDER}`,
-                outline: 'none', background: 'transparent',
-                width: '100%', paddingBottom: 6, marginBottom: 16,
-                fontFamily: 'inherit', boxSizing: 'border-box',
-              }}
-            />
-
-            {/* Mic button */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-              <button
-                onClick={handleStartRecording}
-                style={{
-                  width: 58, height: 58, borderRadius: '50%',
-                  background: ACCENT_DEEP, border: 'none', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: '0 5px 20px var(--glow)',
-                  transition: 'transform 0.12s, box-shadow 0.12s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.07)'; e.currentTarget.style.boxShadow = '0 10px 34px var(--glow)'; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)';    e.currentTarget.style.boxShadow = '0 6px 26px var(--glow)'; }}
-              >
-                <svg width="23" height="23" viewBox="0 0 24 24" fill="none">
-                  <rect x="9" y="2" width="6" height="12" rx="3" fill="white"/>
-                  <path d="M5 10a7 7 0 0 0 14 0" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <line x1="12" y1="17" x2="12" y2="21" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <line x1="8"  y1="21" x2="16" y2="21" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                </svg>
-              </button>
-              <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>Tap to begin your therapy session</p>
-            </div>
-
-            {/* Mood before */}
-            <div>
-              <p style={{ fontSize: 10.5, fontWeight: 600, color: MUTED, margin: '0 0 7px', textTransform: 'uppercase', letterSpacing: '0.09em' }}>
-                Mood before
-              </p>
-              <div style={{ display: 'flex', gap: 7 }}>
-                {MOOD_EMOJIS.map((emoji, i) => (
-                  <button key={i} onClick={() => setMoodBefore(moodBefore === i ? null : i)}
-                    style={{
-                      width: 34, height: 34, borderRadius: 9,
-                      border: `1.5px solid ${moodBefore === i ? CORAL : BORDER}`,
-                      background: moodBefore === i ? CORAL + '18' : 'transparent',
-                      fontSize: 17, cursor: 'pointer', transition: 'all 0.1s',
-                    }}>
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
 
           {/* ── Latest AI Insight ─────────────────────────────────────────────── */}
           {latestInsight ? (
