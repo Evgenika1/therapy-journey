@@ -136,14 +136,20 @@ export default function HomeworkPage() {
 
           {done.length > 0 && (
             <div>
+              {/* Completed tasks were MUTED at 0.55 opacity, which measured 1.82 / 2.06 /
+                  2.61 against the 4.5:1 this size needs — effectively invisible on the
+                  morning background. MUTED is tuned as 3:1 secondary text (see
+                  timeTheme.js); dimming it further is never safe. Body colour at 0.75
+                  reads as finished without being unreadable, and the tick keeps its
+                  full accent. */}
               <p style={{ fontSize: 12, fontWeight: 600, color: MUTED, margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Completed ({done.length})</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {done.map(item => (
-                  <div key={item.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, opacity: 0.55 }}>
+                  <div key={item.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
                     <button onClick={() => toggle(item.id, item.completed)}
                       style={{ width: 22, height: 22, borderRadius: 6, border: 'none', background: A, color: '#fff', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, flexShrink: 0 }}>✓</button>
                     <div style={{ flex: 1 }}>
-                      <p style={{ fontSize: 15, color: MUTED, margin: 0, textDecoration: 'line-through' }}>{item.title}</p>
+                      <p style={{ fontSize: 15, color: TEXT, opacity: 0.75, margin: 0, textDecoration: 'line-through' }}>{item.title}</p>
                     </div>
                     <button onClick={() => del(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTED, fontSize: 18, opacity: 0.5 }}>×</button>
                   </div>

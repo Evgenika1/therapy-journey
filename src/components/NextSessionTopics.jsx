@@ -251,7 +251,13 @@ export default function NextSessionTopics() {
         </>
       )}
 
-      {/* The archive: what past sessions actually raised. Collapsed by default —
+      {/* The entry point is body colour at full strength, not MUTED: it sits
+          below a list that is often fifteen or twenty rows long, and a small
+          grey line at the bottom of that is not something anyone finds. MUTED
+          measures 3.27:1 in the morning palette — fine for a caption nobody
+          hunts for, wrong for the only way into this section.
+
+          The archive: what past sessions actually raised. Collapsed by default —
           it is a record to look back on, not part of the daily job of the
           block. Nothing is shown at all until there is something in it.
 
@@ -269,8 +275,8 @@ export default function NextSessionTopics() {
       {archiveGroups.length > 0 && (
         <>
           <button onClick={() => setShowArchived(v => !v)}
-            style={{ marginTop: pending.length ? 10 : 0, background: 'none', border: 'none', padding: 0, color: MUTED, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>
-            Past topics · {archived.length} <span style={{ fontSize: 9, opacity: 0.7 }}>{showArchived ? '▾' : '▸'}</span>
+            style={{ marginTop: pending.length ? 12 : 0, background: 'none', border: 'none', padding: 0, color: TEXT, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Past topics · {archived.length} <span style={{ fontSize: 10, color: A }}>{showArchived ? '▾' : '▸'}</span>
           </button>
 
           {showArchived && (
@@ -284,7 +290,7 @@ export default function NextSessionTopics() {
                         history you occasionally go looking through. */}
                     <button onClick={() => toggleDay(group)}
                       aria-expanded={open}
-                      style={{ background: 'none', border: 'none', padding: 0, margin: '0 0 6px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                      style={{ background: 'none', border: 'none', padding: 0, margin: '0 0 6px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
                       {dayLabel(group)} <span style={{ fontSize: 9, opacity: 0.7 }}>{open ? '▾' : '▸'}</span>
                     </button>
 
