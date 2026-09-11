@@ -251,11 +251,12 @@ export default function NextSessionTopics() {
         </>
       )}
 
-      {/* The entry point is body colour at full strength, not MUTED: it sits
-          below a list that is often fifteen or twenty rows long, and a small
-          grey line at the bottom of that is not something anyone finds. MUTED
-          measures 3.27:1 in the morning palette — fine for a caption nobody
-          hunts for, wrong for the only way into this section.
+      {/* The way in is a full-width row, not a line of text. Colour and weight
+          were not enough on their own: at 13px among topics also set at 13px it
+          still read as a caption, and it sits below a list that often runs to
+          fifteen or twenty rows. Borrowing the topic rows' own frame — same
+          background, border and radius — makes it obviously a thing you press,
+          and the explicit Show/Hide in the accent says what pressing it does.
 
           The archive: what past sessions actually raised. Collapsed by default —
           it is a record to look back on, not part of the daily job of the
@@ -275,8 +276,20 @@ export default function NextSessionTopics() {
       {archiveGroups.length > 0 && (
         <>
           <button onClick={() => setShowArchived(v => !v)}
-            style={{ marginTop: pending.length ? 12 : 0, background: 'none', border: 'none', padding: 0, color: TEXT, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
-            Past topics · {archived.length} <span style={{ fontSize: 10, color: A }}>{showArchived ? '▾' : '▸'}</span>
+            aria-expanded={showArchived}
+            style={{
+              marginTop: pending.length ? 14 : 0, width: '100%',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              background: BG, border: `1px solid ${BORDER}`, borderRadius: 9,
+              padding: '10px 12px', cursor: 'pointer', fontFamily: 'inherit',
+              fontSize: 13.5, fontWeight: 600, color: TEXT, textAlign: 'left',
+            }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = A}
+            onMouseLeave={e => e.currentTarget.style.borderColor = BORDER}>
+            <span>Past topics · {archived.length}</span>
+            <span style={{ color: A, fontSize: 12, fontWeight: 500 }}>
+              {showArchived ? 'Hide ▾' : 'Show ▸'}
+            </span>
           </button>
 
           {showArchived && (
