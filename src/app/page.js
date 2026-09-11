@@ -168,7 +168,11 @@ export default function HomePage() {
           </div>
 
           {/* ── Stat cards ───────────────────────────────────────────────────── */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 18 }}>
+          {/* auto-fit, not a hard count: this was repeat(4, 1fr) and adding a fifth
+              card dropped it onto a row of its own at a quarter width. Letting the
+              track count follow the container also means the row reflows on a
+              narrow window instead of overflowing. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, marginBottom: 18 }}>
             {STAT_CARDS.map(({ label, value, color }) => (
               <div key={label} style={{
                 background: SURFACE,
