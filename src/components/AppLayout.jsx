@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
+import { useState, useEffect } from 'react';
+import { amIAdmin } from '@/lib/usageClient';
 
 const NAV = [
   { href: '/',             label: 'Dashboard'    },
@@ -22,6 +24,16 @@ export default function AppLayout({ children }) {
   const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL } = useTheme();
   const { supabase, user } = useAuth();
   const pathname = usePathname();
+
+  // The usage page is reachable by URL either way — the fence is the RLS policy
+  // on usage_events, not this link. Hiding it only keeps a page that is useless
+  // to most accounts out of everyone else's sidebar.
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    if (supabase) amIAdmin(supabase).then(setIsAdmin).catch(() => {});
+  }, [supabase]);
+
+  const links = isAdmin ? [...NAV, { href: '/admin', label: 'Usage' }] : NAV;
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -59,7 +71,7 @@ export default function AppLayout({ children }) {
 
         {/* Nav links */}
         <div style={{ flex: 1, padding: '8px 0' }}>
-          {NAV.map(({ href, label }) => {
+          {links.map(({ href, label }) => {
             const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
             return (
               <Link key={href} href={href}
