@@ -1,6 +1,7 @@
 import './globals.css';
 import { ThemeProvider } from '@/lib/ThemeContext';
 import { AuthProvider } from '@/components/AuthProvider';
+import MobileGate from '@/components/MobileGate';
 
 export const metadata = {
   title: 'Miru — Therapy Journal',
@@ -16,11 +17,14 @@ export default function RootLayout({ children }) {
         <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Fraunces:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Shippori+Mincho:wght@400;500;600&display=swap" rel="stylesheet" />
       </head>
       <body style={{ margin: 0, padding: 0 }}>
-        <ThemeProvider>
-          <AuthProvider>
-            {children}
-          </AuthProvider>
-        </ThemeProvider>
+        <div className="app-shell">
+          <ThemeProvider>
+            <AuthProvider>
+              {children}
+            </AuthProvider>
+          </ThemeProvider>
+        </div>
+        <MobileGate />
       </body>
     </html>
   );

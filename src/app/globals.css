@@ -100,6 +100,17 @@ body {
   .sessions-back { display: flex; }
 }
 
+/* ── Phones: the app is replaced by a "coming soon" screen ─────────────────────
+   Same 800px line as the sessions page above. Pure CSS so the right screen is
+   in the very first paint — see MobileGate.jsx. The rules for the gate's own
+   look sit after :root below, because they read the theme tokens. */
+.mobile-gate { display: none; }
+
+@media (max-width: 800px) {
+  .app-shell   { display: none; }
+  .mobile-gate { display: flex; }
+}
+
 /* ── Design refresh: time-of-day palette, serif headings, ritual glow ─────────
    The colour tokens are written onto :root by src/lib/timeTheme.js at load and
    re-checked every ten minutes, so a session that starts in daylight and ends
@@ -200,3 +211,83 @@ h1 em, h2 em, .serif-em { font-style: italic; font-weight: 400; }
    flex item does not do by default. */
 .dash-charts > :first-child { flex: 1 1 320px; min-width: 0; }
 .dash-charts > :last-child  { flex: 0 0 auto; }
+
+/* ── Mobile gate look ─────────────────────────────────────────────────────────
+   Visibility is decided near the top of this file; this is only appearance.
+   Colours come from the theme tokens, so the screen follows the time-of-day
+   palette like the rest of the app. */
+.mobile-gate {
+  min-height: 100vh;
+  min-height: 100dvh;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+
+.mobile-gate-inner {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Smaller than the headline and in the accent colour: both are set in Fraunces
+   and the headline repeats the name, so at similar sizes the two read as one
+   block of text rather than a mark above a sentence. */
+.mobile-gate-logo {
+  font-family: "Fraunces", var(--font-serif);
+  font-style: italic;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.mobile-gate-title {
+  margin: 28px 0 0;
+  font-family: "Fraunces", var(--font-serif);
+  font-weight: 400;
+  font-size: 36px;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+.mobile-gate-title em { font-style: italic; color: var(--accent); }
+
+.mobile-gate-text {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.mobile-gate-stores {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+/* Not buttons: nothing happens on tap yet, so they must not look pressable. */
+.mobile-gate-store {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background-color: var(--surface);
+}
+.mobile-gate-store-name { font-size: 17px; font-weight: 600; }
+.mobile-gate-soon {
+  order: 2;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
