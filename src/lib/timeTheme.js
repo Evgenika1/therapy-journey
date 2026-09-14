@@ -1,10 +1,14 @@
-// The palette is chosen by the time of day on the user's own device — there is
-// no manual light/dark switch any more. Morning is pale and cool, midday is
-// saturated, and from late afternoon the app turns dark for evening sessions.
+// The palette follows the sun on the user's own day — there is no manual
+// light/dark switch. Morning is pale and cool, midday is saturated, the two
+// hours before sunset turn lavender, and the app only goes dark once the sun
+// is down: soft indigo at dusk, deep indigo at night.
 //
-// Pure functions only: no React, no DOM, no clock of its own. The hour is always
-// passed in, which is what makes the boundaries and the contrast of every mode
-// testable.
+// It used to switch to dark at a fixed 17:00, which in September meant two and
+// a half hours of night palette in full daylight, and in June over four.
+//
+// Pure functions only: no React, no DOM, no clock of its own. The date or hour
+// is always passed in, which is what makes the boundaries and the contrast of
+// every mode testable.
 
 // Derived tokens (border, nav tint, ok/err) are picked per mode rather than
 // shared, because a single set cannot stay legible on both #EEF8F6 and #0C3835.
@@ -48,12 +52,48 @@ export const THEMES = {
     err:        '#A01B14',
     isDark:     false,
   },
-  // Evening is indigo, not a darkened version of the daytime teal: night has a
+  // The two hours before sunset. Lavender rather than a dimmed teal: the light
+  // is already cooling towards the indigo that follows, so the step to dusk is
+  // a change of depth, not of hue. Chosen from three options in a preview.
+  // Every value clears 4.5:1 on both grounds.
+  afternoon: {
+    period:     'afternoon',
+    bg:         '#E2E2EE',
+    surface:    '#F8F8FC',
+    text:       '#232A45',
+    textMuted:  '#555B78',
+    accent:     '#4658A0',
+    accentDeep: '#3A4A8C',
+    glow:       'rgba(120,130,200,0.20)',
+    border:     '#C9CADD',
+    navActive:  '#D6D7E8',
+    ok:         '#2C6B48',
+    err:        '#A3301F',
+    isDark:     false,
+  },
+  // From sunset for an hour and a half: the first dark palette, lighter than
+  // night, with the warm accent of the afterglow.
+  dusk: {
+    period:     'dusk',
+    bg:         '#2B3246',
+    surface:    '#363F57',
+    text:       '#F0EEF3',
+    textMuted:  '#AEB3C8',
+    accent:     '#EDB88F',
+    accentDeep: '#EDB88F',
+    glow:       'rgba(237,184,143,0.18)',
+    border:     '#4A5470',
+    navActive:  '#404A64',
+    ok:         '#86D9B2',
+    err:        '#FFA9A0',
+    isDark:     true,
+  },
+  // Night is indigo, not a darkened version of the daytime teal: night has a
   // different temperature. Measured on this background, every value clears 4.5:1
   // — body text 14.85:1, muted 6.13:1, accent 6.95:1 — so nothing needed
   // adjusting the way the morning palette did.
-  evening: {
-    period:     'evening',
+  night: {
+    period:     'night',
     bg:         '#141B2E',
     surface:    '#1E2740',
     text:       '#EAEFF8',
@@ -74,22 +114,82 @@ export const THEMES = {
   },
 };
 
-// 5:00–11:00 morning · 11:00–17:00 day · 17:00–5:00 evening/night.
-export function periodForHour(hour) {
-  const h = Number(hour);
-  if (!Number.isFinite(h)) return 'day';
-  const n = ((Math.floor(h) % 24) + 24) % 24; // tolerate 25, -1, 23.9
-  if (n >= 5 && n < 11) return 'morning';
-  if (n >= 11 && n < 17) return 'day';
-  return 'evening';
+// ── The sun ──────────────────────────────────────────────────────────────────
+//
+// Sunrise and sunset are estimated, not looked up: asking a therapy journal's
+// user for their location to pick colours is not a trade worth making. The
+// estimate assumes a latitude of 50°N (Central Europe) and that solar noon sits
+// at 12:00 standard time, so it can be half an hour out — further for someone
+// far north or south, or at the edge of a wide timezone. For a colour change
+// that is close enough; for anything that must be exact it is not.
+
+export const REFERENCE_LATITUDE = 50;
+
+const RAD = Math.PI / 180;
+
+// Local clock hours (e.g. 19.5 for 19:30) of sunrise and sunset on a day of the
+// year, given how many hours the clock is shifted for summer time.
+export function sunTimesFor(dayOfYear, summerShiftHours = 0) {
+  const n = Number(dayOfYear);
+  const phi = REFERENCE_LATITUDE * RAD;
+  const decl = -23.44 * RAD * Math.cos((2 * Math.PI / 365) * (n + 10));
+  // -0.833° puts sunrise and sunset where the sun's upper edge meets the
+  // horizon, allowing for refraction, which is when it looks up or down.
+  const cosH = (Math.sin(-0.833 * RAD) - Math.sin(phi) * Math.sin(decl))
+             / (Math.cos(phi) * Math.cos(decl));
+  const halfDay = Math.acos(Math.min(1, Math.max(-1, cosH))) / RAD / 15;
+
+  // Equation of time, in minutes: the sun runs up to ~16 minutes ahead of or
+  // behind the clock over the year.
+  const b = (2 * Math.PI / 364) * (n - 81);
+  const eot = 9.87 * Math.sin(2 * b) - 7.53 * Math.cos(b) - 1.5 * Math.sin(b);
+
+  const noon = 12 + summerShiftHours - eot / 60;
+  return { sunrise: noon - halfDay, sunset: noon + halfDay };
 }
 
-export function themeForHour(hour) {
-  return THEMES[periodForHour(hour)];
+// The same, read from a Date in the device's own timezone. Summer time is the
+// difference between the offset on that date and the smaller of the January
+// and July offsets, which is standard time in either hemisphere.
+export function sunTimes(date = new Date()) {
+  const y = date.getFullYear();
+  const dayOfYear = Math.round((new Date(y, date.getMonth(), date.getDate()) - new Date(y, 0, 0)) / 86400000);
+  const offset = d => -d.getTimezoneOffset();
+  const standard = Math.min(offset(new Date(y, 0, 1)), offset(new Date(y, 6, 1)));
+  return sunTimesFor(dayOfYear, (offset(date) - standard) / 60);
+}
+
+// ── Stages ───────────────────────────────────────────────────────────────────
+//
+//   night      until sunrise
+//   morning    sunrise – 11:00
+//   day        11:00 – two hours before sunset
+//   afternoon  two hours before sunset – sunset
+//   dusk       sunset – an hour and a half after
+//   night      after that
+//
+// At 50°N sunrise is always before 11:00 and sunset always more than two hours
+// after it, so the stages never overlap; the tests walk every day of the year.
+export const MORNING_ENDS = 11;
+export const AFTERNOON_HOURS = 2;
+export const DUSK_HOURS = 1.5;
+
+export function periodFor(hour, sun) {
+  const h = Number(hour);
+  const { sunrise, sunset } = sun || {};
+  if (![h, sunrise, sunset].every(Number.isFinite)) return 'day';
+  const t = ((h % 24) + 24) % 24;
+  if (t < sunrise) return 'night';
+  if (t < MORNING_ENDS) return 'morning';
+  if (t < sunset - AFTERNOON_HOURS) return 'day';
+  if (t < sunset) return 'afternoon';
+  if (t < sunset + DUSK_HOURS) return 'dusk';
+  return 'night';
 }
 
 export function themeForDate(date = new Date()) {
-  return themeForHour(date.getHours());
+  const hour = date.getHours() + date.getMinutes() / 60;
+  return THEMES[periodFor(hour, sunTimes(date))];
 }
 
 // The same tokens as CSS custom properties, so stylesheet rules (headings,

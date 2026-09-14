@@ -1,12 +1,13 @@
-// The palette is picked from the device clock, so nobody ever sees a "wrong"
-// mode they can correct by hand — which makes the boundaries and the legibility
-// of all three modes worth pinning down rather than eyeballing.
+// The palette follows the sun, estimated from the date and the device clock, so
+// nobody ever sees a "wrong" mode they can correct by hand — which makes the
+// boundaries and the legibility of all five modes worth pinning down rather
+// than eyeballing.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  THEMES, periodForHour, themeForHour, themeForDate, cssVars, applyTheme, THEME_REFRESH_MS,
+  THEMES, sunTimesFor, sunTimes, periodFor, themeForDate, cssVars, applyTheme, THEME_REFRESH_MS,
 } from '../src/lib/timeTheme.js';
 
 // ── WCAG relative luminance / contrast ratio ─────────────────────────────────
@@ -25,42 +26,106 @@ function contrast(a, b) {
   return (l1 + 0.05) / (l2 + 0.05);
 }
 
+// ── the sun ──────────────────────────────────────────────────────────────────
+
+// Hours as h + m/60, so a failure message reads as a clock time.
+const at = (h, m = 0) => h + m / 60;
+
+test('mid-September: sunset around half past seven, not at five', () => {
+  // 14 September is day 257; Central Europe is on summer time (+1h).
+  const { sunrise, sunset } = sunTimesFor(257, 1);
+  assert.ok(sunset > at(18, 50) && sunset < at(19, 50), `sunset ${sunset}`);
+  assert.ok(sunrise > at(6, 10) && sunrise < at(7, 10), `sunrise ${sunrise}`);
+});
+
+test('the evening moves with the seasons', () => {
+  const december = sunTimesFor(355, 0);   // 21 Dec, winter time
+  const june     = sunTimesFor(172, 1);   // 21 Jun, summer time
+  assert.ok(december.sunset < at(16, 45), `December sunset ${december.sunset}`);
+  assert.ok(june.sunset > at(21, 0), `June sunset ${june.sunset}`);
+  assert.ok(december.sunrise > at(7, 45), `December sunrise ${december.sunrise}`);
+  assert.ok(june.sunrise < at(5, 30), `June sunrise ${june.sunrise}`);
+});
+
+test('the summer-time shift moves the sun on the clock by exactly one hour', () => {
+  const winter = sunTimesFor(257, 0);
+  const summer = sunTimesFor(257, 1);
+  assert.ok(Math.abs(summer.sunset - winter.sunset - 1) < 1e-9);
+});
+
+test('sunTimes reads the day of year and summer time from a Date', () => {
+  const d = new Date(2026, 8, 14, 12);
+  const jan = -new Date(2026, 0, 1).getTimezoneOffset();
+  const jul = -new Date(2026, 6, 1).getTimezoneOffset();
+  const shift = (-d.getTimezoneOffset() - Math.min(jan, jul)) / 60;
+  assert.deepEqual(sunTimes(d), sunTimesFor(257, shift));
+});
+
 // ── boundaries ───────────────────────────────────────────────────────────────
 
-test('the day is split at 5:00, 11:00 and 17:00', () => {
-  assert.equal(periodForHour(5),  'morning');
-  assert.equal(periodForHour(10), 'morning');
-  assert.equal(periodForHour(11), 'day');
-  assert.equal(periodForHour(16), 'day');
-  assert.equal(periodForHour(17), 'evening');
-  assert.equal(periodForHour(23), 'evening');
-  assert.equal(periodForHour(0),  'evening');
-  assert.equal(periodForHour(4),  'evening');
+const SEPT = { sunrise: at(7), sunset: at(19, 30) };
+
+test('five stages, anchored to sunrise, 11:00 and sunset', () => {
+  assert.equal(periodFor(at(6, 59), SEPT), 'night');
+  assert.equal(periodFor(at(7),     SEPT), 'morning');
+  assert.equal(periodFor(at(10, 59), SEPT), 'morning');
+  assert.equal(periodFor(at(11),    SEPT), 'day');
+  assert.equal(periodFor(at(17, 29), SEPT), 'day');
+  assert.equal(periodFor(at(17, 30), SEPT), 'afternoon');  // sunset − 2h
+  assert.equal(periodFor(at(19, 29), SEPT), 'afternoon');
+  assert.equal(periodFor(at(19, 30), SEPT), 'dusk');       // sunset
+  assert.equal(periodFor(at(20, 59), SEPT), 'dusk');
+  assert.equal(periodFor(at(21),    SEPT), 'night');       // sunset + 1.5h
+  assert.equal(periodFor(at(23, 59), SEPT), 'night');
+  assert.equal(periodFor(0,         SEPT), 'night');
 });
 
-test('every hour of the day maps to exactly one mode', () => {
-  const seen = {};
-  for (let h = 0; h < 24; h++) {
-    const p = periodForHour(h);
-    assert.ok(THEMES[p], `hour ${h} produced unknown period ${p}`);
-    seen[p] = (seen[p] || 0) + 1;
+test('the reported bug: 17:19 on a sunny September afternoon is not dark', () => {
+  // The estimated sunset that day is ~19:13, so 17:19 is already the lavender
+  // stage. Which light stage it is matters less than the fact it is light: the
+  // old fixed 17:00 boundary had turned the app to night by then.
+  const sun = sunTimesFor(257, 1);
+  const period = periodFor(at(17, 19), sun);
+  assert.equal(THEMES[period].isDark, false, `17:19 gave ${period}`);
+  assert.equal(THEMES[periodFor(at(19, 0), sun)].isDark, false, 'still light just before sunset');
+});
+
+test('a December evening still turns dark early', () => {
+  const sun = sunTimesFor(355, 0);
+  assert.equal(THEMES[periodFor(at(17, 0), sun)].isDark, true);
+});
+
+test('every quarter hour of every day of the year maps to a stage, in order', () => {
+  const ORDER = ['night', 'morning', 'day', 'afternoon', 'dusk', 'night'];
+  for (const shift of [0, 1]) {
+    for (let day = 1; day <= 365; day++) {
+      const sun = sunTimesFor(day, shift);
+      let step = 0;
+      for (let q = 0; q < 96; q++) {
+        const p = periodFor(q / 4, sun);
+        assert.ok(THEMES[p], `day ${day} ${q / 4}h: unknown period ${p}`);
+        // Only ever stays or moves forward through the day's sequence.
+        while (ORDER[step] !== p) {
+          step++;
+          assert.ok(step < ORDER.length, `day ${day} ${q / 4}h: ${p} is out of order`);
+        }
+      }
+    }
   }
-  assert.deepEqual(seen, { morning: 6, day: 6, evening: 12 });
 });
 
-test('a nonsense hour falls back instead of crashing the app', () => {
-  assert.equal(periodForHour(NaN), 'day');
-  assert.equal(periodForHour(undefined), 'day');
-  assert.equal(periodForHour(25), 'evening');  // 25 wraps to 01:00
-  assert.equal(periodForHour(-1), 'evening');  // -1 → 23:00
-  assert.equal(periodForHour(11.9), 'day');    // fractional hours floor
+test('a nonsense hour or sun falls back to day instead of crashing the app', () => {
+  assert.equal(periodFor(NaN, SEPT), 'day');
+  assert.equal(periodFor(undefined, SEPT), 'day');
+  assert.equal(periodFor(at(12), undefined), 'day');
+  assert.equal(periodFor(at(12), { sunrise: NaN, sunset: NaN }), 'day');
 });
 
-test('themeForDate reads the local hour', () => {
-  const evening = new Date(); evening.setHours(21, 0, 0, 0);
-  const morning = new Date(); morning.setHours(8, 0, 0, 0);
-  assert.equal(themeForDate(evening).period, 'evening');
-  assert.equal(themeForDate(morning).period, 'morning');
+test('themeForDate follows the sun for the given date', () => {
+  const summerNoon = new Date(2026, 5, 21, 12, 0);
+  const winterNight = new Date(2026, 11, 21, 22, 0);
+  assert.equal(themeForDate(summerNoon).period, 'day');
+  assert.equal(themeForDate(winterNight).period, 'night');
 });
 
 // ── contrast: the point of the whole exercise ────────────────────────────────
@@ -99,7 +164,7 @@ test('the accent is legible as text and as a button background', () => {
     const label = contrast(t.accent, t.surface);
     assert.ok(label >= 3, `${name}: accent label on surface is ${label.toFixed(2)}:1, below 3`);
     // accentDeep is the filled-button colour; its label is white in light modes
-    // and the dark background in the evening mode.
+    // and the dark background in the dark modes.
     const buttonText = t.isDark ? t.bg : '#FFFFFF';
     const onButton = contrast(buttonText, t.accentDeep);
     assert.ok(onButton >= 4.5,
@@ -123,12 +188,21 @@ test('status colours stay readable on their own mode', () => {
   }
 });
 
-test('the evening mode is actually dark and the daytime ones are not', () => {
-  assert.equal(THEMES.evening.isDark, true);
-  assert.equal(THEMES.morning.isDark, false);
-  assert.equal(THEMES.day.isDark, false);
-  assert.ok(luminance(THEMES.evening.bg) < 0.1, 'evening background should be dark');
+test('light until sunset, dark after it', () => {
+  assert.deepEqual(Object.keys(THEMES).sort(), ['afternoon', 'day', 'dusk', 'morning', 'night']);
+  for (const name of ['morning', 'day', 'afternoon']) {
+    assert.equal(THEMES[name].isDark, false, name);
+    assert.ok(luminance(THEMES[name].bg) > 0.5, `${name} background should be light`);
+  }
+  for (const name of ['dusk', 'night']) {
+    assert.equal(THEMES[name].isDark, true, name);
+    assert.ok(luminance(THEMES[name].bg) < 0.1, `${name} background should be dark`);
+  }
   assert.ok(luminance(THEMES.morning.bg) > 0.7, 'morning background should be pale');
+});
+
+test('every theme names its own period', () => {
+  for (const [name, t] of Object.entries(THEMES)) assert.equal(t.period, name);
 });
 
 // ── the palette the spec asked for, unchanged ────────────────────────────────
@@ -138,11 +212,14 @@ test('the specified colours are carried through exactly', () => {
   assert.equal(THEMES.morning.accentDeep, '#127A76');
   assert.equal(THEMES.day.bg, '#D9EDEB');
   assert.equal(THEMES.day.text, '#0A3F3D');
-  assert.equal(THEMES.evening.bg, '#141B2E');
-  assert.equal(THEMES.evening.surface, '#1E2740');
-  assert.equal(THEMES.evening.text, '#EAEFF8');
-  assert.equal(THEMES.evening.accent, '#7EA8DC');
-  assert.equal(THEMES.evening.glow, 'rgba(126,168,220,0.20)');
+  assert.equal(THEMES.night.bg, '#141B2E');
+  assert.equal(THEMES.night.surface, '#1E2740');
+  assert.equal(THEMES.night.text, '#EAEFF8');
+  assert.equal(THEMES.night.accent, '#7EA8DC');
+  assert.equal(THEMES.night.glow, 'rgba(126,168,220,0.20)');
+  // Chosen from the preview: lavender before sunset, soft indigo after it.
+  assert.equal(THEMES.afternoon.bg, '#E2E2EE');
+  assert.equal(THEMES.dusk.bg, '#2B3246');
 });
 
 test('muted text clears the small-text contrast floor in every theme', () => {
@@ -184,7 +261,7 @@ test('accentDeep can carry small text on every background', () => {
 // ── CSS variables ────────────────────────────────────────────────────────────
 
 test('every token is exported as a CSS variable', () => {
-  const vars = cssVars(THEMES.evening);
+  const vars = cssVars(THEMES.night);
   assert.equal(vars['--bg'], '#141B2E');
   assert.equal(vars['--accent-deep'], '#7EA8DC');
   assert.equal(vars['--glow'], 'rgba(126,168,220,0.20)');
@@ -200,8 +277,8 @@ test('applyTheme writes the variables and marks the period', () => {
   assert.equal(fakeRoot.dataset.period, 'morning');
   assert.equal(fakeRoot.style.colorScheme, 'light');
 
-  applyTheme(THEMES.evening, fakeRoot);
-  assert.equal(fakeRoot.dataset.period, 'evening');
+  applyTheme(THEMES.night, fakeRoot);
+  assert.equal(fakeRoot.dataset.period, 'night');
   assert.equal(fakeRoot.style.colorScheme, 'dark');
 });
 

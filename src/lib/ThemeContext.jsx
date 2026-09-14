@@ -2,8 +2,8 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { themeForDate, applyTheme, THEME_REFRESH_MS } from '@/lib/timeTheme';
 
-// The palette follows the device clock — morning, day, evening — instead of a
-// manual light/dark switch. The token names below are the ones the pages have
+// The palette follows the sun — morning, day, afternoon, dusk, night — instead
+// of a manual light/dark switch (see timeTheme.js). The token names below are the ones the pages have
 // always consumed (BG, SURFACE, CORAL…), so every existing screen keeps working
 // unchanged; only where those tokens point has changed.
 function tokens(t) {
