@@ -90,7 +90,7 @@ export default function JournalsPage() {
         <div style={{ padding: 32, maxWidth: 860, margin: '0 auto' }}>
           <div style={{ marginBottom: 32 }}>
             <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 32, fontWeight: 300, color: TEXT, margin: '0 0 4px' }}>Journals</h1>
-            <p style={{ fontSize: 15, color: MUTED, margin: 0 }}>Structured journaling for therapy</p>
+            <p style={{ fontSize: 15, color: MUTED, margin: 0 }}>Structured journaling between sessions</p>
           </div>
 
           {/* Type selector */}
