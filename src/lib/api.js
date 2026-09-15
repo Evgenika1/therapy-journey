@@ -3,6 +3,8 @@
  * Data is protected by Supabase row-level security and server-side encryption at rest.
  */
 
+import { normalizeKind } from './sessionKind.js';
+
 // Normalizes an emotion_logs row into the shape the UI expects:
 // `category`, `emotion_name` (display string) and a `sub_emotions` array.
 // Handles both the new format (emotion = category, sub_emotions = [...])
@@ -37,8 +39,11 @@ function updatedRow(data, what) {
 const isMissingColumn = (e) => e?.code === '42703' || e?.code === 'PGRST204';
 
 function missingColumnName(e) {
-  const m = String(e?.message || '').match(/["'`]([a-z_][a-z0-9_]*)["'`]/i);
-  return m ? m[1] : null;
+  const msg = String(e?.message || '');
+  const quoted = msg.match(/["'`]([a-z_][a-z0-9_]*)["'`]/i);
+  if (quoted) return quoted[1];
+  const dotted = msg.match(/column\s+[a-z_][a-z0-9_]*\.([a-z_][a-z0-9_]*)/i);
+  return dotted ? dotted[1] : null;
 }
 
 function toError(supabaseError) {
@@ -69,19 +74,24 @@ export const sessions = {
     const { data: { user } } = await supabase.auth.getUser();
     console.log('[Save] auth user:', user?.id);
     if (!user) throw new Error('Not signed in — cannot save session.');
-    const { data, error } = await supabase
-      .from('sessions')
-      .insert({
-        user_id:     user.id,
-        title:       session.title       || null,
-        duration:    session.duration    ?? null,
-        mood_before: session.mood_before ?? null,
-        mood_after:  session.mood_after  ?? null,
-        ai_analysis: session.ai_analysis || null,
-        transcript:  session.transcript  || null,
-        notes:       session.notes       || null,
-      })
-      .select();
+    const insert = {
+      user_id:     user.id,
+      title:       session.title       || null,
+      duration:    session.duration    ?? null,
+      mood_before: session.mood_before ?? null,
+      mood_after:  session.mood_after  ?? null,
+      ai_analysis: session.ai_analysis || null,
+      transcript:  session.transcript  || null,
+      notes:       session.notes       || null,
+      kind:        normalizeKind(session.kind),
+    };
+    let { data, error } = await supabase.from('sessions').insert(insert).select();
+    // Migration 023 adds kind. Without it every row is therapy anyway, so a
+    // recording must not be lost for want of a column that says so.
+    if (error && isMissingColumn(error) && missingColumnName(error) === 'kind') {
+      delete insert.kind;
+      ({ data, error } = await supabase.from('sessions').insert(insert).select());
+    }
     console.log('[Save] result data:', data, 'error:', error);
     if (error) throw toError(error);
     if (!data || data.length === 0) throw new Error('Session not saved — no row returned (RLS blocked the insert?).');
@@ -444,7 +454,7 @@ export const customJournals = {
 export const ARCHIVE_PAGE = 20;
 
 export const topics = {
-  async list(supabase) {
+  async list(supabase, { kind } = {}) {
     // Only the live shortlist. Archived rows belong to sessions that already
     // happened — kept as the record of what was raised, but not what this block
     // is asking about. Migration 019 adds the column; without it there is
@@ -453,13 +463,18 @@ export const topics = {
     let { data, error } = await query().eq('archived', false);
     if (error && isMissingColumn(error)) ({ data, error } = await query());
     if (error) throw toError(error);
-    return data.map(t => ({
+    const rows = data.map(t => ({
       ...t,
       text:    t.text    ?? t.text_enc ?? '',
       checked: t.checked ?? false,
       // Rows written before migration 018 have no source; they were all typed.
       source:  t.source  ?? 'manual',
+      // Rows written before migration 023 have no kind; they were all therapy.
+      kind:    normalizeKind(t.kind),
     }));
+    // Filtered here rather than in the query: before migration 023 there is no
+    // column to filter on, and every row is therapy.
+    return kind ? rows.filter(t => t.kind === normalizeKind(kind)) : rows;
   },
 
   // Every topic for one session — what re-analysing needs to see before it can
@@ -483,20 +498,21 @@ export const topics = {
     const insert = { user_id: user.id, text };
     if (meta.source)     insert.source     = meta.source;
     if (meta.session_id) insert.session_id = meta.session_id;
+    if (meta.kind)       insert.kind       = normalizeKind(meta.kind);
 
     let { data, error } = await supabase.from('next_session_topics').insert(insert).select().single();
 
     // Migration 018 adds source and session_id. On a database that has not run
     // it, drop whichever column the error names and retry: a topic the user
     // just typed matters more than recording where it came from.
-    for (let i = 0; i < 2 && error && isMissingColumn(error); i++) {
+    for (let i = 0; i < 3 && error && isMissingColumn(error); i++) {
       const column = missingColumnName(error);
       if (!column || !(column in insert)) break;
       delete insert[column];
       ({ data, error } = await supabase.from('next_session_topics').insert(insert).select().single());
     }
     if (error) throw toError(error);
-    return { ...data, text, checked: false, source: meta.source || 'manual' };
+    return { ...data, text, checked: false, source: meta.source || 'manual', kind: normalizeKind(meta.kind) };
   },
 
   async update(supabase, id, fields) {
@@ -524,23 +540,32 @@ export const topics = {
   // these rows are the record of what was actually discussed, and that is not
   // recoverable once dropped. Unticked topics are left alone: they were never
   // raised, so they carry over to the next session.
-  async archiveDiscussed(supabase) {
+  async archiveDiscussed(supabase, { kind } = {}) {
     const { data: { user } } = await supabase.auth.getUser();
     // The stamp is what the archive view groups by. Migration 020 may not have
     // run, so a missing archived_at drops to a plain archive rather than
     // failing — losing the date is recoverable, losing the archive is not.
     const updates = { archived: true, archived_at: new Date().toISOString() };
-    const run = () => supabase
-      .from('next_session_topics')
-      .update(updates)
-      .eq('user_id', user.id)
-      .eq('checked', true)
-      .eq('archived', false)
-      .select();
+    // Recording a coaching session files away coaching topics only. Before
+    // migration 023 every topic is therapy, so dropping the filter is exact.
+    let byKind = kind ? normalizeKind(kind) : null;
+    const run = () => {
+      let q = supabase
+        .from('next_session_topics')
+        .update(updates)
+        .eq('user_id', user.id)
+        .eq('checked', true)
+        .eq('archived', false);
+      if (byKind) q = q.eq('kind', byKind);
+      return q.select();
+    };
 
     let { data, error } = await run();
-    if (error && isMissingColumn(error) && 'archived_at' in updates) {
-      delete updates.archived_at;
+    for (let i = 0; i < 2 && error && isMissingColumn(error); i++) {
+      const column = missingColumnName(error);
+      if (column === 'kind' && byKind) byKind = null;
+      else if (column !== 'archived' && 'archived_at' in updates) delete updates.archived_at;
+      else break;
       ({ data, error } = await run());
     }
     // Without migration 019 there is nothing to archive and nothing to report;

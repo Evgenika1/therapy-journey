@@ -608,3 +608,83 @@ test('a database without archived_at is still ordered, by when the topic was add
   assert.equal(items.length, 2);
   assert.equal(sb.lastCall().order[0], 'created_at');
 });
+
+// ── kind: therapy or coaching ────────────────────────────────────────────────
+
+test('a session is saved with its kind', async () => {
+  const sb = fakeSupabase({ responses: { sessions: { data: [row({ kind: 'coaching' })] } } });
+  await sessions.save(sb, { transcript: 't', kind: 'coaching' });
+  assert.equal(sb.lastCall().payload.kind, 'coaching');
+});
+
+test('a session with no or an unknown kind is saved as therapy', async () => {
+  const sb = fakeSupabase({ responses: { sessions: { data: [row()] } } });
+  await sessions.save(sb, { transcript: 't' });
+  assert.equal(sb.lastCall().payload.kind, 'therapy');
+  await sessions.save(sb, { transcript: 't', kind: 'mentoring' });
+  assert.equal(sb.lastCall().payload.kind, 'therapy');
+});
+
+test('before migration 023 a session still saves, without the kind column', async () => {
+  const sb = fakeSupabase({ responses: { sessions: [
+    { error: pgError('PGRST204', "Could not find the 'kind' column of 'sessions' in the schema cache") },
+    { data: [row({ transcript: 't' })] },
+  ] } });
+  const saved = await sessions.save(sb, { transcript: 't', kind: 'coaching' });
+  assert.equal(saved.id, 'row-1');
+  const inserts = sb.callsFor('sessions').filter(c => c.op === 'insert');
+  assert.equal(inserts.length, 2);
+  assert.ok(!('kind' in inserts[1].payload), 'the retry drops only the kind column');
+  assert.equal(inserts[1].payload.transcript, 't');
+});
+
+test('topics are listed for one kind, legacy rows counting as therapy', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: [
+    row({ id: 'a', text: 'Old topic' }),
+    row({ id: 'b', text: 'Therapy topic', kind: 'therapy' }),
+    row({ id: 'c', text: 'Coaching topic', kind: 'coaching' }),
+  ] } } });
+  assert.deepEqual((await topics.list(sb, { kind: 'therapy' })).map(t => t.id), ['a', 'b']);
+  assert.deepEqual((await topics.list(sb, { kind: 'coaching' })).map(t => t.id), ['c']);
+  const all = await topics.list(sb);
+  assert.deepEqual(all.map(t => t.kind), ['therapy', 'therapy', 'coaching']);
+});
+
+test('a topic is saved with its kind', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: row({ text: 'Goal' }) } } });
+  const saved = await topics.save(sb, 'Goal', { kind: 'coaching' });
+  assert.equal(sb.lastCall().payload.kind, 'coaching');
+  assert.equal(saved.kind, 'coaching');
+});
+
+test('a topic still saves without the kind column', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: [
+    { error: pgError('42703', 'column "kind" of relation "next_session_topics" does not exist') },
+    { data: row({ text: 'Goal' }) },
+  ] } });
+  await topics.save(sb, 'Goal', { kind: 'coaching', source: 'ai' });
+  const inserts = sb.callsFor('next_session_topics').filter(c => c.op === 'insert');
+  assert.equal(inserts.length, 2);
+  assert.ok(!('kind' in inserts[1].payload));
+  assert.equal(inserts[1].payload.source, 'ai');
+});
+
+test('recording a coaching session archives only coaching topics', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: [] } } });
+  await topics.archiveDiscussed(sb, { kind: 'coaching' });
+  const call = sb.lastCall();
+  assert.ok(call.filters.some(([op, c, v]) => op === 'eq' && c === 'kind' && v === 'coaching'));
+});
+
+test('archiving by kind falls back to all topics before migration 023', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: [
+    { error: pgError('42703', 'column next_session_topics.kind does not exist') },
+    { data: [row({ text: 'Boundaries' })] },
+  ] } });
+  const filed = await topics.archiveDiscussed(sb, { kind: 'therapy' });
+  assert.equal(filed.length, 1);
+  const updates = sb.callsFor('next_session_topics').filter(c => c.op === 'update');
+  assert.equal(updates.length, 2);
+  assert.ok(!updates[1].filters.some(([, c]) => c === 'kind'), 'the retry drops the kind filter');
+  assert.ok('archived_at' in updates[1].payload, 'and keeps the archive date');
+});
