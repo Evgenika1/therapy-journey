@@ -15,7 +15,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { topics as topicsApi } from '@/lib/api';
 import { pendingTopics, groupArchivedByDate } from '@/lib/sessionTopics';
 
-export default function NextSessionTopics() {
+export default function NextSessionTopics({ kind = 'therapy' }) {
   const { supabase } = useAuth();
   const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL: A, ERR } = useTheme();
 
@@ -42,21 +42,21 @@ export default function NextSessionTopics() {
     topicsApi.listArchived(supabase)
       .then(({ items, hasMore }) => { setArchived(items); setMoreArchived(hasMore); })
       .catch(err => console.error('[Topics] archive:', err?.message));
-    topicsApi.list(supabase)
+    topicsApi.list(supabase, { kind })
       .then(l => { setTopics(l); setLoading(false); })
       .catch(err => {
         console.error('[Topics] list:', err?.message);
         setError('Could not load your topics: ' + (err?.message || 'unknown error'));
         setLoading(false);
       });
-  }, [supabase]);
+  }, [supabase, kind]);
 
   async function add() {
     const value = text.trim();
     if (!value || adding) return;
     setAdding(true); setError('');
     try {
-      const topic = await topicsApi.save(supabase, value);
+      const topic = await topicsApi.save(supabase, value, { kind });
       setTopics(t => [...t, topic]);
       setText('');
     } catch (err) {
@@ -220,7 +220,7 @@ export default function NextSessionTopics() {
 
       {!loading && pending.length === 0 && archived.length === 0 && (
         <p style={{ fontSize: 12, color: MUTED, margin: '8px 0 0', lineHeight: 1.5 }}>
-          Anything you want to raise with your therapist — catch it here while it is fresh,
+          Anything you want to raise with your {kind === 'coaching' ? 'coach' : 'therapist'} — catch it here while it is fresh,
           and it will be waiting in your notes when you record.
         </p>
       )}

@@ -9,6 +9,8 @@ import { analysisHeadline } from '@/lib/analysisFormat';
 import { MoodTrendChart, EmotionHeatmap } from '@/components/DashboardCharts';
 import NextSessionTopics from '@/components/NextSessionTopics';
 import { myUsage } from '@/lib/usageClient';
+import { DEFAULT_KIND, SESSION_KINDS, KIND_LABELS, readLastKind, rememberKind } from '@/lib/sessionKind';
+import { currentGoals, GOAL_STATUS_LABELS } from '@/lib/coachingGoals';
 
 const MOOD_EMOJIS     = ['😞', '😟', '😐', '🙂', '😊'];
 const MOOD_INTENSITIES = [2,    4,    6,    8,    10];
@@ -65,6 +67,12 @@ export default function HomePage() {
   const insightRef = useRef(null);
   const [sessionName,   setSessionName]   = useState(defaultSessionName);
   const [loading,       setLoading]       = useState(true);
+  // Starts at the default and reads the remembered choice after mount: reading
+  // localStorage during render would make the server HTML and the first paint
+  // disagree.
+  const [kind,  setKind]  = useState(DEFAULT_KIND);
+  const [goals, setGoals] = useState(null);
+  useEffect(() => { setKind(readLastKind()); }, []);
 
   const userName = user?.user_metadata?.full_name
     || user?.email?.split('@')[0]
@@ -89,6 +97,7 @@ export default function HomePage() {
       setStats(s);
       setSessionPairs(pairs);
       setEmotionLogs(logs);
+      setGoals(currentGoals(list));
       // This used to read `parsed.summary` — a field the analysis has never
       // contained — and fall through to the raw string, so the insight card
       // rendered the entire serialized JSON blob in quotes. analysisHeadline
@@ -202,6 +211,20 @@ export default function HomePage() {
           {/* ── Record card ──────────────────────────────────────────────────── */}
           <div style={{ background: SURFACE, borderRadius: 14, padding: '18px 22px', marginBottom: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}` }}>
 
+            {/* Which kind of session is next. Remembered, so someone who only
+                sees a coach chooses once. */}
+            <div role="radiogroup" aria-label="Session type" style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 14 }}>
+              {SESSION_KINDS.map(k => {
+                const on = kind === k;
+                return (
+                  <button key={k} role="radio" aria-checked={on} onClick={() => setKind(rememberKind(k))}
+                    style={{ padding: '6px 16px', borderRadius: 999, border: `1px solid ${on ? CORAL : BORDER}`, background: on ? CORAL + '18' : 'transparent', color: on ? CORAL : MUTED, fontSize: 12.5, fontWeight: on ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    {KIND_LABELS[k]}
+                  </button>
+                );
+              })}
+            </div>
+
             {/* Session name */}
             <input
               value={sessionName}
@@ -260,11 +283,38 @@ export default function HomePage() {
                   <line x1="8"  y1="21" x2="16" y2="21" stroke="white" strokeWidth="2" strokeLinecap="round"/>
                 </svg>
               </button>
-              <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>Tap to begin your therapy session</p>
+              <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>Tap to begin your {kind === 'coaching' ? 'coaching' : 'therapy'} session</p>
             </div>
           </div>
 
-          <NextSessionTopics />
+          {/* Goals from the latest analysed coaching session. Absent for anyone
+              without one, rather than an empty card asking them to go coaching. */}
+          {goals && (
+            <section style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '13px 15px', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 9 }}>
+                <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 16, fontWeight: 400, color: TEXT, margin: 0 }}>Current goals</h2>
+                <span style={{ fontSize: 11, color: MUTED }}>
+                  from coaching on {new Date(goals.session.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </span>
+              </div>
+              {goals.goals.length === 0 ? (
+                <p style={{ fontSize: 13, color: MUTED, margin: 0 }}>No open goals — everything from your last coaching session is achieved or set aside.</p>
+              ) : (
+                <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {goals.goals.map(g => (
+                    <li key={g.goal} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '7px 10px', background: BG, border: `1px solid ${BORDER}`, borderRadius: 9 }}>
+                      <span style={{ fontSize: 13, color: TEXT, flex: 1, minWidth: 0, lineHeight: 1.45 }}>{g.goal}</span>
+                      <span style={{ fontSize: 10.5, fontWeight: 600, color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 999, padding: '1px 8px', flexShrink: 0 }}>
+                        {GOAL_STATUS_LABELS[g.status]}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+
+          <NextSessionTopics kind={kind} />
 
           {/* ── Progress ──────────────────────────────────────────────────────
               Folded in from the standalone /progress screen, and kept high on
@@ -276,7 +326,7 @@ export default function HomePage() {
             <div style={{ marginBottom: 10 }}>
               <p className="ritual-label" style={{ margin: '0 0 5px' }}>✦ Progress</p>
               <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 19, fontWeight: 300, color: TEXT, margin: '0 0 3px', lineHeight: 1.25 }}>
-                Your therapy journey at a glance
+                Your journey at a glance
               </h2>
             </div>
 
