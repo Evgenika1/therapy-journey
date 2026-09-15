@@ -953,12 +953,16 @@ function SessionsPageInner() {
   async function changeKind(kind) {
     const next = normalizeKind(kind);
     if (!selectedSession || kindOf(selectedSession) === next) return;
+    const id = selectedSession.id;
+    const hadAnalysis = !!selectedSession.ai_analysis;
     setKindError('');
     try {
-      await sessionsApi.update(supabase, selectedSession.id, { kind: next });
-      setSelectedSession(s => ({ ...s, kind: next }));
-      setSessions(list => list.map(s => (s.id === selectedSession.id ? { ...s, kind: next } : s)));
-      setKindChanged(!!selectedSession.ai_analysis);
+      await sessionsApi.update(supabase, id, { kind: next });
+      // The user may have selected another session while this request was in
+      // flight — only apply the change if it's still the one selected.
+      setSelectedSession(s => (s?.id === id ? { ...s, kind: next } : s));
+      setSessions(list => list.map(s => (s.id === id ? { ...s, kind: next } : s)));
+      setKindChanged(hadAnalysis);
     } catch (e) {
       console.error('[Sessions] change kind:', e?.message);
       setKindError('Could not change the session type: ' + (e?.message || 'unknown error'));
