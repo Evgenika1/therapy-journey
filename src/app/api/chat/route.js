@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerUser } from '@/lib/supabaseServer';
 import { usageThisMonth, recordUsage } from '@/lib/usageLedger';
 import { BLOCKED_MESSAGE } from '@/lib/usageQuota';
+import { GENERAL_CHAT_INTRO } from '@/lib/chatPrompts';
 
 const MODEL = 'claude-haiku-4-5-20251001';
 
@@ -38,7 +39,7 @@ export async function POST(req) {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 1024,
-        system: systemPrompt || 'You are a compassionate AI companion for someone working with a therapist or a coach. Be concise, warm, and insightful.',
+        system: systemPrompt || GENERAL_CHAT_INTRO,
         messages: messages.map(m => ({ role: m.role, content: m.content })),
       }),
     });

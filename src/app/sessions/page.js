@@ -27,7 +27,7 @@ import { proposedTasks, reconcileHomework, describeTask } from '@/lib/sessionHom
 import { aiTopics, reconcileTopics } from '@/lib/sessionTopics';
 import { readLastKind, kindOf, normalizeKind, SESSION_KINDS, KIND_LABELS } from '@/lib/sessionKind';
 import { previousGoals, GOAL_STATUS_LABELS } from '@/lib/coachingGoals';
-import { sessionChatIntro, suggestionsForKind } from '@/lib/chatPrompts';
+import { sessionChatIntro, suggestionsForKind, GENERAL_CHAT_INTRO } from '@/lib/chatPrompts';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const SESSION_MOODS = [
@@ -1069,10 +1069,12 @@ function SessionsPageInner() {
       if (preset && directive !== chatDirective) setChatDirective(directive);
       const history = preset?.needsHistory ? await historyBlock() : '';
       const systemPrompt = [
-        sessionChatIntro({
-          kind: kindOf(selectedSession),
-          transcript: includeCtx ? stripSpeakerMarkers(selectedSession.transcript).slice(0, 3000) : null,
-        }),
+        selectedSession
+          ? sessionChatIntro({
+              kind: kindOf(selectedSession),
+              transcript: includeCtx ? stripSpeakerMarkers(selectedSession.transcript).slice(0, 3000) : null,
+            })
+          : GENERAL_CHAT_INTRO,
         history,
         directive,
       ].filter(Boolean).join('\n\n') + langRule;
