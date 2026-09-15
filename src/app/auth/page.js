@@ -151,7 +151,7 @@ export default function AuthPage() {
           <Link href="/" style={{ textDecoration: 'none' }}>
             <h1 style={{ fontSize: 22, fontWeight: 400, color: H1, margin: '0 0 4px', fontFamily: "'Shippori Mincho', serif", letterSpacing: '0.04em' }}>Miru</h1>
           </Link>
-          <p style={{ fontSize: 12, color: SEC, margin: 0 }}>Your private therapy companion</p>
+          <p style={{ fontSize: 12, color: SEC, margin: 0 }}>Your private companion for therapy and coaching</p>
         </div>
         {content}
       </div>

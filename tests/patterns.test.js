@@ -250,3 +250,23 @@ test('a long note is capped like every other field in the payload', () => {
   ]);
   assert.ok(input.emotion_log[0].note.length <= 160);
 });
+
+test('each session says whether it was therapy or coaching, and the totals are counted', () => {
+  const input = buildPatternsInput([
+    { created_at: '2026-01-01T10:00:00Z', ai_analysis: JSON.stringify({ topics_covered: ['сон'] }) },
+    { created_at: '2026-02-01T10:00:00Z', kind: 'coaching', ai_analysis: JSON.stringify({
+      topics_covered: ['курс'],
+      goals: [{ goal: 'Запустить курс', status: 'in_progress', progress: 'план готов' }],
+      obstacles: [{ obstacle: 'Страх оценки', context: 'дважды' }],
+      insights: ['Откладываю, когда не уверена'],
+    }) },
+  ]);
+  assert.equal(input.therapy_sessions, 1);
+  assert.equal(input.coaching_sessions, 1);
+  assert.deepEqual(input.sessions.map(s => s.type), ['therapy', 'coaching']);
+  const coaching = input.sessions[1];
+  assert.deepEqual(coaching.goals, ['Запустить курс (in_progress)']);
+  assert.deepEqual(coaching.obstacles, ['Страх оценки']);
+  assert.deepEqual(coaching.insights, ['Откладываю, когда не уверена']);
+  assert.ok(!('goals' in input.sessions[0]), 'therapy entries do not grow empty coaching fields');
+});

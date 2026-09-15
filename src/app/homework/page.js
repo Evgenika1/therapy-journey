@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
-import { homework as hwApi } from '@/lib/api';
+import { homework as hwApi, sessions as sessionsApi } from '@/lib/api';
+import { kindOf, KIND_LABELS } from '@/lib/sessionKind';
 
 // describeTask writes the reason and the provenance into one field, separated
 // by a blank line. Splitting them back out keeps the badge out of the prose
@@ -27,11 +28,19 @@ export default function HomeworkPage() {
   // add()/toggle()/del() had no catch: a rejected save cleared the form (or
   // flipped the checkbox) as if it had worked.
   const [error,   setError]   = useState('');
+  // Which kind each task's session was. Tasks carry only a session_id, so the
+  // label is resolved against the session list; a failure just hides labels.
+  const [kindBySession, setKindBySession] = useState({});
 
   useEffect(() => {
     if (!supabase) return;
     hwApi.list(supabase).then(d => { setItems(d); setLoading(false); }).catch(() => setLoading(false));
+    sessionsApi.list(supabase)
+      .then(list => setKindBySession(Object.fromEntries(list.map(s => [s.id, kindOf(s)]))))
+      .catch(e => console.error('[Homework] session kinds:', e?.message));
   }, [supabase]);
+
+  const mixedKinds = new Set(Object.values(kindBySession)).size > 1;
 
   async function add() {
     if (!title.trim()) return;
@@ -79,7 +88,7 @@ export default function HomeworkPage() {
         <div style={{ padding: 32, maxWidth: 740, margin: '0 auto' }}>
           <div style={{ marginBottom: 32 }}>
             <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 32, fontWeight: 300, color: TEXT, margin: '0 0 4px' }}>Homework</h1>
-            <p style={{ fontSize: 15, color: MUTED, margin: 0 }}>Therapy tasks and exercises</p>
+            <p style={{ fontSize: 15, color: MUTED, margin: 0 }}>Tasks and steps from your sessions</p>
           </div>
 
           {/* Add form */}
@@ -117,6 +126,11 @@ export default function HomeworkPage() {
                       <p style={{ fontSize: 15, fontWeight: 500, color: TEXT, margin: '0 0 2px' }}>{item.title}</p>
                       {(() => { const d = splitDescription(item.description); return (<>
                         {d.reason && <p style={{ fontSize: 13, color: MUTED, margin: '0 0 4px', lineHeight: 1.5 }}>{d.reason}</p>}
+                        {mixedKinds && item.session_id && kindBySession[item.session_id] && (
+                          <span style={{ display: 'inline-block', fontSize: 10.5, fontWeight: 600, color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 999, padding: '1px 8px', marginBottom: 4 }}>
+                            {KIND_LABELS[kindBySession[item.session_id]]}
+                          </span>
+                        )}
                         {/* Where it came from, as a quiet mark rather than a
                             sentence — it is provenance, not content. */}
                         {(d.from || item.session_id) && (
@@ -161,7 +175,7 @@ export default function HomeworkPage() {
           {!loading && items.length === 0 && (
             <div style={{ textAlign: 'center', padding: '60px 0' }}>
               <p style={{ fontFamily: 'var(--font-serif)', fontSize: 26, fontWeight: 300, color: TEXT, margin: '0 0 8px' }}>No tasks yet</p>
-              <p style={{ fontSize: 15, color: MUTED }}>Add your therapy homework above.</p>
+              <p style={{ fontSize: 15, color: MUTED }}>Add a task above.</p>
             </div>
           )}
         </div>

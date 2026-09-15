@@ -17,7 +17,7 @@ export const CHAT_SUGGESTIONS = [
   'How have I changed over the past month?',
   'What did I discover about myself recently?',
   'What keeps coming up for me?',
-  'What questions should I bring to my therapist?',
+  'What questions should I bring to my next session?',
   'Where am I making progress?',
   "What's a recurring thought I have?",
   'What am I not saying out loud?',
@@ -75,7 +75,7 @@ Tone — this is a hard requirement:
 — Ground every observation in a concrete example from the user's own material — a situation or a quote, with a date where you have one.
 — No more than two or three observations at a time; a long list reads like a verdict.
 — Acknowledge that a real experience sits underneath the pattern, and that it once served a purpose.
-— Close with a soft hand-off: "this could be worth discussing with your therapist".`,
+— Close with a soft hand-off: "this could be worth discussing with your therapist or coach".`,
     },
   },
   {
@@ -102,7 +102,7 @@ Tone — this is a hard requirement:
 — Ask: "What is the evidence for and against this thought?" and "What would you say to a friend in this situation?"
 — Offer a more balanced wording as an option, not as the truth: "maybe it's closer to…", "how does this wording land for you?". Do not insist if it does not resonate.
 — If the conversation does not yet contain a specific thought to work with, gently ask for one rather than inventing it on the user's behalf.
-— Close with: "if this resonates, it's worth talking through with your therapist".`,
+— Close with: "if this resonates, it's worth talking through with your therapist or coach".`,
     },
   },
 ];

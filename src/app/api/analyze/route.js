@@ -3,7 +3,10 @@ import { getServerUser } from '@/lib/supabaseServer';
 import { usageThisMonth, recordUsage } from '@/lib/usageLedger';
 import { BLOCKED_MESSAGE } from '@/lib/usageQuota';
 import { parseAnalysis } from '@/lib/analysisParse';
-import { ANALYSIS_SCHEMA } from '@/lib/analysisFormat';
+import { schemaForKind } from '@/lib/analysisFormat';
+import { normalizeKind } from '@/lib/sessionKind';
+import { normalizeGoals } from '@/lib/coachingGoals';
+import { coachingPrompt } from '@/lib/coachingPrompt';
 
 // A 10-section analysis of a 90-minute session can run well past a minute now
 // that max_tokens gives it room to finish instead of being cut off.
@@ -46,12 +49,16 @@ export async function POST(req) {
       return NextResponse.json({ error: BLOCKED_MESSAGE, quota: { status: quota.status, remaining: quota.remaining } }, { status: 402 });
     }
 
-    const { transcript, notes, session_id: sessionId = null } = await req.json();
+    const {
+      transcript, notes, session_id: sessionId = null,
+      kind: rawKind, previous_goals: rawPreviousGoals,
+    } = await req.json();
+    const kind = normalizeKind(rawKind);
     if (!transcript?.trim()) {
       return NextResponse.json({ error: 'No transcript to analyse' }, { status: 400 });
     }
 
-    const prompt = `You are a compassionate, thorough therapy session analyst. Analyse the ENTIRE therapy session transcript below — it may be long and cover many distinct topics discussed at different points. Do NOT focus only on the opening topic; read through to the end and give every major topic equal attention.
+    const therapyPrompt = `You are a compassionate, thorough therapy session analyst. Analyse the ENTIRE therapy session transcript below — it may be long and cover many distinct topics discussed at different points. Do NOT focus only on the opening topic; read through to the end and give every major topic equal attention.
 
 Return a JSON object with EXACTLY these fields. Use arrays where indicated; return an empty array [] (or null for string fields) when a section genuinely has nothing.
 
@@ -84,6 +91,16 @@ ${notes ? `Session notes:\n${notes}` : ''}
 
 ${languageDirective(transcript)}`;
 
+    const prompt = kind === 'coaching'
+      ? coachingPrompt({
+          transcript, notes,
+          // Bounded so a client sending an unreasonably long goal history can't
+          // blow the prompt open — the model only needs recent goals anyway.
+          previousGoals: normalizeGoals(rawPreviousGoals).slice(0, 20),
+          languageDirective: languageDirective(transcript),
+        })
+      : therapyPrompt;
+
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -99,7 +116,7 @@ ${languageDirective(transcript)}`;
         // unhelpful "Could not parse Claude response".
         max_tokens: 16000,
         messages: [{ role: 'user', content: prompt }],
-        output_config: { format: { type: 'json_schema', schema: ANALYSIS_SCHEMA } },
+        output_config: { format: { type: 'json_schema', schema: schemaForKind(kind) } },
       }),
     });
 

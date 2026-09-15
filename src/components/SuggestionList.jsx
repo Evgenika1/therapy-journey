@@ -12,12 +12,12 @@ import { useState } from 'react';
 import { useTheme } from '@/lib/ThemeContext';
 import { CHAT_SUGGESTIONS, SUGGESTION_PREVIEW } from '@/lib/chatPresets';
 
-export default function SuggestionList({ onPick, disabled = false, compact = false }) {
+export default function SuggestionList({ onPick, disabled = false, compact = false, suggestions = CHAT_SUGGESTIONS }) {
   const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL: A } = useTheme();
   const [showAll, setShowAll] = useState(false);
 
-  const visible = showAll ? CHAT_SUGGESTIONS : CHAT_SUGGESTIONS.slice(0, SUGGESTION_PREVIEW);
-  const hidden  = CHAT_SUGGESTIONS.length - SUGGESTION_PREVIEW;
+  const visible = showAll ? suggestions : suggestions.slice(0, SUGGESTION_PREVIEW);
+  const hidden  = suggestions.length - SUGGESTION_PREVIEW;
 
   // The session panel is 320px wide; the AI Chat column is roughly double that.
   const size = compact

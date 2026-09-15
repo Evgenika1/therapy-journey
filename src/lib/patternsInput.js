@@ -11,6 +11,8 @@
 // goes in the payload) is decided here and covered by tests.
 
 import { parseAnalysis } from './analysisParse.js';
+import { kindOf } from './sessionKind.js';
+import { normalizeGoals } from './coachingGoals.js';
 
 // Patterns are built from analyses, not from bare sessions — a session with no
 // analysis contributes almost nothing beyond a date.
@@ -74,6 +76,7 @@ export function buildPatternsInput(sessions = [], emotions = []) {
     // the person reading.
     const entry = {
       date: day(s.created_at),
+      type: kindOf(s),
       mood_before: s.mood_before ?? null,
       mood_after: s.mood_after ?? null,
     };
@@ -84,6 +87,11 @@ export function buildPatternsInput(sessions = [], emotions = []) {
       entry.patterns_triggers = list(a.patterns_triggers);
       entry.breakthroughs = list(a.breakthroughs);
       entry.for_next_session = list(a.for_next_session);
+      if (kindOf(s) === 'coaching') {
+        entry.goals = list(normalizeGoals(a.goals).map(g => `${g.goal} (${g.status})`));
+        entry.obstacles = list((Array.isArray(a.obstacles) ? a.obstacles : []).map(o => o?.obstacle));
+        entry.insights = list(a.insights);
+      }
     } else if (s.transcript) {
       // Never analysed: a short excerpt so the topic is not simply missing from
       // the history, without dragging a two-hour transcript into the request.
@@ -112,6 +120,8 @@ export function buildPatternsInput(sessions = [], emotions = []) {
   return {
     total_sessions: all.length,
     analysed_sessions: analysed.length,
+    therapy_sessions: all.filter(s => kindOf(s) === 'therapy').length,
+    coaching_sessions: all.filter(s => kindOf(s) === 'coaching').length,
     first_session: day(all[0]?.created_at),
     last_session: day(all[all.length - 1]?.created_at),
     sessions: sessionSummaries,

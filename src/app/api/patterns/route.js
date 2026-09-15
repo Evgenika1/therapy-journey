@@ -51,9 +51,11 @@ export async function POST(req) {
 
     const serialized = JSON.stringify(history, null, 1);
 
-    const prompt = `You are a thoughtful therapist reviewing a client's ENTIRE history across many sessions at once. Your job is to see what no single session reveals: what repeats, what triggers what, and what has changed over time.
+    const prompt = `You are a thoughtful reviewer of someone's ENTIRE history of therapy and coaching sessions at once. Your job is to see what no single session reveals: what repeats, what triggers what, and what has changed over time.
 
 The history below is ordered OLDEST FIRST. Each session carries its date, the mood before and after where recorded, and the key points from its own analysis. Refer to sessions by their DATE, never by a number. A separate emotion log records what the client felt between sessions, with intensity 1–10; entries tagged "before"/"after" bracket a session.
+
+Each session has a "type": "therapy" or "coaching" (${history.therapy_sessions ?? 0} therapy, ${history.coaching_sessions ?? 0} coaching). Coaching sessions also list goals with their status, obstacles and insights. When both types are present, look specifically for connections between them — a goal stalled in coaching and a fear explored in therapy can be the same thing — and name them in "recurring_themes" or "triggers".
 
 Across ${history.analysed_sessions} analysed sessions out of ${history.total_sessions} total, from ${history.first_session} to ${history.last_session}, identify:
 
@@ -65,7 +67,7 @@ Across ${history.analysed_sessions} analysed sessions out of ${history.total_ses
 Rules:
 - Base every item strictly on the data below. Do not invent themes, emotions or events that are not there.
 - Prefer few strong findings over many weak ones. An empty array is a valid answer for a section with nothing real in it.
-- Write for the client to read: plain, warm, specific. No clinical labels, no diagnosis.
+- Write for the person to read: plain, warm, specific. No clinical labels, no diagnosis.
 
 History:
 ${serialized}

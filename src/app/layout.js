@@ -4,8 +4,8 @@ import { AuthProvider } from '@/components/AuthProvider';
 import MobileGate from '@/components/MobileGate';
 
 export const metadata = {
-  title: 'Miru — Therapy Journal',
-  description: 'Your private therapy companion',
+  title: 'Miru — Session Journal',
+  description: 'Your private companion for therapy and coaching',
 };
 
 export default function RootLayout({ children }) {

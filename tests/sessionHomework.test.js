@@ -106,3 +106,21 @@ test('a task with no context still records where it came from', () => {
   assert.equal(describeTask({ task: 't', context: '' }, 'Sep 4 Session'), 'From "Sep 4 Session"');
   assert.equal(describeTask({ task: 't', context: '' }, null), 'From a session');
 });
+
+test('an agreed step keeps its due date, and a practice without one is unchanged', () => {
+  const out = proposedTasks({ homework: [
+    { task: 'Email two clients', due: 'by Friday', context: 'agreed at the end' },
+    { task: 'Notice the urge', due: null, context: 'avoiding conflict' },
+  ]});
+  assert.deepEqual(out, [
+    { task: 'Email two clients', context: 'agreed at the end', due: 'by Friday' },
+    { task: 'Notice the urge', context: 'avoiding conflict' },
+  ]);
+});
+
+test('the due date is written into the task description', () => {
+  assert.equal(describeTask({ task: 't', context: 'agreed', due: 'by Friday' }, 'Sep 14'),
+    'agreed\nDue: by Friday\n\nFrom "Sep 14"');
+  assert.equal(describeTask({ task: 't', context: '', due: 'by Friday' }, null),
+    'Due: by Friday\n\nFrom a session');
+});

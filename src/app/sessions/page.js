@@ -18,13 +18,16 @@ import {
   detectSessionLang, groupSessions,
 } from '@/lib/transcriptFormat';
 import {
-  ANALYSIS_FIELDS, LEGACY_ANALYSIS_FIELDS, analysisToText, hasValue,
+  LEGACY_ANALYSIS_FIELDS, analysisToText, hasValue, fieldsForKind, analysisKind,
 } from '@/lib/analysisFormat';
 import { buildPatternsInput } from '@/lib/patternsInput';
 import { CBT_PRESETS } from '@/lib/chatPresets';
 import SuggestionList from '@/components/SuggestionList';
 import { proposedTasks, reconcileHomework, describeTask } from '@/lib/sessionHomework';
 import { aiTopics, reconcileTopics } from '@/lib/sessionTopics';
+import { readLastKind, kindOf, normalizeKind, SESSION_KINDS, KIND_LABELS } from '@/lib/sessionKind';
+import { previousGoals, GOAL_STATUS_LABELS } from '@/lib/coachingGoals';
+import { sessionChatIntro, suggestionsForKind, GENERAL_CHAT_INTRO } from '@/lib/chatPrompts';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const SESSION_MOODS = [
@@ -201,6 +204,7 @@ function SessionsPageInner() {
   const [transcriptError,   setTranscriptError]   = useState('');
   const [analysing,       setAnalysing]       = useState(false);
   const [analyseError,    setAnalyseError]    = useState('');
+  const [kindError,   setKindError]   = useState('');
 
   // recording modal
   const [showModal,          setShowModal]          = useState(false);
@@ -305,6 +309,7 @@ function SessionsPageInner() {
 
   // ── select session ────────────────────────────────────────────────────────────
   function selectSession(s) {
+    setKindError('');
     // The panels render into the same centre column as the session detail, so
     // an open one would swallow the click: the row highlights in the list and
     // nothing else appears to happen. Close Paste — but only when it is empty,
@@ -376,6 +381,7 @@ function SessionsPageInner() {
         transcript: text,
         duration: null, notes: null,
         mood_before: null, mood_after: null,
+        kind: readLastKind(),
       });
       setSessions(list => [saved, ...list]);
       closePaste();
@@ -414,6 +420,8 @@ function SessionsPageInner() {
       || (s.notes || '').toLowerCase().includes(q);
   });
   const grouped = groupSessions(filtered);
+  // A label on every row says nothing to someone who only records therapy.
+  const mixedKinds = new Set(sessions.map(kindOf)).size > 1;
 
   // ── recording ────────────────────────────────────────────────────────────────
   // Populate the microphone dropdown. Device labels are only exposed after mic
@@ -443,7 +451,7 @@ function SessionsPageInner() {
     // and most visits never record. prefillNotes refuses to overwrite anything
     // already typed, so a slow response cannot clobber the user mid-sentence.
     if (supabase) {
-      topicsApi.list(supabase)
+      topicsApi.list(supabase, { kind: readLastKind() })
         .then(list => {
           const pending = pendingTopics(list);
           if (!pending.length) return;
@@ -743,7 +751,7 @@ function SessionsPageInner() {
       setImportStage('processing');
       const data = await pollTranscript(job_id);
 
-      const saved = await sessionsApi.save(supabase, { transcript: data.text || '', title: null });
+      const saved = await sessionsApi.save(supabase, { transcript: data.text || '', title: null, kind: readLastKind() });
       setSessions(list => [saved, ...list]);
       setImportStage('done');
       setSelectedSession(saved);
@@ -833,6 +841,7 @@ function SessionsPageInner() {
         transcript, notes: recNotes, duration: seconds,
         mood_before: preRecordMoodIdx  !== null ? SESSION_MOODS[preRecordMoodIdx].intensity  : null,
         mood_after:  postRecordMoodIdx !== null ? SESSION_MOODS[postRecordMoodIdx].intensity : null,
+        kind: readLastKind(),
       });
       setSessions(s => [result, ...s]);
       setSaved(true);
@@ -842,7 +851,7 @@ function SessionsPageInner() {
       // history. Archived, never deleted — they are the record of what was
       // actually discussed. Unticked topics carry over untouched.
       try {
-        const archived = await topicsApi.archiveDiscussed(supabase);
+        const archived = await topicsApi.archiveDiscussed(supabase, { kind: kindOf(result) });
         console.log('[Sessions] archived discussed topics:', archived.length);
       } catch (e) {
         // A failed archive must not turn a saved session into an error.
@@ -868,7 +877,14 @@ function SessionsPageInner() {
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: stripSpeakerMarkers(selectedSession.transcript), notes: selectedSession.notes, session_id: selectedSession.id }),
+        body: JSON.stringify({
+          transcript: stripSpeakerMarkers(selectedSession.transcript),
+          notes: selectedSession.notes,
+          session_id: selectedSession.id,
+          kind: kindOf(selectedSession),
+          // Only meaningful for coaching; the route ignores it for therapy.
+          previous_goals: kindOf(selectedSession) === 'coaching' ? previousGoals(sessions, selectedSession) : [],
+        }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -913,7 +929,7 @@ function SessionsPageInner() {
         await Promise.all(toDelete.map(id => topicsApi.delete(supabase, id)));
         const saved = [];
         for (const text of toInsert) {
-          saved.push(await topicsApi.save(supabase, text, { source: 'ai', session_id: selectedSession.id }));
+          saved.push(await topicsApi.save(supabase, text, { source: 'ai', session_id: selectedSession.id, kind: kindOf(selectedSession) }));
         }
         // Says whether the row came back marked. Without migration 018 the
         // column is dropped on insert and the topic saves as 'manual' — which
@@ -929,6 +945,23 @@ function SessionsPageInner() {
       console.error('[analyse]', err);
       setAnalyseError(err.message);
     } finally { setAnalysing(false); }
+  }
+
+  async function changeKind(kind) {
+    const next = normalizeKind(kind);
+    if (!selectedSession || kindOf(selectedSession) === next) return;
+    const id = selectedSession.id;
+    setKindError('');
+    try {
+      await sessionsApi.update(supabase, id, { kind: next });
+      // The user may have selected another session while this request was in
+      // flight — only apply the change if it's still the one selected.
+      setSelectedSession(s => (s?.id === id ? { ...s, kind: next } : s));
+      setSessions(list => list.map(s => (s.id === id ? { ...s, kind: next } : s)));
+    } catch (e) {
+      console.error('[Sessions] change kind:', e?.message);
+      setKindError('Could not change the session type: ' + (e?.message || 'unknown error'));
+    }
   }
 
   async function markTopicsDiscussed() {
@@ -1036,9 +1069,12 @@ function SessionsPageInner() {
       if (preset && directive !== chatDirective) setChatDirective(directive);
       const history = preset?.needsHistory ? await historyBlock() : '';
       const systemPrompt = [
-        includeCtx
-          ? `You are a compassionate AI therapy companion. The user is reviewing a therapy session.\n\nSession transcript:\n"${stripSpeakerMarkers(selectedSession.transcript).slice(0, 3000)}"\n\nBe concise, warm, and insightful.`
-          : 'You are a compassionate AI therapy companion. Be concise, warm, and insightful.',
+        selectedSession
+          ? sessionChatIntro({
+              kind: kindOf(selectedSession),
+              transcript: includeCtx ? stripSpeakerMarkers(selectedSession.transcript).slice(0, 3000) : null,
+            })
+          : GENERAL_CHAT_INTRO,
         history,
         directive,
       ].filter(Boolean).join('\n\n') + langRule;
@@ -1074,9 +1110,15 @@ function SessionsPageInner() {
     // Was `[ai.overview, ai.key_theme, ai.breakthrough, ai.action].join()`: the
     // first is an array (so it copied as a comma run) and the last two are
     // fields the current analysis does not have, so they were always dropped.
-    const text = (ai && analysisToText(ai)) || selectedSession.transcript || '';
+    const text = (ai && analysisToText(ai, analysisKind(ai))) || selectedSession.transcript || '';
     navigator.clipboard.writeText(text).catch(() => {});
   }
+
+  // The hint that the summary on screen belongs to the session's other kind:
+  // derived at render from the analysis itself, not from a state flag, so it
+  // survives navigating away and back rather than resetting on selectSession.
+  const selectedAI = selectedSession ? parseAI(selectedSession.ai_analysis) : null;
+  const kindMismatched = !!selectedAI && analysisKind(selectedAI) !== kindOf(selectedSession);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -1165,6 +1207,11 @@ function SessionsPageInner() {
                           <p style={{ fontSize: 14, fontWeight: 600, color: active ? A : TEXT, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                             {sessionTitle(s)}
                           </p>
+                          {mixedKinds && (
+                            <span style={{ fontSize: 10, fontWeight: 600, color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 999, padding: '1px 7px', flexShrink: 0 }}>
+                              {KIND_LABELS[kindOf(s)]}
+                            </span>
+                          )}
                         </div>
                         <p style={{ fontSize: 11.5, color: MUTED, margin: '0 0 6px', fontWeight: 500 }}>
                           {fmtTime(s.created_at)}
@@ -1517,6 +1564,19 @@ function SessionsPageInner() {
                       {selectedSession.mood_before != null && selectedSession.mood_after != null
                         ? ` · Mood ${selectedSession.mood_before}/10 → ${selectedSession.mood_after}/10` : ''}
                     </p>
+                    <div role="radiogroup" aria-label="Session type" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                      {SESSION_KINDS.map(k => {
+                        const on = kindOf(selectedSession) === k;
+                        return (
+                          <button key={k} role="radio" aria-checked={on} onClick={() => changeKind(k)}
+                            style={{ padding: '3px 11px', borderRadius: 999, border: `1px solid ${on ? A : BORDER}`, background: on ? A + '18' : 'transparent', color: on ? A : MUTED, fontSize: 11.5, fontWeight: on ? 600 : 500, cursor: on ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                            {KIND_LABELS[k]}
+                          </button>
+                        );
+                      })}
+                      {kindMismatched && <span style={{ fontSize: 11.5, color: MUTED }}>Type changed — run Re-analyze to update the summary.</span>}
+                      {kindError && <span style={{ fontSize: 11.5, color: '#DC2626' }}>{kindError}</span>}
+                    </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginLeft: 16 }}>
                     <button onClick={copySummary}
@@ -1567,7 +1627,7 @@ function SessionsPageInner() {
                       )}
                     </div>
                   );
-                  const SECTIONS = [...ANALYSIS_FIELDS, ...LEGACY_ANALYSIS_FIELDS];
+                  const SECTIONS = [...fieldsForKind(analysisKind(ai)), ...LEGACY_ANALYSIS_FIELDS];
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
@@ -1585,14 +1645,19 @@ function SessionsPageInner() {
                                 {ai[key].map((item, i) => (
                                   <li key={i} style={{ fontSize: 14, color: TEXT, lineHeight: 1.6 }}>
                                     {typeof item === 'string' ? item : (
-                                      // A practice carries the reason it exists;
-                                      // showing the task alone turns it back into
-                                      // the generic advice this was meant to avoid.
+                                      // A practice, step, goal or obstacle carries the
+                                      // reason it exists; the headline alone turns it
+                                      // back into generic advice.
                                       <>
-                                        {item?.task}
-                                        {item?.context && (
+                                        {item?.task ?? item?.goal ?? item?.obstacle}
+                                        {item?.status && GOAL_STATUS_LABELS[item.status] && (
+                                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 999, padding: '1px 7px' }}>
+                                            {GOAL_STATUS_LABELS[item.status]}
+                                          </span>
+                                        )}
+                                        {[item?.due && `Due: ${item.due}`, item?.progress, item?.context].filter(Boolean).length > 0 && (
                                           <span style={{ display: 'block', fontSize: 12.5, color: MUTED, marginTop: 3, lineHeight: 1.5 }}>
-                                            {item.context}
+                                            {[item?.due && `Due: ${item.due}`, item?.progress, item?.context].filter(Boolean).join(' · ')}
                                           </span>
                                         )}
                                       </>
@@ -1665,9 +1730,15 @@ function SessionsPageInner() {
                       {parsed.turns.map((turn, i) => {
                         const role = parsed.roleMap[turn.speaker];
                         // Warm on-brand palette: terracotta for the primary speaker,
-                        // muted taupe for the second — no off-palette colors.
+                        // muted taupe for the second — no off-palette colors. Keyed
+                        // on the original role value, not the display label below.
                         const badgeColor = role === 'Client' ? A : MUTED;
-                        const label = parsed.multiSpeaker ? role : `Speaker ${turn.speaker}`;
+                        // roleMap only ever says 'Client' | 'Therapist' — for a
+                        // coaching session the non-client speaker is the coach, not
+                        // the therapist. transcriptFormat.js itself stays kind-blind;
+                        // this is display-only.
+                        const displayRole = (role === 'Therapist' && kindOf(selectedSession) === 'coaching') ? 'Coach' : role;
+                        const label = parsed.multiSpeaker ? displayRole : `Speaker ${turn.speaker}`;
                         return (
                           <div key={i} style={{ display: 'flex', gap: 12, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px' }}>
                             <div style={{ width: 30, height: 30, flexShrink: 0, borderRadius: '50%', background: badgeColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>
@@ -1731,7 +1802,7 @@ function SessionsPageInner() {
                 <p style={{ fontSize: 12, color: MUTED, margin: '0 0 16px', lineHeight: 1.6 }}>
                   {CHAT_COPY.tryOne}
                 </p>
-                <SuggestionList compact onPick={q => sendChat(q)} disabled={chatLoading} />
+                <SuggestionList compact onPick={q => sendChat(q)} disabled={chatLoading} suggestions={suggestionsForKind(kindOf(selectedSession))} />
 
                 {/* The CBT prompts are set apart from the questions above:
                     those retrieve something, these start a piece of work. One
@@ -1794,7 +1865,8 @@ function SessionsPageInner() {
                 {showSuggestions && (
                   <div style={{ marginTop: 7 }}>
                     <SuggestionList compact disabled={chatLoading}
-                      onPick={q => { sendChat(q); setShowSuggestions(false); }} />
+                      onPick={q => { sendChat(q); setShowSuggestions(false); }}
+                      suggestions={suggestionsForKind(kindOf(selectedSession))} />
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>

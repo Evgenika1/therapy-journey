@@ -5,6 +5,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
 import { aiChats, sessions as sessionsApi, emotions as emotionsApi } from '@/lib/api';
 import { CBT_PRESETS } from '@/lib/chatPresets';
+import { GENERAL_CHAT_INTRO } from '@/lib/chatPrompts';
 import SuggestionList from '@/components/SuggestionList';
 import { buildPatternsInput } from '@/lib/patternsInput';
 import { detectSessionLang } from '@/lib/transcriptFormat';
@@ -88,7 +89,7 @@ export default function AiChatPage() {
       if (preset && active !== directive) setDirective(active);
       const langRule = lang === 'ru' ? ' Always respond in Russian.' : '';
       const systemPrompt = [
-        'You are a compassionate AI therapy companion. Be concise, warm, and insightful.',
+        GENERAL_CHAT_INTRO,
         block,
         active,
       ].filter(Boolean).join('\n\n') + langRule;
@@ -173,7 +174,7 @@ export default function AiChatPage() {
             {messages.length === 0 && (
               <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
                 <p style={{ fontFamily: 'var(--font-serif)', fontSize: 26, fontWeight: 300, color: TEXT, margin: '0 0 8px' }}>How can I help?</p>
-                <p style={{ fontSize: 14, color: MUTED, maxWidth: 400, margin: '0 0 22px' }}>I'm your AI therapy companion. Share what's on your mind.</p>
+                <p style={{ fontSize: 14, color: MUTED, maxWidth: 400, margin: '0 0 22px' }}>I'm your AI companion for therapy and coaching. Share what's on your mind.</p>
 
                 {/* The same two groups the session panel offers. This screen had
                     neither, so the quickest ways in were reachable from one

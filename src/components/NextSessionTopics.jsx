@@ -15,7 +15,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { topics as topicsApi } from '@/lib/api';
 import { pendingTopics, groupArchivedByDate } from '@/lib/sessionTopics';
 
-export default function NextSessionTopics() {
+export default function NextSessionTopics({ kind = 'therapy' }) {
   const { supabase } = useAuth();
   const { BG, SURFACE, BORDER, MUTED, H1: TEXT, CORAL: A, ERR } = useTheme();
 
@@ -35,28 +35,36 @@ export default function NextSessionTopics() {
 
   useEffect(() => {
     if (!supabase) return;
+    // `kind` starts at DEFAULT_KIND and then flips to the remembered choice on
+    // mount, so this effect fires twice in quick succession — once for therapy,
+    // once for coaching. Without a liveness guard, whichever request happens to
+    // land last wins, even if it was the stale one: a coaching user could see
+    // therapy topics if the therapy response arrives after the coaching one.
+    let live = true;
     // The archive is a second query rather than a wider first one: the live list
     // is the hot path, and this only needs to answer "is there anything to
     // show, and how much". A failure here is silent — the archive link simply
     // does not appear, which must never take the block itself down.
     topicsApi.listArchived(supabase)
-      .then(({ items, hasMore }) => { setArchived(items); setMoreArchived(hasMore); })
-      .catch(err => console.error('[Topics] archive:', err?.message));
-    topicsApi.list(supabase)
-      .then(l => { setTopics(l); setLoading(false); })
+      .then(({ items, hasMore }) => { if (!live) return; setArchived(items); setMoreArchived(hasMore); })
+      .catch(err => { if (!live) return; console.error('[Topics] archive:', err?.message); });
+    topicsApi.list(supabase, { kind })
+      .then(l => { if (!live) return; setTopics(l); setLoading(false); })
       .catch(err => {
+        if (!live) return;
         console.error('[Topics] list:', err?.message);
         setError('Could not load your topics: ' + (err?.message || 'unknown error'));
         setLoading(false);
       });
-  }, [supabase]);
+    return () => { live = false; };
+  }, [supabase, kind]);
 
   async function add() {
     const value = text.trim();
     if (!value || adding) return;
     setAdding(true); setError('');
     try {
-      const topic = await topicsApi.save(supabase, value);
+      const topic = await topicsApi.save(supabase, value, { kind });
       setTopics(t => [...t, topic]);
       setText('');
     } catch (err) {
@@ -220,7 +228,7 @@ export default function NextSessionTopics() {
 
       {!loading && pending.length === 0 && archived.length === 0 && (
         <p style={{ fontSize: 12, color: MUTED, margin: '8px 0 0', lineHeight: 1.5 }}>
-          Anything you want to raise with your therapist — catch it here while it is fresh,
+          Anything you want to raise with your {kind === 'coaching' ? 'coach' : 'therapist'} — catch it here while it is fresh,
           and it will be waiting in your notes when you record.
         </p>
       )}

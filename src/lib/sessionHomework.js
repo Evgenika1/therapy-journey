@@ -15,12 +15,18 @@ export function proposedTasks(analysis) {
   return raw
     .map(item => (typeof item === 'string'
       ? { task: item, context: '' }
-      : { task: item?.task, context: item?.context }))
+      : { task: item?.task, context: item?.context, due: item?.due }))
     .filter(x => typeof x.task === 'string' && x.task.trim())
-    .map(x => ({
-      task:    x.task.trim().slice(0, 200),
-      context: typeof x.context === 'string' ? x.context.trim().slice(0, 300) : '',
-    }));
+    .map(x => {
+      const due = typeof x.due === 'string' ? x.due.trim().slice(0, 80) : '';
+      return {
+        task:    x.task.trim().slice(0, 200),
+        context: typeof x.context === 'string' ? x.context.trim().slice(0, 300) : '',
+        // Only a coaching step has a due date, and only when one was said out
+        // loud; a therapy practice keeps exactly the shape it always had.
+        ...(due ? { due } : {}),
+      };
+    });
 }
 
 // Titles are compared loosely: the model rarely returns a character-identical
@@ -54,10 +60,13 @@ export function reconcileHomework(existing = [], proposed = []) {
   return { toInsert, toDelete, kept };
 }
 
-// The description stored alongside a task: the "why", plus where it came from.
-// Written at creation time so the Homework page can show provenance without
-// having to resolve a session it may no longer be able to read.
+// The description stored alongside a task: the "why", the agreed deadline if
+// there was one, plus where it came from. Written at creation time so the
+// Homework page can show provenance without resolving a session it may no
+// longer be able to read. The deadline stays text ("by Friday"): turning it
+// into a date would mean guessing which Friday.
 export function describeTask(task, sessionTitle) {
   const from = sessionTitle ? `From "${sessionTitle}"` : 'From a session';
-  return task.context ? `${task.context}\n\n${from}` : from;
+  const reason = [task.context, task.due ? `Due: ${task.due}` : ''].filter(Boolean).join('\n');
+  return reason ? `${reason}\n\n${from}` : from;
 }

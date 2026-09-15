@@ -9,6 +9,9 @@
 // Everything downstream now derives from ANALYSIS_FIELDS, so a renamed field
 // breaks one list instead of quietly disabling a feature.
 
+import { normalizeKind } from './sessionKind.js';
+import { GOAL_STATUSES, GOAL_STATUS_LABELS } from './coachingGoals.js';
+
 export const ANALYSIS_FIELDS = [
   { key: 'topics_covered',              label: 'TOPICS COVERED',      color: '#0EA5E9', type: 'array'  },
   { key: 'overview',                    label: 'OVERVIEW',            color: '#3B82F6', type: 'array'  },
@@ -33,33 +36,69 @@ export const LEGACY_ANALYSIS_FIELDS = [
   { key: 'action_items', label: 'ACTION ITEMS',  color: '#F59E0B', type: 'array'  },
 ];
 
+// A coaching session is read for where the person is heading, not for what they
+// felt. `homework` and `for_next_session` keep their therapy names on purpose:
+// the code that turns them into tasks and topics then works for both kinds.
+export const COACHING_FIELDS = [
+  { key: 'topics_covered',   label: 'TOPICS COVERED',   color: '#0EA5E9', type: 'array' },
+  { key: 'overview',         label: 'OVERVIEW',         color: '#3B82F6', type: 'array' },
+  { key: 'goals',            label: 'GOALS',            color: '#10B981', type: 'objects', itemFields: ['goal', 'status', 'progress'] },
+  { key: 'homework',         label: 'NEXT STEPS',       color: '#F59E0B', type: 'objects', itemFields: ['task', 'due', 'context'] },
+  { key: 'obstacles',        label: 'OBSTACLES',        color: '#EF4444', type: 'objects', itemFields: ['obstacle', 'context'] },
+  { key: 'insights',         label: 'INSIGHTS',         color: '#8B5CF6', type: 'array' },
+  { key: 'for_next_session', label: 'FOR NEXT SESSION', color: '#6366F1', type: 'array' },
+];
+
+// Item properties that are not a plain string.
+const ITEM_TYPES = {
+  status: { type: 'string', enum: GOAL_STATUSES },
+  due:    { type: ['string', 'null'] },
+};
+
 // Structured-outputs JSON schema, built from the field list above. Structured
 // outputs requires every object to declare `required` and
 // `additionalProperties: false`.
-export const ANALYSIS_SCHEMA = {
-  type: 'object',
-  properties: Object.fromEntries(ANALYSIS_FIELDS.map(f => [
-    f.key,
-    f.type === 'objects'
-      // An array of small objects rather than strings: a practice that does not
-      // say which part of the session it came from reads as generic advice, and
-      // generic advice is what this feature exists to avoid.
-      ? {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: Object.fromEntries(f.itemFields.map(k => [k, { type: 'string' }])),
-            required: f.itemFields,
-            additionalProperties: false,
-          },
-        }
-      : f.type === 'array'
-        ? { type: 'array', items: { type: 'string' } }
-        : { type: ['string', 'null'] },
-  ])),
-  required: ANALYSIS_FIELDS.map(f => f.key),
-  additionalProperties: false,
-};
+function buildSchema(fields) {
+  return {
+    type: 'object',
+    properties: Object.fromEntries(fields.map(f => [
+      f.key,
+      f.type === 'objects'
+        // An array of small objects rather than strings: a practice that does not
+        // say which part of the session it came from reads as generic advice, and
+        // generic advice is what this feature exists to avoid.
+        ? {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: Object.fromEntries(f.itemFields.map(k => [k, ITEM_TYPES[k] ?? { type: 'string' }])),
+              required: f.itemFields,
+              additionalProperties: false,
+            },
+          }
+        : f.type === 'array'
+          ? { type: 'array', items: { type: 'string' } }
+          : { type: ['string', 'null'] },
+    ])),
+    required: fields.map(f => f.key),
+    additionalProperties: false,
+  };
+}
+
+export const ANALYSIS_SCHEMA = buildSchema(ANALYSIS_FIELDS);
+export const COACHING_SCHEMA = buildSchema(COACHING_FIELDS);
+
+export const fieldsForKind = (kind) => (normalizeKind(kind) === 'coaching' ? COACHING_FIELDS : ANALYSIS_FIELDS);
+export const schemaForKind = (kind) => (normalizeKind(kind) === 'coaching' ? COACHING_SCHEMA : ANALYSIS_SCHEMA);
+
+// What kind an analysis actually is, independent of the session's current
+// kind. A session's kind can be switched after it was analysed — the old
+// analysis is not deleted or regenerated, so rendering it by the session's
+// kind can hide or relabel sections that are actually there. A coaching
+// analysis always has `goals` (COACHING_SCHEMA requires it); a therapy one
+// never does.
+export const analysisKind = (ai) =>
+  (ai && typeof ai === 'object' && Array.isArray(ai.goals)) ? 'coaching' : 'therapy';
 
 export const hasValue = v => Array.isArray(v)
   ? v.length > 0
@@ -92,18 +131,25 @@ export function itemToText(item) {
   if (item == null) return '';
   if (typeof item === 'string') return item.trim();
   if (typeof item === 'object') {
-    const task = typeof item.task === 'string' ? item.task.trim() : '';
-    const ctx  = typeof item.context === 'string' ? item.context.trim() : '';
-    if (task && ctx) return `${task} — ${ctx}`;
-    return task || ctx || '';
+    const s = k => (typeof item[k] === 'string' ? item[k].trim() : '');
+    if (s('goal')) {
+      const status = GOAL_STATUS_LABELS[item.status];
+      return [s('goal'), status && `(${status})`, s('progress') && `— ${s('progress')}`].filter(Boolean).join(' ');
+    }
+    const head = s('obstacle') || s('task');
+    const due  = s('due');
+    const main = head && due ? `${head} (${due})` : head;
+    const ctx  = s('context');
+    if (main && ctx) return `${main} — ${ctx}`;
+    return main || ctx || '';
   }
   return String(item);
 }
 
-export function analysisToText(ai) {
+export function analysisToText(ai, kind) {
   if (!ai || typeof ai !== 'object') return '';
   const blocks = [];
-  for (const { key, label } of [...ANALYSIS_FIELDS, ...LEGACY_ANALYSIS_FIELDS]) {
+  for (const { key, label } of [...fieldsForKind(kind), ...LEGACY_ANALYSIS_FIELDS]) {
     const v = ai[key];
     if (!hasValue(v)) continue;
     const body = Array.isArray(v)
