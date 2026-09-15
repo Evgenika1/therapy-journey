@@ -1728,9 +1728,15 @@ function SessionsPageInner() {
                       {parsed.turns.map((turn, i) => {
                         const role = parsed.roleMap[turn.speaker];
                         // Warm on-brand palette: terracotta for the primary speaker,
-                        // muted taupe for the second — no off-palette colors.
+                        // muted taupe for the second — no off-palette colors. Keyed
+                        // on the original role value, not the display label below.
                         const badgeColor = role === 'Client' ? A : MUTED;
-                        const label = parsed.multiSpeaker ? role : `Speaker ${turn.speaker}`;
+                        // roleMap only ever says 'Client' | 'Therapist' — for a
+                        // coaching session the non-client speaker is the coach, not
+                        // the therapist. transcriptFormat.js itself stays kind-blind;
+                        // this is display-only.
+                        const displayRole = (role === 'Therapist' && kindOf(selectedSession) === 'coaching') ? 'Coach' : role;
+                        const label = parsed.multiSpeaker ? displayRole : `Speaker ${turn.speaker}`;
                         return (
                           <div key={i} style={{ display: 'flex', gap: 12, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: '14px 16px' }}>
                             <div style={{ width: 30, height: 30, flexShrink: 0, borderRadius: '50%', background: badgeColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>
