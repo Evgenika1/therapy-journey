@@ -35,20 +35,28 @@ export default function NextSessionTopics({ kind = 'therapy' }) {
 
   useEffect(() => {
     if (!supabase) return;
+    // `kind` starts at DEFAULT_KIND and then flips to the remembered choice on
+    // mount, so this effect fires twice in quick succession — once for therapy,
+    // once for coaching. Without a liveness guard, whichever request happens to
+    // land last wins, even if it was the stale one: a coaching user could see
+    // therapy topics if the therapy response arrives after the coaching one.
+    let live = true;
     // The archive is a second query rather than a wider first one: the live list
     // is the hot path, and this only needs to answer "is there anything to
     // show, and how much". A failure here is silent — the archive link simply
     // does not appear, which must never take the block itself down.
     topicsApi.listArchived(supabase)
-      .then(({ items, hasMore }) => { setArchived(items); setMoreArchived(hasMore); })
-      .catch(err => console.error('[Topics] archive:', err?.message));
+      .then(({ items, hasMore }) => { if (!live) return; setArchived(items); setMoreArchived(hasMore); })
+      .catch(err => { if (!live) return; console.error('[Topics] archive:', err?.message); });
     topicsApi.list(supabase, { kind })
-      .then(l => { setTopics(l); setLoading(false); })
+      .then(l => { if (!live) return; setTopics(l); setLoading(false); })
       .catch(err => {
+        if (!live) return;
         console.error('[Topics] list:', err?.message);
         setError('Could not load your topics: ' + (err?.message || 'unknown error'));
         setLoading(false);
       });
+    return () => { live = false; };
   }, [supabase, kind]);
 
   async function add() {
