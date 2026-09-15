@@ -189,7 +189,9 @@ test('the oversize message states the size and, for video, the ffmpeg fix', () =
   assert.match(tooLargeMessage(3 * 1024 ** 3, 'mp4'), /3\.00 GB/);
 });
 
-test('the upload ceiling stays below Nodes ~2 GiB request-body limit', () => {
-  assert.ok(MAX_UPLOAD_BYTES < 2 * 1024 ** 3);
-  assert.ok(MAX_UPLOAD_BYTES > 100 * 1024 * 1024, 'must still allow a long session');
+test('the upload ceiling is the Storage bucket limit and still fits a long session', () => {
+  // Audio now goes to a Supabase Storage bucket whose free-plan file limit is
+  // 50 MB. A recording is 32 kbit/s — about 14 MB an hour — so three hours fit.
+  assert.equal(MAX_UPLOAD_BYTES, 50 * 1024 * 1024);
+  assert.ok(MAX_UPLOAD_BYTES > 3 * 3600 * 32000 / 8, 'must still allow a three-hour recording');
 });

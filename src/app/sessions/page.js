@@ -10,9 +10,10 @@ import { ALLOWED_EXT, MAX_UPLOAD_BYTES, extOf, tooLargeMessage, unsupportedTypeM
 import { savePendingRecording, loadPendingRecording, clearPendingRecording } from '@/lib/recordingStore';
 import { finishRecording, shouldClearHeldAudioOnClose } from '@/lib/recordingOutcome';
 import {
-  uploadForTranscription, pollTranscript,
-  rememberPendingJob, forgetPendingJob, loadPendingJob,
+  uploadToStorage, startTranscription, pollTranscript, TranscribeError,
+  rememberPendingJob, forgetPendingJob, loadPendingJob, loadPendingAudioPath,
 } from '@/lib/transcribeClient';
+import { AUDIO_BUCKET, audioPath as newAudioPath, storageContentType } from '@/lib/audioStorage';
 import {
   parseSpeakerTurns, stripSpeakerMarkers,
   detectSessionLang, groupSessions,
@@ -663,6 +664,33 @@ function SessionsPageInner() {
   // poll for the result. The route can no longer hold the request open for the
   // whole transcription — no serverless platform allows that for a 90-minute
   // recording — and a dropped poll no longer kills the job.
+  // Upload audio straight into Supabase Storage, then start the job from its
+  // path. The audio used to be POSTed through our API route, which Vercel
+  // rejects above 4.5 MB — a few minutes of speech. If starting the job fails
+  // the orphaned file is removed; once a job exists, the status route deletes
+  // it when the job settles.
+  async function uploadAndStartTranscription(endpoint, body, { ext, mimeType, filename, onProgress }) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new TranscribeError('Not signed in.');
+    const path = newAudioPath(session.user.id, ext);
+    await uploadToStorage({
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      accessToken: session.access_token,
+      bucket: AUDIO_BUCKET, path, body,
+      contentType: storageContentType(mimeType, ext),
+      onProgress,
+    });
+    try {
+      const { job_id } = await startTranscription(endpoint, { path, filename });
+      return { job_id, path };
+    } catch (err) {
+      supabase.storage.from(AUDIO_BUCKET).remove([path])
+        .catch(e => console.error('[transcribe] remove orphaned audio:', e?.message));
+      throw err;
+    }
+  }
+
   async function transcribePending() {
     const pending = pendingAudioRef.current;
     if (!pending) return;
@@ -674,16 +702,16 @@ function SessionsPageInner() {
     setIsTranscribing(true);
     try {
       const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
-      const { job_id } = await uploadForTranscription('/api/transcribe', blob, {
+      const { job_id, path } = await uploadAndStartTranscription('/api/transcribe', blob, {
+        ext, mimeType,
         filename: `recording.${ext}`,
-        contentType: mimeType,
         onProgress: setUploadProgress,
       });
       setUploadProgress(100); // upload done — the wait is now server-side
       // The upload is the expensive half. Remember the job so a reload rejoins
       // this same transcription instead of re-uploading the recording.
-      rememberPendingJob(job_id);
-      const data = await pollTranscript(job_id);
+      rememberPendingJob(job_id, { audioPath: path });
+      const data = await pollTranscript(job_id, { audioPath: path });
       // The server already strips hallucination boilerplate (per-utterance when
       // the audio is diarized), so use its text verbatim — re-stripping here
       // would collapse the "Speaker A:" block separators into one paragraph.
@@ -736,20 +764,18 @@ function SessionsPageInner() {
     }
 
     try {
-      // Send the file as a RAW binary body (not multipart/form-data) — the server
-      // reads it via req.arrayBuffer(). This avoids the flaky multipart parser
-      // ("Failed to parse body as FormData"). The filename travels in a header so
-      // the server can validate the extension. The upload creates a transcription
-      // job and returns its id; the "processing" stage is the polling that
-      // follows, sharing /api/transcribe/status with the live recording flow.
-      const { job_id } = await uploadForTranscription('/api/transcribe-file', file, {
+      // The file goes straight into Supabase Storage; the server only gets its
+      // path and name, validates the extension and creates the job. The
+      // "processing" stage is the polling that follows, sharing
+      // /api/transcribe/status with the live recording flow.
+      const { job_id, path } = await uploadAndStartTranscription('/api/transcribe-file', file, {
+        ext, mimeType: file.type,
         filename: file.name,
-        contentType: file.type,
         onProgress: setImportProgress,
       });
       setImportProgress(100);
       setImportStage('processing');
-      const data = await pollTranscript(job_id);
+      const data = await pollTranscript(job_id, { audioPath: path });
 
       const saved = await sessionsApi.save(supabase, { transcript: data.text || '', title: null, kind: readLastKind() });
       setSessions(list => [saved, ...list]);
@@ -771,13 +797,14 @@ function SessionsPageInner() {
   useEffect(() => {
     const jobId = loadPendingJob();
     if (!jobId) return;
+    const resumedAudioPath = loadPendingAudioPath();
     let cancelled = false;
     (async () => {
       setShowImport(false); setSelectedSession(null);
       setShowModal(true); setIsTranscribing(true); setIsReview(false);
       setSaved(false); setSpeechError(''); setTranscript('');
       try {
-        const data = await pollTranscript(jobId, { isCancelled: () => cancelled });
+        const data = await pollTranscript(jobId, { isCancelled: () => cancelled, audioPath: resumedAudioPath });
         if (cancelled) return;
         forgetPendingJob();
         const finalText = data.text || '';

@@ -5,15 +5,12 @@
 // The common audio/video containers Zoom, voice recorders and phones emit.
 export const ALLOWED_EXT = ['mp3', 'm4a', 'wav', 'mp4'];
 
-// Node cannot write a request body larger than ~2 GiB to a socket: the write()
-// syscall fails with EINVAL and fetch reports only "fetch failed", with the real
-// reason buried in err.cause. Measured on Node 24: 1.5 GiB sends fine, 2 GiB - 1
-// already throws. So the hard ceiling here is the runtime's, not AssemblyAI's.
-//
-// We cap well below it. 500 MB is many hours of any compressed format; what
-// actually blows past it is a video container — an mp4 of a one-hour call is
-// gigabytes of H.264 wrapping ~50 MB of AAC, and only the audio matters here.
-export const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
+// The audio is uploaded straight into a Supabase Storage bucket, and the free
+// plan caps a single file at 50 MB (the bucket enforces it too — migration 024).
+// A live recording is 32 kbit/s, about 14 MB an hour, so a three-hour session
+// fits. What does not fit is a long high-bitrate import — an hour of m4a at
+// 128 kbit/s is ~58 MB — and the message below says how to shrink it.
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 export const fmtSize = bytes => bytes >= 1024 ** 3
   ? `${(bytes / 1024 ** 3).toFixed(2)} GB`
@@ -26,8 +23,8 @@ export const extOf = filename => filename.split('.').pop()?.toLowerCase();
 export function tooLargeMessage(bytes, ext) {
   const head = `That file is too large — ${fmtSize(bytes)} (the limit is ${fmtSize(MAX_UPLOAD_BYTES)}).`;
   return ext === 'mp4'
-    ? `${head} This looks like video: transcription needs only the audio track, which is tens of times smaller. Extract it and upload again:\nffmpeg -i "source.mp4" -vn -c:a aac -b:a 128k "audio.m4a"`
-    : `${head} Compress the recording (mp3 at 128 kbps, say) or split it into parts.`;
+    ? `${head} This looks like video: transcription needs only the audio track, which is tens of times smaller. Extract it and upload again:\nffmpeg -i "source.mp4" -vn -c:a aac -b:a 64k "audio.m4a"`
+    : `${head} Compress the recording (mp3 at 64 kbps is plenty for speech) or split it into parts.`;
 }
 
 export const unsupportedTypeMessage = ext =>

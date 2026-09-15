@@ -27,6 +27,9 @@ export async function pollTranscript(jobId, {
   now        = () => Date.now(),
   isCancelled = () => false,
   onProgress = () => {},
+  // Where the audio waits in Supabase Storage. Sent on every poll so the status
+  // route can delete the file the moment the job settles.
+  audioPath  = null,
 } = {}) {
   if (!jobId) throw new TranscribeError('no transcription job id');
 
@@ -46,7 +49,8 @@ export async function pollTranscript(jobId, {
     let body;
     try {
       const res = await fetchImpl(
-        `/api/transcribe/status?job_id=${encodeURIComponent(currentJob)}${retried ? '&retried=1' : ''}`);
+        `/api/transcribe/status?job_id=${encodeURIComponent(currentJob)}${retried ? '&retried=1' : ''}`
+        + (audioPath ? `&path=${encodeURIComponent(audioPath)}` : ''));
       body = await res.json();
       if (!res.ok && !body?.status) throw new TranscribeError(body?.error || `HTTP ${res.status}`);
     } catch (err) {
@@ -83,27 +87,54 @@ export async function pollTranscript(jobId, {
 }
 
 /**
- * POST a blob or File as a raw binary body and return the created job id.
- * XHR rather than fetch so upload progress is real — a long session takes
- * minutes just to reach the server.
+ * Upload a recording straight into Supabase Storage, with real progress.
+ *
+ * The audio used to be POSTed to our own API route, but a Vercel function
+ * rejects any request body over 4.5 MB (FUNCTION_PAYLOAD_TOO_LARGE), which is
+ * a few minutes of speech. The Storage REST endpoint takes the raw body under
+ * the user's own session, so the bucket's RLS policies decide what is allowed.
+ * XHR rather than fetch so upload progress is real.
  */
-export function uploadForTranscription(url, body, { filename, contentType, onProgress } = {}) {
+export function uploadToStorage({ supabaseUrl, anonKey, accessToken, bucket, path, body, contentType, onProgress }) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', url);
-    xhr.setRequestHeader('Content-Type', contentType || 'application/octet-stream');
-    if (filename) xhr.setRequestHeader('X-Filename', encodeURIComponent(filename));
+    const objectPath = path.split('/').map(encodeURIComponent).join('/');
+    xhr.open('POST', `${supabaseUrl}/storage/v1/object/${bucket}/${objectPath}`);
+    xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+    xhr.setRequestHeader('apikey', anonKey);
+    xhr.setRequestHeader('Content-Type', contentType);
+    xhr.setRequestHeader('x-upsert', 'false');
     xhr.upload.onprogress = ev => {
       if (ev.lengthComputable && onProgress) onProgress(Math.round((ev.loaded / ev.total) * 100));
     };
     xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) return resolve();
       let parsed; try { parsed = JSON.parse(xhr.responseText); } catch { parsed = {}; }
-      if (xhr.status >= 200 && xhr.status < 300 && !parsed.error) resolve(parsed);
-      else reject(new TranscribeError(parsed.error || `HTTP ${xhr.status}`));
+      reject(new TranscribeError(`upload failed: ${parsed.message || parsed.error || `HTTP ${xhr.status}`}`));
     };
-    xhr.onerror = () => reject(new TranscribeError('the connection to the server dropped'));
+    xhr.onerror = () => reject(new TranscribeError('the connection dropped while uploading the recording'));
     xhr.send(body);
   });
+}
+
+/**
+ * Ask the server to transcribe audio already in Storage. Only the path and the
+ * original file name travel — a few bytes, far under any function body limit.
+ */
+export async function startTranscription(url, { path, filename }, { fetchImpl = (...a) => fetch(...a) } = {}) {
+  let res, body;
+  try {
+    res = await fetchImpl(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(filename ? { path, filename } : { path }),
+    });
+    body = await res.json();
+  } catch (err) {
+    throw new TranscribeError(err instanceof TranscribeError ? err.message : 'the connection to the server dropped');
+  }
+  if (!res.ok || body?.error || !body?.job_id) throw new TranscribeError(body?.error || `HTTP ${res.status}`);
+  return body;
 }
 
 // ── resuming across a reload ──────────────────────────────────────────────────
@@ -121,9 +152,10 @@ export const PENDING_JOB_KEY = 'miru_pending_transcribe_job';
 // timeout for nothing.
 export const PENDING_JOB_TTL_MS = POLL_TIMEOUT_MS;
 
-export function rememberPendingJob(jobId, { storage = safeStorage(), now = Date.now } = {}) {
+export function rememberPendingJob(jobId, { storage = safeStorage(), now = Date.now, audioPath = null } = {}) {
   if (!jobId || !storage) return;
-  try { storage.setItem(PENDING_JOB_KEY, JSON.stringify({ jobId, startedAt: now() })); } catch {}
+  const entry = audioPath ? { jobId, startedAt: now(), audioPath } : { jobId, startedAt: now() };
+  try { storage.setItem(PENDING_JOB_KEY, JSON.stringify(entry)); } catch {}
 }
 
 export function forgetPendingJob({ storage = safeStorage() } = {}) {
@@ -143,6 +175,16 @@ export function loadPendingJob({ storage = safeStorage(), now = Date.now, ttlMs 
   if (!parsed?.jobId || typeof parsed.startedAt !== 'number') { forgetPendingJob({ storage }); return null; }
   if (now() - parsed.startedAt > ttlMs) { forgetPendingJob({ storage }); return null; }
   return parsed.jobId;
+}
+
+// The Storage path of the resumed job's audio, so the rejoined poll can still
+// have the file deleted. Read after loadPendingJob has vetted the entry.
+export function loadPendingAudioPath({ storage = safeStorage() } = {}) {
+  if (!storage) return null;
+  try {
+    const parsed = JSON.parse(storage.getItem(PENDING_JOB_KEY));
+    return typeof parsed?.audioPath === 'string' ? parsed.audioPath : null;
+  } catch { return null; }
 }
 
 // localStorage throws outright in some privacy modes — never take down the

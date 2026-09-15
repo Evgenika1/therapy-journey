@@ -6,8 +6,9 @@ import {
   AAI_BASE, AAI_HEADERS, FORCED_RU_CONFIG,
   shouldRetryForcedRu, isNoSpeech, completedPayload,
 } from '@/lib/transcribeJob';
+import { deleteStoredAudio } from '@/lib/transcribeFromStorage';
 
-// One poll of a transcription job. GET /api/transcribe/status?job_id=…
+// One poll of a transcription job. GET /api/transcribe/status?job_id=…[&path=…]
 //
 // The client drives the polling loop, so this returns in well under a second and
 // the whole flow stays inside Vercel's function duration limit no matter how
@@ -36,6 +37,11 @@ export async function GET(req) {
   // that keeps failing cannot bounce between attempts forever.
   const alreadyRetried = url.searchParams.get('retried') === '1';
   if (!jobId) return NextResponse.json({ error: 'job_id is required' }, { status: 400 });
+  // Where the job's audio waits in Storage. Deleted once the job settles —
+  // session audio is health data and must not outlive its transcript. Kept
+  // while a forced-Russian retry still needs to fetch it.
+  const audioPath = url.searchParams.get('path');
+  const settle = () => (audioPath ? deleteStoredAudio(supabase, audioPath, user.id, 'transcribe-status') : null);
 
   try {
     const res = await aaiFetch(`${AAI_BASE}/v2/transcript/${jobId}`,
@@ -58,12 +64,14 @@ export async function GET(req) {
         userId: user.id, kind: 'transcribe', externalId: jobId,
         audioSeconds: Math.round(transcript.audio_duration ?? 0),
       });
+      await settle();
       return NextResponse.json(completedPayload(transcript));
     }
 
     if (transcript.status === 'error') {
       if (isNoSpeech(transcript)) {
         console.log('[transcribe-status] rejected (insufficient speech):', transcript.error);
+        await settle();
         return NextResponse.json({ status: 'completed', text: '', utterances: [], language_code: null, noSpeech: true });
       }
       // Retry the same uploaded audio with the language forced, then hand the
@@ -83,6 +91,7 @@ export async function GET(req) {
         }
         console.error('[transcribe-status] retry create failed:', await retryRes.text());
       }
+      await settle();
       return NextResponse.json({ status: 'error', error: transcript.error || 'Transcription failed' });
     }
 

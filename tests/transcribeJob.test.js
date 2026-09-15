@@ -291,3 +291,61 @@ test('storage being unavailable never breaks the flow', async () => {
   assert.equal(loadPendingJob({ storage: hostile }), null);
   assert.equal(loadPendingJob({ storage: null }), null);
 });
+
+// ── audio in Supabase Storage ────────────────────────────────────────────────
+
+test('the stored audio path rides along on every poll so the server can delete the file', async () => {
+  const { impl, seen } = fakeStatus([
+    { status: 'processing', job_id: 'job-2', retried: true },
+    { status: 'completed', text: 'готово' },
+  ]);
+  await pollTranscript('job-1', opts(impl, { audioPath: 'u-1/a b.webm' }));
+  assert.ok(seen.every(u => u.includes('path=u-1%2Fa%20b.webm')), `path missing in: ${seen.join(' | ')}`);
+});
+
+test('without a stored path the poll URL is unchanged', async () => {
+  const { impl, seen } = fakeStatus([{ status: 'completed', text: 'x' }]);
+  await pollTranscript('job-1', opts(impl));
+  assert.ok(!seen[0].includes('path='));
+});
+
+test('the stored audio path survives a reload with its job', async () => {
+  const { rememberPendingJob, loadPendingJob, loadPendingAudioPath, forgetPendingJob } =
+    await import('../src/lib/transcribeClient.js');
+  const storage = fakeStorage();
+  rememberPendingJob('job-1', { storage, now: () => 1000, audioPath: 'u-1/a.webm' });
+  assert.equal(loadPendingJob({ storage, now: () => 2000 }), 'job-1');
+  assert.equal(loadPendingAudioPath({ storage }), 'u-1/a.webm');
+  forgetPendingJob({ storage });
+  assert.equal(loadPendingAudioPath({ storage }), null);
+});
+
+test('a job remembered without a path resumes with no path', async () => {
+  const { rememberPendingJob, loadPendingAudioPath } = await import('../src/lib/transcribeClient.js');
+  const storage = fakeStorage();
+  rememberPendingJob('job-1', { storage, now: () => 1000 });
+  assert.equal(loadPendingAudioPath({ storage }), null);
+});
+
+test('starting a transcription sends only the path and returns the job id', async () => {
+  const { startTranscription } = await import('../src/lib/transcribeClient.js');
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    return { ok: true, status: 200, json: async () => ({ job_id: 'job-9' }) };
+  };
+  const out = await startTranscription('/api/transcribe', { path: 'u-1/a.webm', filename: 'rec.webm' }, { fetchImpl });
+  assert.equal(out.job_id, 'job-9');
+  assert.equal(calls[0].url, '/api/transcribe');
+  assert.equal(calls[0].init.method, 'POST');
+  assert.deepEqual(JSON.parse(calls[0].init.body), { path: 'u-1/a.webm', filename: 'rec.webm' });
+});
+
+test('a refused start surfaces the server message', async () => {
+  const { startTranscription, TranscribeError } = await import('../src/lib/transcribeClient.js');
+  const fetchImpl = async () => ({ ok: false, status: 402, json: async () => ({ error: 'Monthly minutes used up.' }) });
+  await assert.rejects(
+    () => startTranscription('/api/transcribe', { path: 'u/a.webm' }, { fetchImpl }),
+    err => err instanceof TranscribeError && /Monthly minutes used up/.test(err.message),
+  );
+});
