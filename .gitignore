@@ -44,3 +44,7 @@ next-env.d.ts
 # Ignored rather than deleted: the file stays on disk, it just isn't this
 # project's to version.
 /scraper.py
+
+# Local agent workspaces
+.claude/worktrees/
+.superpowers/
