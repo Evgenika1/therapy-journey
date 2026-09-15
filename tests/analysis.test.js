@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 
 import { parseAnalysis } from '../src/lib/analysisParse.js';
 import {
-  ANALYSIS_FIELDS, ANALYSIS_SCHEMA, analysisHeadline, analysisToText, hasValue,
+  ANALYSIS_FIELDS, ANALYSIS_SCHEMA, COACHING_FIELDS, COACHING_SCHEMA, fieldsForKind, schemaForKind, analysisHeadline, analysisToText, itemToText, hasValue,
 } from '../src/lib/analysisFormat.js';
 
 const FULL = {
@@ -162,4 +162,46 @@ test('hasValue distinguishes empty from present', () => {
   assert.equal(hasValue('  '), false);
   assert.equal(hasValue(null), false);
   assert.equal(hasValue('x'), true);
+});
+
+// ── coaching ─────────────────────────────────────────────────────────────────
+
+test('a coaching analysis has goals, steps, obstacles and insights', () => {
+  assert.deepEqual(COACHING_FIELDS.map(f => f.key),
+    ['topics_covered', 'overview', 'goals', 'homework', 'obstacles', 'insights', 'for_next_session']);
+});
+
+test('the coaching schema requires every field and constrains goal status', () => {
+  assert.deepEqual(COACHING_SCHEMA.required, COACHING_FIELDS.map(f => f.key));
+  assert.equal(COACHING_SCHEMA.additionalProperties, false);
+  const goalItem = COACHING_SCHEMA.properties.goals.items;
+  assert.deepEqual(goalItem.required, ['goal', 'status', 'progress']);
+  assert.deepEqual(goalItem.properties.status.enum, ['new', 'in_progress', 'changed', 'achieved', 'dropped']);
+  const stepItem = COACHING_SCHEMA.properties.homework.items;
+  assert.deepEqual(stepItem.properties.due.type, ['string', 'null']);
+  assert.equal(goalItem.additionalProperties, false);
+});
+
+test('the kind picks the fields and the schema, therapy by default', () => {
+  assert.equal(fieldsForKind('coaching'), COACHING_FIELDS);
+  assert.equal(fieldsForKind('therapy'), ANALYSIS_FIELDS);
+  assert.equal(fieldsForKind(undefined), ANALYSIS_FIELDS);
+  assert.equal(schemaForKind('coaching'), COACHING_SCHEMA);
+  assert.equal(schemaForKind(null), ANALYSIS_SCHEMA);
+});
+
+test('coaching items read as text', () => {
+  assert.equal(itemToText({ goal: 'Launch the course', status: 'in_progress', progress: 'outline done' }),
+    'Launch the course (In progress) — outline done');
+  assert.equal(itemToText({ obstacle: 'Fear of judgement', context: 'came up twice' }),
+    'Fear of judgement — came up twice');
+  assert.equal(itemToText({ task: 'Email two clients', due: 'by Friday', context: 'agreed at the end' }),
+    'Email two clients (by Friday) — agreed at the end');
+  assert.equal(itemToText({ task: 'Email two clients', due: null, context: '' }), 'Email two clients');
+});
+
+test('a coaching summary is copied with coaching labels', () => {
+  const text = analysisToText({ goals: [{ goal: 'Run', status: 'new', progress: '' }], insights: ['I stall when unsure'] }, 'coaching');
+  assert.match(text, /GOALS\n• Run \(New\)/);
+  assert.match(text, /INSIGHTS\n• I stall when unsure/);
 });
