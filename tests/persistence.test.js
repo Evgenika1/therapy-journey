@@ -651,10 +651,29 @@ test('topics are listed for one kind, legacy rows counting as therapy', async ()
 });
 
 test('a topic is saved with its kind', async () => {
-  const sb = fakeSupabase({ responses: { next_session_topics: { data: row({ text: 'Goal' }) } } });
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: row({ text: 'Goal', kind: 'coaching' }) } } });
   const saved = await topics.save(sb, 'Goal', { kind: 'coaching' });
   assert.equal(sb.lastCall().payload.kind, 'coaching');
   assert.equal(saved.kind, 'coaching');
+});
+
+// The returned kind must reflect what the database actually stored, not what
+// was requested: before migration 023 the insert retries without the kind
+// column, so the row is stored (and must be reported) as therapy even though
+// coaching was asked for.
+test('topics.save reports the stored kind when the row comes back with one', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: { data: row({ text: 'Goal', kind: 'coaching' }) } } });
+  const saved = await topics.save(sb, 'Goal', { kind: 'coaching' });
+  assert.equal(saved.kind, 'coaching');
+});
+
+test('topics.save reports therapy when the kind column was dropped on retry', async () => {
+  const sb = fakeSupabase({ responses: { next_session_topics: [
+    { error: pgError('42703', 'column "kind" of relation "next_session_topics" does not exist') },
+    { data: row({ text: 'Goal' }) }, // the retried insert has no kind column, so the stored row has none
+  ] } });
+  const saved = await topics.save(sb, 'Goal', { kind: 'coaching' });
+  assert.equal(saved.kind, 'therapy');
 });
 
 test('a topic still saves without the kind column', async () => {

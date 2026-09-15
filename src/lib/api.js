@@ -512,7 +512,10 @@ export const topics = {
       ({ data, error } = await supabase.from('next_session_topics').insert(insert).select().single());
     }
     if (error) throw toError(error);
-    return { ...data, text, checked: false, source: meta.source || 'manual', kind: normalizeKind(meta.kind) };
+    // What the database actually stored, not what was requested: a database
+    // that hasn't run migration 023 drops the kind column on retry above, and
+    // a row saved without it is therapy regardless of what meta.kind asked for.
+    return { ...data, text, checked: false, source: meta.source || 'manual', kind: normalizeKind(data?.kind) };
   },
 
   async update(supabase, id, fields) {
