@@ -94,7 +94,9 @@ ${languageDirective(transcript)}`;
     const prompt = kind === 'coaching'
       ? coachingPrompt({
           transcript, notes,
-          previousGoals: normalizeGoals(rawPreviousGoals),
+          // Bounded so a client sending an unreasonably long goal history can't
+          // blow the prompt open — the model only needs recent goals anyway.
+          previousGoals: normalizeGoals(rawPreviousGoals).slice(0, 20),
           languageDirective: languageDirective(transcript),
         })
       : therapyPrompt;
