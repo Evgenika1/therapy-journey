@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 
 import { parseAnalysis } from '../src/lib/analysisParse.js';
 import {
-  ANALYSIS_FIELDS, ANALYSIS_SCHEMA, COACHING_FIELDS, COACHING_SCHEMA, fieldsForKind, schemaForKind, analysisHeadline, analysisToText, itemToText, hasValue,
+  ANALYSIS_FIELDS, ANALYSIS_SCHEMA, COACHING_FIELDS, COACHING_SCHEMA, fieldsForKind, schemaForKind, analysisHeadline, analysisToText, itemToText, hasValue, analysisKind,
 } from '../src/lib/analysisFormat.js';
 
 const FULL = {
@@ -204,4 +204,23 @@ test('a coaching summary is copied with coaching labels', () => {
   const text = analysisToText({ goals: [{ goal: 'Run', status: 'new', progress: '' }], insights: ['I stall when unsure'] }, 'coaching');
   assert.match(text, /GOALS\n• Run \(New\)/);
   assert.match(text, /INSIGHTS\n• I stall when unsure/);
+});
+
+// ── analysisKind ─────────────────────────────────────────────────────────────
+// An analysis is read by its own shape, not by the session's current kind —
+// switching a session's kind must not hide or relabel an existing analysis.
+
+test('analysisKind reads coaching from the presence of goals', () => {
+  assert.equal(analysisKind({ goals: [{ goal: 'Run', status: 'new', progress: '' }] }), 'coaching');
+  assert.equal(analysisKind({ goals: [] }), 'coaching');
+});
+
+test('analysisKind reads therapy from a therapy-shaped analysis', () => {
+  assert.equal(analysisKind(FULL), 'therapy');
+});
+
+test('analysisKind defaults to therapy for null, undefined, or non-objects', () => {
+  assert.equal(analysisKind(null), 'therapy');
+  assert.equal(analysisKind(undefined), 'therapy');
+  assert.equal(analysisKind('a string'), 'therapy');
 });

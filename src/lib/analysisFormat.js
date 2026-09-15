@@ -91,6 +91,15 @@ export const COACHING_SCHEMA = buildSchema(COACHING_FIELDS);
 export const fieldsForKind = (kind) => (normalizeKind(kind) === 'coaching' ? COACHING_FIELDS : ANALYSIS_FIELDS);
 export const schemaForKind = (kind) => (normalizeKind(kind) === 'coaching' ? COACHING_SCHEMA : ANALYSIS_SCHEMA);
 
+// What kind an analysis actually is, independent of the session's current
+// kind. A session's kind can be switched after it was analysed — the old
+// analysis is not deleted or regenerated, so rendering it by the session's
+// kind can hide or relabel sections that are actually there. A coaching
+// analysis always has `goals` (COACHING_SCHEMA requires it); a therapy one
+// never does.
+export const analysisKind = (ai) =>
+  (ai && typeof ai === 'object' && Array.isArray(ai.goals)) ? 'coaching' : 'therapy';
+
 export const hasValue = v => Array.isArray(v)
   ? v.length > 0
   : (v != null && String(v).trim() !== '');

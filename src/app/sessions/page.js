@@ -18,7 +18,7 @@ import {
   detectSessionLang, groupSessions,
 } from '@/lib/transcriptFormat';
 import {
-  LEGACY_ANALYSIS_FIELDS, analysisToText, hasValue, fieldsForKind,
+  LEGACY_ANALYSIS_FIELDS, analysisToText, hasValue, fieldsForKind, analysisKind,
 } from '@/lib/analysisFormat';
 import { buildPatternsInput } from '@/lib/patternsInput';
 import { CBT_PRESETS } from '@/lib/chatPresets';
@@ -204,9 +204,6 @@ function SessionsPageInner() {
   const [transcriptError,   setTranscriptError]   = useState('');
   const [analysing,       setAnalysing]       = useState(false);
   const [analyseError,    setAnalyseError]    = useState('');
-  // Set after the kind is switched: the summary on screen was written for the
-  // other kind until the session is analysed again.
-  const [kindChanged, setKindChanged] = useState(false);
   const [kindError,   setKindError]   = useState('');
 
   // recording modal
@@ -312,7 +309,7 @@ function SessionsPageInner() {
 
   // ── select session ────────────────────────────────────────────────────────────
   function selectSession(s) {
-    setKindChanged(false); setKindError('');
+    setKindError('');
     // The panels render into the same centre column as the session detail, so
     // an open one would swallow the click: the row highlights in the list and
     // nothing else appears to happen. Close Paste — but only when it is empty,
@@ -895,7 +892,6 @@ function SessionsPageInner() {
       const updated = await sessionsApi.update(supabase, selectedSession.id, { ai_analysis: JSON.stringify(data.analysis) });
       const withAI = { ...selectedSession, ai_analysis: JSON.stringify(data.analysis) };
       setSelectedSession(withAI);
-      setKindChanged(false);
       setSessions(list => list.map(s => s.id === selectedSession.id ? { ...s, ai_analysis: JSON.stringify(data.analysis) } : s));
 
       // Each suggested practice becomes its own homework row. Re-analysing is
@@ -955,7 +951,6 @@ function SessionsPageInner() {
     const next = normalizeKind(kind);
     if (!selectedSession || kindOf(selectedSession) === next) return;
     const id = selectedSession.id;
-    const hadAnalysis = !!selectedSession.ai_analysis;
     setKindError('');
     try {
       await sessionsApi.update(supabase, id, { kind: next });
@@ -963,7 +958,6 @@ function SessionsPageInner() {
       // flight — only apply the change if it's still the one selected.
       setSelectedSession(s => (s?.id === id ? { ...s, kind: next } : s));
       setSessions(list => list.map(s => (s.id === id ? { ...s, kind: next } : s)));
-      setKindChanged(hadAnalysis);
     } catch (e) {
       console.error('[Sessions] change kind:', e?.message);
       setKindError('Could not change the session type: ' + (e?.message || 'unknown error'));
@@ -1114,9 +1108,15 @@ function SessionsPageInner() {
     // Was `[ai.overview, ai.key_theme, ai.breakthrough, ai.action].join()`: the
     // first is an array (so it copied as a comma run) and the last two are
     // fields the current analysis does not have, so they were always dropped.
-    const text = (ai && analysisToText(ai, kindOf(selectedSession))) || selectedSession.transcript || '';
+    const text = (ai && analysisToText(ai, analysisKind(ai))) || selectedSession.transcript || '';
     navigator.clipboard.writeText(text).catch(() => {});
   }
+
+  // The hint that the summary on screen belongs to the session's other kind:
+  // derived at render from the analysis itself, not from a state flag, so it
+  // survives navigating away and back rather than resetting on selectSession.
+  const selectedAI = selectedSession ? parseAI(selectedSession.ai_analysis) : null;
+  const kindMismatched = !!selectedAI && analysisKind(selectedAI) !== kindOf(selectedSession);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -1572,7 +1572,7 @@ function SessionsPageInner() {
                           </button>
                         );
                       })}
-                      {kindChanged && <span style={{ fontSize: 11.5, color: MUTED }}>Type changed — run Re-analyze to update the summary.</span>}
+                      {kindMismatched && <span style={{ fontSize: 11.5, color: MUTED }}>Type changed — run Re-analyze to update the summary.</span>}
                       {kindError && <span style={{ fontSize: 11.5, color: '#DC2626' }}>{kindError}</span>}
                     </div>
                   </div>
@@ -1625,7 +1625,7 @@ function SessionsPageInner() {
                       )}
                     </div>
                   );
-                  const SECTIONS = [...fieldsForKind(kindOf(selectedSession)), ...LEGACY_ANALYSIS_FIELDS];
+                  const SECTIONS = [...fieldsForKind(analysisKind(ai)), ...LEGACY_ANALYSIS_FIELDS];
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
