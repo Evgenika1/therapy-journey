@@ -38,7 +38,7 @@ export async function POST(req) {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 1024,
-        system: systemPrompt || 'You are a compassionate AI therapy companion. Be concise, warm, and insightful.',
+        system: systemPrompt || 'You are a compassionate AI companion for someone working with a therapist or a coach. Be concise, warm, and insightful.',
         messages: messages.map(m => ({ role: m.role, content: m.content })),
       }),
     });

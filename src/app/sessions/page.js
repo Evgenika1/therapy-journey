@@ -27,6 +27,7 @@ import { proposedTasks, reconcileHomework, describeTask } from '@/lib/sessionHom
 import { aiTopics, reconcileTopics } from '@/lib/sessionTopics';
 import { readLastKind, kindOf, normalizeKind, SESSION_KINDS, KIND_LABELS } from '@/lib/sessionKind';
 import { previousGoals, GOAL_STATUS_LABELS } from '@/lib/coachingGoals';
+import { sessionChatIntro, suggestionsForKind } from '@/lib/chatPrompts';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const SESSION_MOODS = [
@@ -1074,9 +1075,10 @@ function SessionsPageInner() {
       if (preset && directive !== chatDirective) setChatDirective(directive);
       const history = preset?.needsHistory ? await historyBlock() : '';
       const systemPrompt = [
-        includeCtx
-          ? `You are a compassionate AI therapy companion. The user is reviewing a therapy session.\n\nSession transcript:\n"${stripSpeakerMarkers(selectedSession.transcript).slice(0, 3000)}"\n\nBe concise, warm, and insightful.`
-          : 'You are a compassionate AI therapy companion. Be concise, warm, and insightful.',
+        sessionChatIntro({
+          kind: kindOf(selectedSession),
+          transcript: includeCtx ? stripSpeakerMarkers(selectedSession.transcript).slice(0, 3000) : null,
+        }),
         history,
         directive,
       ].filter(Boolean).join('\n\n') + langRule;
@@ -1792,7 +1794,7 @@ function SessionsPageInner() {
                 <p style={{ fontSize: 12, color: MUTED, margin: '0 0 16px', lineHeight: 1.6 }}>
                   {CHAT_COPY.tryOne}
                 </p>
-                <SuggestionList compact onPick={q => sendChat(q)} disabled={chatLoading} />
+                <SuggestionList compact onPick={q => sendChat(q)} disabled={chatLoading} suggestions={suggestionsForKind(kindOf(selectedSession))} />
 
                 {/* The CBT prompts are set apart from the questions above:
                     those retrieve something, these start a piece of work. One
@@ -1855,7 +1857,8 @@ function SessionsPageInner() {
                 {showSuggestions && (
                   <div style={{ marginTop: 7 }}>
                     <SuggestionList compact disabled={chatLoading}
-                      onPick={q => { sendChat(q); setShowSuggestions(false); }} />
+                      onPick={q => { sendChat(q); setShowSuggestions(false); }}
+                      suggestions={suggestionsForKind(kindOf(selectedSession))} />
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
