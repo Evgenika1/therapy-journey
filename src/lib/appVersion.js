@@ -6,6 +6,9 @@
 // upload died on Vercel's 4.5 MB body limit and the user saw only
 // "Transcription failed".
 //
+// Verified end to end on the live site with two deploys: a tab loaded on the
+// first build showed the banner after the second went out.
+//
 // The app never reloads by itself — a reload mid-recording would cut a session
 // in half. It offers, and the person picks the moment.
 
