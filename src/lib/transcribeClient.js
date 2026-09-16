@@ -1,3 +1,6 @@
+import { Upload as TusUpload } from 'tus-js-client';
+import { resumableUploadOptions, uploadPercent } from './audioStorage.js';
+
 // Client half of the async transcription flow: upload returns a job id, this
 // polls /api/transcribe/status until the job finishes.
 //
@@ -87,33 +90,32 @@ export async function pollTranscript(jobId, {
 }
 
 /**
- * Upload a recording straight into Supabase Storage, with real progress.
+ * Upload a recording into Supabase Storage, resumably.
  *
  * The audio used to be POSTed to our own API route, but a Vercel function
- * rejects any request body over 4.5 MB (FUNCTION_PAYLOAD_TOO_LARGE), which is
- * a few minutes of speech. The Storage REST endpoint takes the raw body under
- * the user's own session, so the bucket's RLS policies decide what is allowed.
- * XHR rather than fetch so upload progress is real.
+ * rejects any request body over 4.5 MB (FUNCTION_PAYLOAD_TOO_LARGE) — a few
+ * minutes of speech. It then went up in a single POST straight to Storage,
+ * which cleared that limit but still lost the whole upload to one dropped
+ * connection: minutes of a 24 MB file, gone, with "Transcription failed" as the
+ * only explanation.
+ *
+ * Now it goes up in 6 MB chunks over the resumable (tus) protocol: a drop costs
+ * one chunk, the client retries on a growing delay, and a reload can pick up
+ * where it left off. Options live in audioStorage.js so they can be tested.
  */
-export function uploadToStorage({ supabaseUrl, anonKey, accessToken, bucket, path, body, contentType, onProgress }) {
+export function uploadToStorage({ supabaseUrl, anonKey, accessToken, path, body, contentType, onProgress }) {
   return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const objectPath = path.split('/').map(encodeURIComponent).join('/');
-    xhr.open('POST', `${supabaseUrl}/storage/v1/object/${bucket}/${objectPath}`);
-    xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
-    xhr.setRequestHeader('apikey', anonKey);
-    xhr.setRequestHeader('Content-Type', contentType);
-    xhr.setRequestHeader('x-upsert', 'false');
-    xhr.upload.onprogress = ev => {
-      if (ev.lengthComputable && onProgress) onProgress(Math.round((ev.loaded / ev.total) * 100));
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) return resolve();
-      let parsed; try { parsed = JSON.parse(xhr.responseText); } catch { parsed = {}; }
-      reject(new TranscribeError(`upload failed: ${parsed.message || parsed.error || `HTTP ${xhr.status}`}`));
-    };
-    xhr.onerror = () => reject(new TranscribeError('the connection dropped while uploading the recording'));
-    xhr.send(body);
+    const upload = new TusUpload(body, {
+      ...resumableUploadOptions({ supabaseUrl, accessToken, anonKey, path, contentType }),
+      onProgress: (sent, total) => { if (onProgress) onProgress(uploadPercent(sent, total)); },
+      onSuccess: () => resolve(),
+      onError: err => reject(new TranscribeError(
+        `upload failed: ${err?.originalResponse?.getBody?.() || err?.message || 'the connection dropped'}`)),
+    });
+    // Resume rather than restart when this exact file was already part-uploaded.
+    upload.findPreviousUploads()
+      .then(previous => { if (previous.length) upload.resumeFromPreviousUpload(previous[0]); upload.start(); })
+      .catch(() => upload.start());
   });
 }
 

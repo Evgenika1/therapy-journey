@@ -52,3 +52,47 @@ export function storageContentType(mimeType, ext) {
   if (base) return base;
   return BY_EXT[typeof ext === 'string' ? ext.toLowerCase() : ''] || 'audio/webm';
 }
+
+// ── resumable upload ─────────────────────────────────────────────────────────
+//
+// A 24 MB recording is minutes of upload, and one dropped connection used to
+// lose all of it: the single POST failed and the user saw "Transcription
+// failed" with the audio still held in the browser. Supabase Storage speaks the
+// resumable (tus) protocol, so a drop costs one chunk, and the client retries
+// on its own.
+
+// Supabase requires exactly this chunk size on its resumable endpoint; any
+// other value is rejected.
+export const RESUMABLE_CHUNK_BYTES = 6 * 1024 * 1024;
+
+// Four retries over roughly half a minute: long enough to ride out a lift, a
+// tunnel or a wifi handover, short enough that a real outage still ends with an
+// error the user can act on rather than a spinner that never resolves.
+export const RESUMABLE_RETRY_DELAYS = [1000, 3000, 8000, 20000];
+
+export function resumableUploadOptions({ supabaseUrl, accessToken, anonKey, path, contentType }) {
+  return {
+    endpoint: `${supabaseUrl}/storage/v1/upload/resumable`,
+    retryDelays: RESUMABLE_RETRY_DELAYS,
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      apikey: anonKey,
+      // Never overwrite: every recording gets its own random name, so a
+      // collision would mean something is wrong, not something to silently fix.
+      'x-upsert': 'false',
+    },
+    // Supabase reads the destination from the upload metadata rather than the URL.
+    metadata: { bucketName: AUDIO_BUCKET, objectName: path, contentType, cacheControl: '3600' },
+    chunkSize: RESUMABLE_CHUNK_BYTES,
+    uploadDataDuringCreation: true,
+    // The fingerprint is what allows a resume; once the file is up it is litter.
+    removeFingerprintOnSuccess: true,
+  };
+}
+
+// Whole percent, clamped — tus reports byte counts that can round past the
+// total, and a progress bar showing 101% reads as a bug.
+export function uploadPercent(bytesSent, bytesTotal) {
+  if (!Number.isFinite(bytesSent) || !Number.isFinite(bytesTotal) || bytesTotal <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((bytesSent / bytesTotal) * 100)));
+}
