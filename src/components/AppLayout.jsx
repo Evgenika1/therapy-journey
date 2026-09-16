@@ -5,6 +5,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
 import { useState, useEffect } from 'react';
 import { amIAdmin } from '@/lib/usageClient';
+import UpdateBanner from '@/components/UpdateBanner';
 
 const NAV = [
   { href: '/',             label: 'Dashboard'    },
@@ -120,6 +121,10 @@ export default function AppLayout({ children }) {
       </nav>
 
       {/* Main content */}
+      {/* Tells the user their tab is running an older build; never reloads on
+          its own, because a reload mid-recording would cost the session. */}
+      <UpdateBanner />
+
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
         {children}
       </main>
