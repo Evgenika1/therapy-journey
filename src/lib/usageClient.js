@@ -1,4 +1,7 @@
-import { minutesFromCost, quotaState, monthStart } from './usageQuota.js';
+import {
+  minutesFromCost, quotaState, monthStart,
+  resolveQuotaMinutes, isValidQuotaMinutes, MAX_QUOTA_MINUTES,
+} from './usageQuota.js';
 
 // Reading the ledger from the browser.
 //
@@ -22,7 +25,19 @@ export async function myUsage(supabase, { now = new Date() } = {}) {
 
   const costUsd = (data ?? []).reduce((sum, r) => sum + Number(r.cost_usd || 0), 0);
   const usedMinutes = minutesFromCost(costUsd);
-  return { costUsd, usedMinutes, ...quotaState({ usedMinutes }) };
+  // The policy on user_quota returns this account's own row; a read failure
+  // falls back to the default rather than blanking the card.
+  let quotaMinutes;
+  try {
+    const { data: q, error: qErr } = await supabase
+      .from('user_quota').select('monthly_minutes').eq('user_id', user.id).maybeSingle();
+    if (qErr) throw qErr;
+    quotaMinutes = resolveQuotaMinutes(q);
+  } catch (e) {
+    console.error('[usage] could not read my quota:', e?.message);
+    quotaMinutes = resolveQuotaMinutes(null);
+  }
+  return { costUsd, usedMinutes, ...quotaState({ usedMinutes, quotaMinutes }) };
 }
 
 // Whether the signed-in account is an admin. The policy on `admins` returns
@@ -47,6 +62,18 @@ export async function allUsage(supabase, { now = new Date() } = {}) {
     .order('created_at', { ascending: false });
   if (error) throw error;
 
+  // Allowances for everyone the admin can see. An account with an allowance but
+  // no spend this month still has to appear, or there is no way to edit it back.
+  let quotas = [];
+  try {
+    const { data: qRows, error: qErr } = await supabase.from('user_quota').select('user_id, monthly_minutes');
+    if (qErr) throw qErr;
+    quotas = qRows ?? [];
+  } catch (e) {
+    console.error('[usage] could not read quotas:', e?.message);
+  }
+  const quotaOf = new Map(quotas.map(q => [q.user_id, resolveQuotaMinutes(q)]));
+
   const byUser = new Map();
   for (const row of data ?? []) {
     if (!byUser.has(row.user_id)) {
@@ -66,7 +93,40 @@ export async function allUsage(supabase, { now = new Date() } = {}) {
     if (u.byKind[row.kind] !== undefined) u.byKind[row.kind] += cost;
   }
 
+  for (const [userId] of quotaOf) {
+    if (!byUser.has(userId)) {
+      byUser.set(userId, {
+        userId, costUsd: 0, events: 0, audioSeconds: 0,
+        inputTokens: 0, outputTokens: 0,
+        byKind: { transcribe: 0, analyze: 0, chat: 0, patterns: 0 },
+      });
+    }
+  }
+
   return [...byUser.values()]
-    .map(u => ({ ...u, usedMinutes: minutesFromCost(u.costUsd), ...quotaState({ usedMinutes: minutesFromCost(u.costUsd) }) }))
+    .map(u => {
+      const usedMinutes = minutesFromCost(u.costUsd);
+      const quotaMinutes = quotaOf.has(u.userId) ? quotaOf.get(u.userId) : resolveQuotaMinutes(null);
+      // Says whether the number came from a row or from the default, so the
+      // admin view can show an edited allowance as edited.
+      return { ...u, usedMinutes, hasOwnQuota: quotaOf.has(u.userId), ...quotaState({ usedMinutes, quotaMinutes }) };
+    })
     .sort((a, b) => b.costUsd - a.costUsd);
+}
+
+// Set one account's monthly allowance. Admin-only: the policy on user_quota
+// refuses the write for anyone else, and this validates first so a typo never
+// reaches the database.
+export async function setUserQuota(supabase, userId, minutes) {
+  if (typeof userId !== 'string' || !userId.trim()) throw new Error('No account to set an allowance for.');
+  if (!isValidQuotaMinutes(minutes)) {
+    throw new Error(`The allowance must be a whole number of minutes between 0 and ${MAX_QUOTA_MINUTES}.`);
+  }
+  const { data, error } = await supabase
+    .from('user_quota')
+    .upsert({ user_id: userId, monthly_minutes: minutes, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? { user_id: userId, monthly_minutes: minutes };
 }

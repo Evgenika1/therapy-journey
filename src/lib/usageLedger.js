@@ -1,5 +1,5 @@
 import { claudeCost, audioCost } from './usagePricing.js';
-import { minutesFromCost, quotaState, monthStart } from './usageQuota.js';
+import { minutesFromCost, quotaState, monthStart, resolveQuotaMinutes } from './usageQuota.js';
 
 // Writing to and reading from the usage ledger, from inside API routes.
 //
@@ -54,9 +54,26 @@ export async function recordUsage(supabase, { userId, kind, sessionId = null, mo
   return cost;
 }
 
+// One account's monthly allowance in minutes: its own row in `user_quota`
+// (migration 025) when it has one, otherwise the default.
+
 // This month's spend for one account, in dollars and in minutes, plus whether
 // they are ok / warned / blocked. Used by the routes to gate, and by the
 // dashboard to show the number.
+export async function quotaMinutesFor(supabase, userId) {
+  try {
+    const { data, error } = await supabase
+      .from('user_quota').select('monthly_minutes').eq('user_id', userId).maybeSingle();
+    if (error) throw error;
+    return resolveQuotaMinutes(data);
+  } catch (e) {
+    // Fail towards the default: an unreachable quota table must not lock an
+    // account out of its own notes, and must not grant an unlimited allowance.
+    console.error('[usage] could not read the quota:', e?.message);
+    return resolveQuotaMinutes(null);
+  }
+}
+
 export async function usageThisMonth(supabase, userId, { now = new Date() } = {}) {
   try {
     const { data, error } = await supabase
@@ -68,7 +85,9 @@ export async function usageThisMonth(supabase, userId, { now = new Date() } = {}
 
     const costUsd = (data ?? []).reduce((sum, r) => sum + Number(r.cost_usd || 0), 0);
     const usedMinutes = minutesFromCost(costUsd);
-    return { costUsd, usedMinutes, ...quotaState({ usedMinutes }) };
+    // The account's own allowance, or the default when it has no row.
+    const quotaMinutes = await quotaMinutesFor(supabase, userId);
+    return { costUsd, usedMinutes, ...quotaState({ usedMinutes, quotaMinutes }) };
   } catch (e) {
     // Fail open — see the note at the top of the file.
     console.error('[usage] could not read the month:', e?.message);

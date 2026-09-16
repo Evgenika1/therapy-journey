@@ -31,6 +31,28 @@ import { ASSEMBLYAI_USD_PER_HOUR } from './usagePricing.js';
 // inside the quota.
 export const MONTHLY_MINUTES = 400;
 
+// An account may be given its own allowance (table `user_quota`, migration
+// 025). MONTHLY_MINUTES above is only the default for an account with no row.
+//
+// The ceiling exists because the field is typed by hand: a stray zero on 400
+// should not quietly hand out a year of transcription.
+export const MAX_QUOTA_MINUTES = 20000;
+
+// Whether a number is a usable allowance. Whole minutes only — the field is a
+// number input, and "60.5 minutes" is a typo, not an intention.
+export function isValidQuotaMinutes(minutes) {
+  return Number.isInteger(minutes) && minutes >= 0 && minutes <= MAX_QUOTA_MINUTES;
+}
+
+// The allowance from a `user_quota` row, or the default when there is no row or
+// the value is unusable. Fails towards the default for the same reason the rest
+// of this file does: a bad value must not lock someone out of their own notes,
+// and must not silently grant an unlimited one either.
+export function resolveQuotaMinutes(row) {
+  const minutes = row?.monthly_minutes;
+  return isValidQuotaMinutes(minutes) ? minutes : MONTHLY_MINUTES;
+}
+
 // Warn while there is still real headroom. A warning that fires at zero is not
 // a warning, it is an obituary.
 export const WARN_AT_FRACTION = 0.2;

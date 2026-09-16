@@ -15,8 +15,8 @@ import { useState, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
-import { allUsage, amIAdmin } from '@/lib/usageClient';
-import { MONTHLY_MINUTES, USD_PER_MINUTE } from '@/lib/usageQuota';
+import { allUsage, amIAdmin, setUserQuota } from '@/lib/usageClient';
+import { MONTHLY_MINUTES, USD_PER_MINUTE, MAX_QUOTA_MINUTES } from '@/lib/usageQuota';
 import { ASSEMBLYAI_USD_PER_HOUR } from '@/lib/usagePricing';
 
 const usd = n => `$${n.toFixed(n < 1 ? 4 : 2)}`;
@@ -43,6 +43,34 @@ export default function AdminPage() {
 
   const total = rows.reduce((sum, r) => sum + r.costUsd, 0);
 
+  // An allowance being edited, per account: the typed text, plus what happened
+  // to the last save. Kept as text so a half-typed number is not rounded away.
+  const [draft,  setDraft]  = useState({});
+  const [saving, setSaving] = useState('');
+  const [saved,  setSaved]  = useState('');
+
+  async function saveQuota(userId) {
+    const typed = draft[userId];
+    const minutes = Number(typed);
+    setError(''); setSaved('');
+    if (typed === '' || !Number.isInteger(minutes)) {
+      setError(`The allowance must be a whole number of minutes between 0 and ${MAX_QUOTA_MINUTES}.`);
+      return;
+    }
+    setSaving(userId);
+    try {
+      await setUserQuota(supabase, userId, minutes);
+      // Reflect it immediately: this row's own gate reads the same number.
+      setRows(list => list.map(r => (r.userId === userId
+        ? { ...r, quota: minutes, hasOwnQuota: true, remaining: minutes - r.usedMinutes }
+        : r)));
+      setDraft(d => { const next = { ...d }; delete next[userId]; return next; });
+      setSaved(userId);
+    } catch (e) {
+      setError(e?.message || 'Could not save the allowance');
+    } finally { setSaving(''); }
+  }
+
   const cell = { padding: '9px 12px', fontSize: 13, color: TEXT, textAlign: 'left', verticalAlign: 'top' };
   const head = { ...cell, fontSize: 10.5, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap' };
 
@@ -55,7 +83,8 @@ export default function AdminPage() {
             Usage this month
           </h1>
           <p style={{ fontSize: 12.5, color: MUTED, margin: '0 0 18px', lineHeight: 1.5 }}>
-            What every account has spent since the 1st, in real money.
+            What every account has spent since the 1st, in real money. The allowance is
+            per account: {MONTHLY_MINUTES} minutes unless you change it here.
           </p>
 
           {isAdmin === null && <p style={{ fontSize: 13, color: MUTED }}>Checking…</p>}
@@ -91,6 +120,7 @@ export default function AdminPage() {
                       <th style={head}>Account</th>
                       <th style={head}>Cost</th>
                       <th style={head}>Minutes used</th>
+                      <th style={head}>Allowance</th>
                       <th style={head}>Audio</th>
                       <th style={head}>Tokens in / out</th>
                       <th style={head}>Transcribe / Analyse / Chat / Patterns</th>
@@ -106,10 +136,34 @@ export default function AdminPage() {
                         </td>
                         <td style={{ ...cell, color: A }}>{usd(r.costUsd)}</td>
                         <td style={{ ...cell, color: r.status === 'blocked' ? ERR : TEXT }}>
-                          {Math.round(r.usedMinutes)} / {MONTHLY_MINUTES}
+                          {Math.round(r.usedMinutes)} / {r.quota}
                           {r.status !== 'ok' && (
                             <span style={{ fontSize: 11, color: ERR, marginLeft: 6 }}>{r.status}</span>
                           )}
+                        </td>
+                        {/* Editable per account. An empty field is not "no
+                            allowance" — 0 is — so the input always shows the
+                            number in force, default included. */}
+                        <td style={cell}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <input
+                              type="number" min={0} max={MAX_QUOTA_MINUTES} step={1}
+                              value={draft[r.userId] ?? String(r.quota)}
+                              onChange={e => setDraft(d => ({ ...d, [r.userId]: e.target.value }))}
+                              onKeyDown={e => e.key === 'Enter' && saveQuota(r.userId)}
+                              aria-label={`Monthly allowance in minutes for account ${r.userId.slice(0, 8)}`}
+                              style={{ width: 74, padding: '5px 7px', borderRadius: 7, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 12.5, fontFamily: 'inherit' }}
+                            />
+                            <button
+                              onClick={() => saveQuota(r.userId)}
+                              disabled={saving === r.userId || (draft[r.userId] ?? String(r.quota)) === String(r.quota)}
+                              style={{ padding: '5px 10px', borderRadius: 7, border: `1px solid ${BORDER}`, background: 'transparent', color: (draft[r.userId] ?? String(r.quota)) === String(r.quota) ? MUTED : A, fontSize: 11.5, fontFamily: 'inherit', cursor: (draft[r.userId] ?? String(r.quota)) === String(r.quota) ? 'default' : 'pointer' }}>
+                              {saving === r.userId ? '…' : 'Save'}
+                            </button>
+                          </div>
+                          <span style={{ fontSize: 10.5, color: saved === r.userId ? A : MUTED }}>
+                            {saved === r.userId ? 'Saved' : r.hasOwnQuota ? 'custom' : `default ${MONTHLY_MINUTES}`}
+                          </span>
                         </td>
                         <td style={cell}>{mins(r.audioSeconds)}</td>
                         <td style={cell}>{r.inputTokens.toLocaleString()} / {r.outputTokens.toLocaleString()}</td>
@@ -119,7 +173,7 @@ export default function AdminPage() {
                       </tr>
                     ))}
                     {rows.length === 0 && !error && (
-                      <tr><td style={{ ...cell, color: MUTED }} colSpan={6}>Nothing spent yet this month.</td></tr>
+                      <tr><td style={{ ...cell, color: MUTED }} colSpan={7}>Nothing spent yet this month.</td></tr>
                     )}
                   </tbody>
                 </table>

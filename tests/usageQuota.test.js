@@ -90,3 +90,37 @@ test('the month starts at midnight UTC on the first', () => {
   assert.equal(monthStart(new Date('2026-01-01T00:00:00Z')), '2026-01-01T00:00:00.000Z');
   assert.equal(monthStart(new Date('2026-12-31T23:59:59Z')), '2026-12-01T00:00:00.000Z');
 });
+
+// ── per-account quotas ───────────────────────────────────────────────────────
+//
+// 400 minutes is the default, not the rule: an admin can give one account a
+// different allowance. A missing, malformed or hostile value must fall back to
+// the default rather than locking someone out or handing out an unlimited one.
+
+test('a quota row resolves to its minutes, anything unusable to the default', async () => {
+  const { resolveQuotaMinutes, MAX_QUOTA_MINUTES } = await import('../src/lib/usageQuota.js');
+  assert.equal(resolveQuotaMinutes({ monthly_minutes: 5 }), 5);
+  assert.equal(resolveQuotaMinutes({ monthly_minutes: 0 }), 0, 'zero is a real answer: no allowance');
+  assert.equal(resolveQuotaMinutes({ monthly_minutes: MAX_QUOTA_MINUTES }), MAX_QUOTA_MINUTES);
+  for (const bad of [
+    null, undefined, {}, { monthly_minutes: null }, { monthly_minutes: -1 },
+    { monthly_minutes: 1.5 }, { monthly_minutes: '60' }, { monthly_minutes: NaN },
+    { monthly_minutes: Infinity }, { monthly_minutes: MAX_QUOTA_MINUTES + 1 },
+  ]) {
+    assert.equal(resolveQuotaMinutes(bad), MONTHLY_MINUTES, `${JSON.stringify(bad)} → default`);
+  }
+});
+
+test('an admin-entered quota is validated before it reaches the database', async () => {
+  const { isValidQuotaMinutes, MAX_QUOTA_MINUTES } = await import('../src/lib/usageQuota.js');
+  for (const ok of [0, 1, 400, MAX_QUOTA_MINUTES]) assert.equal(isValidQuotaMinutes(ok), true, `${ok}`);
+  for (const bad of [-1, 1.5, NaN, Infinity, '400', null, undefined, MAX_QUOTA_MINUTES + 1]) {
+    assert.equal(isValidQuotaMinutes(bad), false, `${JSON.stringify(bad)}`);
+  }
+});
+
+test('the quota ceiling is high enough to be generous and low enough to be a ceiling', async () => {
+  const { MAX_QUOTA_MINUTES } = await import('../src/lib/usageQuota.js');
+  assert.ok(MAX_QUOTA_MINUTES >= 10000, 'an unusually heavy month must fit');
+  assert.ok(MAX_QUOTA_MINUTES <= 100000, 'but a typo must not hand out a fortune');
+});
