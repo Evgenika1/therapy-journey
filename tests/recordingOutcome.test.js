@@ -132,3 +132,20 @@ test('a successful transcript that was never saved keeps its audio', () => {
 test('a failed transcription keeps its audio for the recovery banner', () => {
   assert.equal(shouldClearHeldAudioOnClose({ saved: false, transcribeFailed: true }), false);
 });
+
+// ── a reload must not hide a held recording behind an empty record modal ──────
+
+test('a reload with ?record=true opens the modal only when nothing is held', async () => {
+  const { shouldAutoOpenRecordModal } = await import('../src/lib/recordingOutcome.js');
+  // The ordinary case: arriving from the Dashboard's record button.
+  assert.equal(shouldAutoOpenRecordModal({ wantsRecord: true, hasHeldRecording: false, hasPendingJob: false }), true);
+  // The bug: the URL survives a reload, so the modal reopened empty and covered
+  // the recovery banner offering the 47-minute recording back.
+  assert.equal(shouldAutoOpenRecordModal({ wantsRecord: true, hasHeldRecording: true, hasPendingJob: false }), false);
+  // A transcription still running owns the screen; it re-adopts the audio itself.
+  assert.equal(shouldAutoOpenRecordModal({ wantsRecord: true, hasHeldRecording: true, hasPendingJob: true }), false);
+  assert.equal(shouldAutoOpenRecordModal({ wantsRecord: true, hasHeldRecording: false, hasPendingJob: true }), false);
+  // No param, no modal.
+  assert.equal(shouldAutoOpenRecordModal({ wantsRecord: false, hasHeldRecording: false, hasPendingJob: false }), false);
+  assert.equal(shouldAutoOpenRecordModal({}), false);
+});

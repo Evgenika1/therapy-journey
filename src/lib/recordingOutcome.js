@@ -47,6 +47,17 @@ export function shouldClearHeldAudioOnClose({ saved }) {
   return saved === true;
 }
 
+// Whether `?record=true` should open the record modal.
+//
+// The param survives a reload: the Dashboard's record button navigates to
+// /sessions?record=true, and reloading that URL used to reopen an empty record
+// modal on top of the recovery banner — which is the only way back to a held
+// recording. A 47-minute session looked lost that way. A recording waiting to
+// be transcribed, or a job still being polled, outranks starting a new one.
+export function shouldAutoOpenRecordModal({ wantsRecord, hasHeldRecording, hasPendingJob } = {}) {
+  return wantsRecord === true && !hasHeldRecording && !hasPendingJob;
+}
+
 // Runs the post-stop sequence. `hold`, `measure` and `transcribe` are injected
 // so the ordering can be tested without a browser.
 //

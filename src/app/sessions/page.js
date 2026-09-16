@@ -8,7 +8,7 @@ import { sessions as sessionsApi, emotions as emotionsApi, aiChats, homework as 
 import { pendingTopics, prefillNotes } from '@/lib/sessionTopics';
 import { ALLOWED_EXT, MAX_UPLOAD_BYTES, extOf, tooLargeMessage, unsupportedTypeMessage } from '@/lib/audioUpload';
 import { savePendingRecording, loadPendingRecording, clearPendingRecording } from '@/lib/recordingStore';
-import { finishRecording, shouldClearHeldAudioOnClose } from '@/lib/recordingOutcome';
+import { finishRecording, shouldClearHeldAudioOnClose, shouldAutoOpenRecordModal } from '@/lib/recordingOutcome';
 import {
   uploadToStorage, startTranscription, pollTranscript, TranscribeError,
   rememberPendingJob, forgetPendingJob, loadPendingJob, loadPendingAudioPath,
@@ -295,11 +295,19 @@ function SessionsPageInner() {
     if (searchParams.get('record') === 'true') {
       recordParamHandled.current = true;
       const preMoodParam = searchParams.get('preMood');
-      openRecordModal(
-        preMoodParam !== null ? Number(preMoodParam) : undefined,
-        searchParams.get('name') || '',
-      );
-      router.replace('/sessions');
+      // Reloading this URL must not cover the recovery banner with an empty
+      // record modal — that is the only way back to a held recording.
+      (async () => {
+        const held = await loadPendingRecording().catch(() => null);
+        if (!shouldAutoOpenRecordModal({
+          wantsRecord: true, hasHeldRecording: !!held, hasPendingJob: !!loadPendingJob(),
+        })) { router.replace('/sessions'); return; }
+        openRecordModal(
+          preMoodParam !== null ? Number(preMoodParam) : undefined,
+          searchParams.get('name') || '',
+        );
+        router.replace('/sessions');
+      })();
     }
   }, [searchParams]);
 
