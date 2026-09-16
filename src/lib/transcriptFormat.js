@@ -37,7 +37,9 @@ export function stripHallucinations(text) {
 //   • { turns, roleMap, multiSpeaker } → one turn per utterance, each with
 //                           { speaker, time|null, text }
 // Role labels use a heuristic: in therapy the client usually speaks more, so the
-// speaker with the most total text becomes "Client" and the rest "Therapist".
+// speaker with the most total text becomes "You" and the rest "Therapist" (or
+// "Coach", chosen at render time by the session's kind). "You" rather than
+// "Client": these are the reader's own notes, not a case file.
 export function parseSpeakerTurns(text) {
   if (!text) return null;
   const turns = [];
@@ -54,7 +56,7 @@ export function parseSpeakerTurns(text) {
   const speakers = Object.keys(totals);
   const client = speakers.reduce((a, b) => (totals[a] >= totals[b] ? a : b));
   const roleMap = {};
-  for (const s of speakers) roleMap[s] = s === client ? 'Client' : 'Therapist';
+  for (const s of speakers) roleMap[s] = s === client ? 'You' : 'Therapist';
   return { turns, roleMap, multiSpeaker: speakers.length >= 2 };
 }
 

@@ -80,6 +80,8 @@ Return a JSON object with EXACTLY these fields. Use arrays where indicated; retu
 
 IMPORTANT: Always respond in the SAME language as the transcript. If the transcript is in Russian — respond in Russian. If in English — respond in English. If mixed — use the dominant language. This applies to ALL fields and all array items.
 
+Address the person in the SECOND PERSON, as "you" ("вы" in Russian): "you spoke about being afraid to open up". Never write about them in the third person — not "the client", not "the patient", not "she" or "he". The only exception is the therapist, who is "your therapist" — in Russian "ваш терапевт".
+
 Base every item strictly on what is actually in the transcript. Do not invent topics, emotions, or breakthroughs that are not supported by the text.
 
 Respond ONLY with valid JSON. No markdown, no explanation, no code fences.

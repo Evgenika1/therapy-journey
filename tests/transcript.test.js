@@ -94,7 +94,9 @@ test('labels the most talkative speaker as the client', () => {
   const parsed = parseSpeakerTurns(
     '[A 0:00] ' + 'много слов '.repeat(20) + '\n\n[B 0:30] Угу.',
   );
-  assert.equal(parsed.roleMap.A, 'Client');
+  // "You", not "Client": the person reading the transcript is the one who was
+  // in the room, and being called a client in your own notes reads as a file.
+  assert.equal(parsed.roleMap.A, 'You');
   assert.equal(parsed.roleMap.B, 'Therapist');
 });
 

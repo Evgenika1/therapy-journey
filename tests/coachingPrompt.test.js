@@ -43,3 +43,11 @@ test('the rules the spec requires are in the prompt', () => {
     assert.match(p, new RegExp(`"${key}"`), `prompt must describe ${key}`);
   }
 });
+
+test('the coaching analysis speaks to the person, not about them', () => {
+  const p = coachingPrompt(base);
+  assert.match(p, /second person/i);
+  assert.match(p, /"you"/i);
+  // The words the model reached for before this rule existed.
+  assert.match(p, /never.*(the client|the person)/i);
+});

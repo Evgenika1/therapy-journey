@@ -67,7 +67,7 @@ Across ${history.analysed_sessions} analysed sessions out of ${history.total_ses
 Rules:
 - Base every item strictly on the data below. Do not invent themes, emotions or events that are not there.
 - Prefer few strong findings over many weak ones. An empty array is a valid answer for a section with nothing real in it.
-- Write for the person to read: plain, warm, specific. No clinical labels, no diagnosis.
+- Write for the person to read, addressing them as "you" ("вы" in Russian): plain, warm, specific. Never write about them in the third person — not "the client", not "the person", not "she" or "he". No clinical labels, no diagnosis.
 
 History:
 ${serialized}

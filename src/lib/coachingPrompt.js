@@ -30,6 +30,7 @@ Return a JSON object with EXACTLY these fields. Return an empty array [] when a 
 - "for_next_session": array of strings — threads explicitly left for next time, or questions still open
 
 Rules:
+- Address the person in the SECOND PERSON, as "you" ("вы" in Russian): "you said you would email two clients". Never write about them in the third person — not "the client", not "the person", not "she" or "he". The only exception is the coach, who is "your coach" — in Russian "ваш коуч", never "тренер".
 - Base every item strictly on the transcript. An empty array is better than a generic item like "stay motivated".
 - If something heavy comes up — health, a crisis, grief — note it gently in "overview" and never diagnose. Coaching is not therapy; do not give clinical advice.
 - IMPORTANT: Always respond in the SAME language as the transcript, in ALL fields and all array items.
