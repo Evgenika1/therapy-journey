@@ -106,7 +106,13 @@ body {
    look sit after :root below, because they read the theme tokens. */
 .mobile-gate { display: none; }
 
-@media (max-width: 800px) {
+/* `pointer: coarse` is what makes this a phone rule rather than a width rule.
+   Narrowing a desktop window below 800px used to replace the whole app with the
+   coming-soon screen — mid-session, mid-recording — because width alone cannot
+   tell a phone from a resized window. A mouse or trackpad reports a fine
+   pointer, so a narrow desktop window keeps the app; a touch screen that small
+   is a phone. */
+@media (max-width: 800px) and (pointer: coarse) {
   .app-shell   { display: none; }
   .mobile-gate { display: flex; }
 }
