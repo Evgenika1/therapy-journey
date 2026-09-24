@@ -7,7 +7,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { sessions as sessionsApi, emotions as emotionsApi, aiChats, homework as homeworkApi, topics as topicsApi } from '@/lib/api';
 import { pendingTopics, prefillNotes } from '@/lib/sessionTopics';
 import { ALLOWED_EXT, MAX_UPLOAD_BYTES, extOf, tooLargeMessage, unsupportedTypeMessage } from '@/lib/audioUpload';
-import { savePendingRecording, loadPendingRecording, clearPendingRecording } from '@/lib/recordingStore';
+import { savePendingRecording, loadPendingRecording, clearPendingRecording, savePendingTranscript } from '@/lib/recordingStore';
 import { finishRecording, shouldClearHeldAudioOnClose, shouldAutoOpenRecordModal } from '@/lib/recordingOutcome';
 import {
   uploadToStorage, startTranscription, pollTranscript, TranscribeError,
@@ -725,6 +725,10 @@ function SessionsPageInner() {
       // would collapse the "Speaker A:" block separators into one paragraph.
       const finalText = data.text || '';
       forgetPendingJob(); // settled — nothing left to rejoin
+      // Hold the text BEFORE showing it. A 99-minute transcript was lost this
+      // way: it sat on screen waiting for "Save Session", the tab went away,
+      // and the only copy went with it — after AssemblyAI had billed for it.
+      await savePendingTranscript(finalText);
       setTranscript(finalText);
       if (!finalText) setSpeechError('No speech detected in the recording.');
     } catch (err) {
@@ -816,6 +820,7 @@ function SessionsPageInner() {
         if (cancelled) return;
         forgetPendingJob();
         const finalText = data.text || '';
+        await savePendingTranscript(finalText);
         setTranscript(finalText);
         if (!finalText) setSpeechError('No speech detected in the recording.');
         // Re-adopt the held audio so Retry and Save behave as if we never left.
@@ -850,9 +855,14 @@ function SessionsPageInner() {
     if (!recovered) return;
     pendingAudioRef.current = { blob: recovered.blob, mimeType: recovered.mimeType || 'audio/webm' };
     setSeconds(recovered.seconds || 0);
+    const heldText = typeof recovered.transcript === 'string' ? recovered.transcript : '';
     setRecovered(null);
-    setShowModal(true); setIsReview(true); setSaved(false); setTranscript(''); setRecNotes('');
-    transcribePending();
+    setShowModal(true); setIsReview(true); setSaved(false); setRecNotes('');
+    // This recording was already transcribed once and the text was kept, so
+    // hand it back rather than paying AssemblyAI for the same audio twice.
+    // Only a recording with no text goes back for transcription.
+    setTranscript(heldText);
+    if (!heldText) transcribePending();
   }
 
   async function discardRecovered() {
@@ -1178,14 +1188,21 @@ function SessionsPageInner() {
               rather than leaving the user to assume the session is gone. */}
           {recovered && !showModal && (
             <div style={{ margin: '0 14px 12px', background: A + '14', border: `1px solid ${A}55`, borderRadius: 14, padding: '12px 13px' }}>
-              <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT, margin: '0 0 4px' }}>An untranscribed recording was found</p>
+              {/* Two different situations wear the same banner: audio with no
+                  text yet, and audio whose transcript was already paid for and
+                  kept. Saying which one it is decides whether the button costs
+                  money. */}
+              <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT, margin: '0 0 4px' }}>
+                {recovered.transcript ? 'An unsaved session was found' : 'An untranscribed recording was found'}
+              </p>
               <p style={{ fontSize: 11.5, color: MUTED, margin: '0 0 10px', lineHeight: 1.5 }}>
-                {fmt(recovered.seconds || 0)} · {(recovered.blob.size / 1024 / 1024).toFixed(1)} MB — transcription never finished.
+                {fmt(recovered.seconds || 0)} · {(recovered.blob.size / 1024 / 1024).toFixed(1)} MB —{' '}
+                {recovered.transcript ? 'the transcript is ready, the session was never saved.' : 'transcription never finished.'}
               </p>
               <div style={{ display: 'flex', gap: 7 }}>
                 <button onClick={resumeRecovered}
                   style={{ flex: 2, padding: '7px 0', borderRadius: 8, border: 'none', background: A, color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
-                  ↻ Transcribe
+                  {recovered.transcript ? '↻ Open and save' : '↻ Transcribe'}
                 </button>
                 <button onClick={discardRecovered}
                   style={{ flex: 1, padding: '7px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 12, cursor: 'pointer' }}>

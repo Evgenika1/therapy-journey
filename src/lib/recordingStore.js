@@ -49,6 +49,32 @@ export async function savePendingRecording({ blob, mimeType, seconds }) {
   }
 }
 
+// The finished transcript, kept beside the audio it came from.
+//
+// A 99-minute session was transcribed and then lost: the text sat on screen
+// waiting for "Save Session" and the tab went away with the only copy, while
+// AssemblyAI had already billed 146 minutes for it. Re-transcribing costs that
+// money again, so the text is written here the moment it arrives — before the
+// user is asked to do anything.
+//
+// Only ever an update: with no held recording there is nothing to recover, and
+// a bare transcript record would fool loadPendingRecording into thinking there
+// is audio to offer back.
+export async function savePendingTranscript(transcript) {
+  if (typeof transcript !== 'string' || !transcript.trim()) return false;
+  try {
+    const db = await openDb();
+    const existing = await tx(db, 'readonly', s => s.get(KEY));
+    if (!existing?.blob) { db.close(); return false; }
+    await tx(db, 'readwrite', s => s.put({ ...existing, transcript, transcribedAt: Date.now() }, KEY));
+    db.close();
+    return true;
+  } catch (e) {
+    console.warn('[recordingStore] transcript save failed:', e?.message);
+    return false;
+  }
+}
+
 export async function loadPendingRecording() {
   try {
     const db = await openDb();
