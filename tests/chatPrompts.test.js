@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   sessionChatIntro, GENERAL_CHAT_INTRO, COACHING_SUGGESTIONS, suggestionsForKind,
+  historyContextBlock, generalChatSystemPrompt,
 } from '../src/lib/chatPrompts.js';
 import { CHAT_SUGGESTIONS } from '../src/lib/chatPresets.js';
 
@@ -36,4 +37,32 @@ test('coaching chats lead with coaching suggestions, therapy keeps its list', ()
   assert.deepEqual(suggestionsForKind('therapy'), CHAT_SUGGESTIONS);
   assert.deepEqual(suggestionsForKind('coaching').slice(0, COACHING_SUGGESTIONS.length), COACHING_SUGGESTIONS);
   assert.equal(suggestionsForKind('coaching').length, COACHING_SUGGESTIONS.length + CHAT_SUGGESTIONS.length);
+});
+
+// The standalone chat had no history unless "Find my pattern" was pressed, so a
+// typed "patterns from my last session" was answered with "I have no access to
+// your sessions".
+test('the general chat carries the user history on every message, not only on a preset', () => {
+  const sessions = [
+    { created_at: '2026-09-01T10:00:00Z', kind: 'therapy', ai_analysis: { key_theme: 'Work stress', topics_covered: ['deadlines'] } },
+    { created_at: '2026-10-01T10:00:00Z', kind: 'therapy', ai_analysis: { key_theme: 'Conflict with mother', patterns_triggers: ['criticism'] } },
+  ];
+  const emotions = [{ created_at: '2026-10-01T09:00:00Z', category: 'Anxiety', intensity: 7, note: 'перед сессией' }];
+  const p = generalChatSystemPrompt({ history: historyContextBlock(sessions, emotions) });
+  assert.match(p, /^You are a compassionate AI companion/);
+  assert.match(p, /Conflict with mother/);
+  assert.match(p, /Work stress/);
+  assert.match(p, /перед сессией/);
+  assert.match(p, /"last_session":"2026-10-01"/);
+  assert.match(p, /not instructions/);
+});
+
+test('without any sessions the general chat has no empty history block', () => {
+  assert.equal(historyContextBlock([], []), '');
+  assert.equal(generalChatSystemPrompt({ history: '' }), GENERAL_CHAT_INTRO);
+});
+
+test('a preset directive and the language rule follow the history', () => {
+  const p = generalChatSystemPrompt({ history: 'H', directive: 'D', lang: 'ru' });
+  assert.equal(p, `${GENERAL_CHAT_INTRO}\n\nH\n\nD Always respond in Russian.`);
 });
