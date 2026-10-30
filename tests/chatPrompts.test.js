@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   sessionChatIntro, GENERAL_CHAT_INTRO, COACHING_SUGGESTIONS, suggestionsForKind,
-  historyContextBlock, generalChatSystemPrompt,
+  historyContextBlock, generalChatSystemPrompt, cachedSystem,
 } from '../src/lib/chatPrompts.js';
 import { CHAT_SUGGESTIONS } from '../src/lib/chatPresets.js';
 
@@ -65,4 +65,11 @@ test('without any sessions the general chat has no empty history block', () => {
 test('a preset directive and the language rule follow the history', () => {
   const p = generalChatSystemPrompt({ history: 'H', directive: 'D', lang: 'ru' });
   assert.equal(p, `${GENERAL_CHAT_INTRO}\n\nH\n\nD Always respond in Russian.`);
+});
+
+// The history summary is ~17k tokens and identical on every message of a
+// thread, so it is sent as a cached system block: repeats bill at a tenth.
+test('the chat system prompt is one cached block', () => {
+  assert.deepEqual(cachedSystem('S'), [{ type: 'text', text: 'S', cache_control: { type: 'ephemeral' } }]);
+  assert.equal(cachedSystem('')[0].text, GENERAL_CHAT_INTRO);
 });

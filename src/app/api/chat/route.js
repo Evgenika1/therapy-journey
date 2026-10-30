@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerUser } from '@/lib/supabaseServer';
 import { usageThisMonth, recordUsage } from '@/lib/usageLedger';
 import { BLOCKED_MESSAGE } from '@/lib/usageQuota';
-import { GENERAL_CHAT_INTRO } from '@/lib/chatPrompts';
+import { cachedSystem } from '@/lib/chatPrompts';
 import { SEARCH_SESSIONS_TOOL, searchSessions, formatSearchResult } from '@/lib/sessionSearch';
 
 const MODEL = 'claude-haiku-4-5-20251001';
@@ -69,7 +69,7 @@ export async function POST(req) {
         body: JSON.stringify({
           model: MODEL,
           max_tokens: 1024,
-          system: systemPrompt || GENERAL_CHAT_INTRO,
+          system: cachedSystem(systemPrompt),
           messages: convo,
           tools: [SEARCH_SESSIONS_TOOL],
           // Out of searches: answer from what was found.
@@ -106,7 +106,8 @@ export async function POST(req) {
       convo.push({ role: 'user', content: results });
     }
 
-    console.log(`[chat] system ${(systemPrompt || '').length} chars, input ${data.usage?.input_tokens} tokens on the last call`);
+    const u = data.usage || {};
+    console.log(`[chat] system ${(systemPrompt || '').length} chars; last call: input ${u.input_tokens}, cache read ${u.cache_read_input_tokens ?? 0}, cache write ${u.cache_creation_input_tokens ?? 0} tokens`);
     const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n\n').trim();
     return NextResponse.json({ content: text });
   } catch (err) {

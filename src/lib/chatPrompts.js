@@ -35,6 +35,15 @@ export function generalChatSystemPrompt({ history = '', directive = null, lang =
   return [GENERAL_CHAT_INTRO, history, directive].filter(Boolean).join('\n\n') + langRule;
 }
 
+// The system prompt carries the whole history summary (~17k tokens for a
+// long-standing user) and does not change between the messages of a thread, nor
+// between the search rounds of one answer. Marked as a cache breakpoint, the
+// tools and system prompt are written once and re-read at a tenth of the price
+// for the next five minutes.
+export function cachedSystem(text) {
+  return [{ type: 'text', text: text || GENERAL_CHAT_INTRO, cache_control: { type: 'ephemeral' } }];
+}
+
 export function sessionChatIntro({ kind, transcript } = {}) {
   const k = normalizeKind(kind);
   const text = typeof transcript === 'string' ? transcript.trim() : '';
