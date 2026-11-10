@@ -75,7 +75,7 @@ const CHAT_COPY = {
   ask: t => `Ask about "${t}"`,
   tryOne: 'Try one of these to get started:',
   cbtLabel: 'Or work with a thought:',
-  disclaimer: 'kevi is not a replacement for therapy. In crisis, reach out to a professional.',
+  disclaimer: 'Kevi is not a replacement for therapy. In crisis, reach out to a professional.',
 };
 
 

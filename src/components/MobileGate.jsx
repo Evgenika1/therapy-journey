@@ -16,14 +16,14 @@ export default function MobileGate() {
   return (
     <main className="mobile-gate">
       <div className="mobile-gate-inner">
-        <span className="mobile-gate-logo">kevi</span>
+        <span className="mobile-gate-logo">Kevi</span>
 
         <h1 className="mobile-gate-title">
-          kevi is coming <em>to your phone</em>
+          Kevi is coming <em>to your phone</em>
         </h1>
 
         <p className="mobile-gate-text">
-          The phone app is on its way. Until it arrives, open kevi on a computer —
+          The phone app is on its way. Until it arrives, open Kevi on a computer —
           your sessions, notes and homework are all there.
         </p>
 

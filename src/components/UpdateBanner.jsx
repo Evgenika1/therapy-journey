@@ -45,7 +45,7 @@ export default function UpdateBanner() {
       background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12,
       boxShadow: '0 6px 24px rgba(0,0,0,0.12)', padding: '12px 14px',
     }}>
-      <p style={{ fontSize: 13, fontWeight: 600, color: TEXT, margin: '0 0 4px' }}>kevi has been updated</p>
+      <p style={{ fontSize: 13, fontWeight: 600, color: TEXT, margin: '0 0 4px' }}>Kevi has been updated</p>
       <p style={{ fontSize: 12, color: MUTED, margin: '0 0 10px', lineHeight: 1.5 }}>
         This page is running an older version. Reload when you are not in the middle of
         a session — recording and transcription are not interrupted by waiting.

@@ -263,7 +263,7 @@ export default function AiChatPage() {
                 shows on only one of two chat surfaces is a half-measure.
                 English here because this whole screen is in English. */}
             <p style={{ maxWidth: 680, margin: '10px auto 0', fontSize: 11, color: MUTED, lineHeight: 1.5, textAlign: 'center' }}>
-              kevi is not a replacement for therapy. In a crisis, please reach out to a professional.
+              Kevi is not a replacement for therapy. In a crisis, please reach out to a professional.
             </p>
           </div>
         </div>

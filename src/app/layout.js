@@ -4,10 +4,10 @@ import { AuthProvider } from '@/components/AuthProvider';
 import MobileGate from '@/components/MobileGate';
 
 export const metadata = {
-  title: 'kevi — Session Journal',
+  title: 'Kevi — Session Journal',
   description: 'Your private companion for therapy and coaching',
   openGraph: {
-    title: 'kevi',
+    title: 'Kevi',
     description: 'Your private companion for therapy and coaching',
     type: 'website',
   },
