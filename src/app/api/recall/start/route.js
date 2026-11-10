@@ -28,7 +28,7 @@ export async function POST(req) {
 
     const body = {
       meeting_url,
-      bot_name: 'Miru Notetaker',
+      bot_name: 'kevi Notetaker',
       recording_config: { transcript: { provider: { assembly_ai_async_chunked: {} } } },
       // Carried back on the bot object so the webhook knows which user owns it.
       metadata: user_id ? { user_id: String(user_id) } : undefined,

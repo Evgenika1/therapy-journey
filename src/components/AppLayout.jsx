@@ -49,7 +49,7 @@ export default function AppLayout({ children }) {
             morning and lightens for the evening palette along with everything
             else, and it is the one link home from every other screen. */}
         <div style={{ padding: '20px 20px 16px', display: 'flex', alignItems: 'center' }}>
-          <Link href="/" aria-label="Miru — go to Dashboard"
+          <Link href="/" aria-label="kevi — go to Dashboard"
             style={{ textDecoration: 'none', display: 'inline-block', cursor: 'pointer', transition: 'opacity 0.12s' }}
             onMouseEnter={e => { e.currentTarget.style.opacity = '0.72'; }}
             onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}>
@@ -65,7 +65,7 @@ export default function AppLayout({ children }) {
               color: TEXT,
               display: 'block',
             }}>
-              miru
+              kevi
             </span>
           </Link>
         </div>

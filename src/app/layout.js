@@ -4,8 +4,13 @@ import { AuthProvider } from '@/components/AuthProvider';
 import MobileGate from '@/components/MobileGate';
 
 export const metadata = {
-  title: 'Miru — Session Journal',
+  title: 'kevi — Session Journal',
   description: 'Your private companion for therapy and coaching',
+  openGraph: {
+    title: 'kevi',
+    description: 'Your private companion for therapy and coaching',
+    type: 'website',
+  },
 };
 
 export default function RootLayout({ children }) {
