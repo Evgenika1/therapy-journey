@@ -149,7 +149,7 @@ export default function AuthPage() {
       <div style={{ width: '100%', maxWidth: 420, background: WHITE, borderRadius: 24, padding: '40px 36px', border: `1px solid ${BORDER}` }}>
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <Link href="/" style={{ textDecoration: 'none' }}>
-            <h1 style={{ fontSize: 64, fontWeight: 400, lineHeight: 1, color: H1, margin: '0 0 8px', fontFamily: "'Lovers Quarrel', cursive" }}>kevi</h1>
+            <h1 style={{ fontSize: 32, fontWeight: 600, fontStyle: 'normal', letterSpacing: '-0.02em', lineHeight: 1.1, color: H1, margin: '0 0 6px', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>kevi</h1>
           </Link>
           <p style={{ fontSize: 12, color: SEC, margin: 0 }}>Your private companion for therapy and coaching</p>
         </div>

@@ -7,9 +7,6 @@ import { useState, useEffect } from 'react';
 import { amIAdmin } from '@/lib/usageClient';
 import UpdateBanner from '@/components/UpdateBanner';
 
-// Lovers Quarrel sets tiny for its nominal size; tuned by eye in the sidebar.
-const LOGO_SIZE = 60;
-
 const NAV = [
   { href: '/',             label: 'Dashboard'    },
   { href: '/sessions',     label: 'Sessions'     },
@@ -47,22 +44,23 @@ export default function AppLayout({ children }) {
     <div style={{ display: 'flex', height: '100vh', background: BG, fontFamily: '"Plus Jakarta Sans", sans-serif', overflow: 'hidden' }}>
       {/* Sidebar */}
       <nav className="app-nav" style={{ background: SURFACE, borderRight: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-        {/* Logo. Just the word, set in Lovers Quarrel — a calligraphic script
-            whose x-height is far smaller than a text face, so it needs about
-            twice the nominal size to read at the same weight. It takes the
-            text colour, so it darkens in the morning and lightens for the
-            evening palette along with everything else, and it is the one link
-            home from every other screen. */}
-        <div style={{ padding: '14px 20px 8px', display: 'flex', alignItems: 'center' }}>
+        {/* Logo. Just the word, lowercase, in the app's own sans at semibold —
+            no eye, no halo, no plaque behind it. It takes the text colour, so
+            it darkens in the morning and lightens for the evening palette along
+            with everything else, and it is the one link home from every other
+            screen. */}
+        <div style={{ padding: '20px 20px 16px', display: 'flex', alignItems: 'center' }}>
           <Link href="/" aria-label="Kevi — go to Dashboard"
             style={{ textDecoration: 'none', display: 'inline-block', cursor: 'pointer', transition: 'opacity 0.12s' }}
             onMouseEnter={e => { e.currentTarget.style.opacity = '0.72'; }}
             onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}>
             <span style={{
-              fontFamily: "'Lovers Quarrel', cursive",
-              fontSize: LOGO_SIZE,
-              fontWeight: 400,
-              lineHeight: 1,
+              fontFamily: "'Plus Jakarta Sans', sans-serif",
+              fontStyle: 'normal',
+              fontSize: 28,
+              fontWeight: 600,
+              letterSpacing: '-0.02em',
+              lineHeight: 1.1,
               color: TEXT,
               display: 'block',
             }}>
