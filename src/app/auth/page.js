@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase';
 import { useTheme } from '@/lib/ThemeContext';
+import { canCreateAccount, consentMetadata } from '@/lib/signupConsent';
 
 export default function AuthPage() {
   const router     = useRouter();
@@ -19,6 +20,7 @@ export default function AuthPage() {
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState('');
   const [info,        setInfo]        = useState('');
+  const [consent,     setConsent]     = useState(false);
 
   const inputStyle = {
     width: '100%', boxSizing: 'border-box',
@@ -47,7 +49,7 @@ export default function AuthPage() {
   }, [supabase]);
 
   function switchMode(m) {
-    setMode(m); setError(''); setInfo(''); setPassword(''); setConfirm('');
+    setMode(m); setError(''); setInfo(''); setPassword(''); setConfirm(''); setConsent(false);
   }
 
   async function handleSignIn(e) {
@@ -82,10 +84,13 @@ export default function AuthPage() {
     if (!password)            { setError('Please enter a password.'); return; }
     if (password.length < 6)  { setError('Password must be at least 6 characters.'); return; }
     if (password !== confirm) { setError('Passwords do not match.'); return; }
+    // The disabled button is the main guard; this catches a submit by Enter.
+    if (!canCreateAccount({ consent })) { setError('Please confirm the checkbox to create an account.'); return; }
     setLoading(true);
     try {
       const { data, error: err } = await supabase.auth.signUp({
         email: email.trim().toLowerCase(), password,
+        options: { data: consentMetadata() },
       });
       if (err) {
         if (err.message?.toLowerCase().includes('sending confirmation email') ||
@@ -232,6 +237,9 @@ export default function AuthPage() {
     </>
   );
 
+  // Creating an account needs the consent box; signing in never does.
+  const submitBlocked = loading || (mode === 'signup' && !canCreateAccount({ consent }));
+
   return shell(
     <>
       <div style={{ display: 'flex', background: BG, borderRadius: 12, padding: 4, marginBottom: 28, border: `0.5px solid ${BORDER}` }}>
@@ -258,20 +266,34 @@ export default function AuthPage() {
               placeholder="Confirm password" autoComplete="new-password" style={inputStyle} />
           )}
         </div>
+        {mode === 'signup' && (
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 14, fontSize: 12, lineHeight: 1.55, color: SEC, cursor: 'pointer', textAlign: 'left' }}>
+            <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)}
+              required style={{ marginTop: 3, width: 15, height: 15, flexShrink: 0, accentColor: CORAL, cursor: 'pointer' }} />
+            <span>
+              I&apos;m 18 or older and I agree to the{' '}
+              <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: CORAL, textDecoration: 'underline', textUnderlineOffset: 2 }}>Terms</a>
+              {' '}and{' '}
+              <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: CORAL, textDecoration: 'underline', textUnderlineOffset: 2 }}>Privacy Policy</a>.
+              {' '}I understand Kevi will process my content, which can include health-related information.
+            </span>
+          </label>
+        )}
         {error && <p style={{ fontSize: 12, color: ERR, margin: '10px 0 0' }}>{error}</p>}
-        <button type="submit" disabled={loading} style={btnStyle(loading)}>
+        <button type="submit" disabled={submitBlocked} style={btnStyle(submitBlocked)}>
           {loading
             ? (mode === 'signin' ? 'Signing in…' : 'Creating account…')
             : (mode === 'signin' ? 'Sign In' : 'Create Account')}
         </button>
       </form>
 
-      <p style={{ fontSize: 11, color: SEC, margin: '12px 0 0', textAlign: 'center', lineHeight: 1.6 }}>
+      {/* Sign-up asks for consent with the box above; this line is for signing in. */}
+      {mode === 'signin' && <p style={{ fontSize: 11, color: SEC, margin: '12px 0 0', textAlign: 'center', lineHeight: 1.6 }}>
         By continuing you agree to our{' '}
         <Link href="/terms" style={{ color: SEC, textDecoration: 'underline', textUnderlineOffset: 2 }}>Terms</Link>
         {' '}and{' '}
         <Link href="/privacy" style={{ color: SEC, textDecoration: 'underline', textUnderlineOffset: 2 }}>Privacy Policy</Link>
-      </p>
+      </p>}
 
       {mode === 'signin' && (
         <button onClick={() => switchMode('forgot')}
