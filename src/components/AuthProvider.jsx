@@ -2,6 +2,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
+import { isPublicPath } from '@/lib/publicPaths';
 
 const AuthCtx = createContext({ supabase: null, user: null, loading: true });
 
@@ -28,8 +29,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (loading) return;
-    const pub = pathname === '/auth';
-    if (!user && !pub) router.replace('/auth');
+    if (!user && !isPublicPath(pathname)) router.replace('/auth');
     if (user && pathname === '/auth') router.replace('/');
   }, [user, loading, pathname, router]);
 

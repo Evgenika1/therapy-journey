@@ -116,6 +116,10 @@ export default function AppLayout({ children }) {
               </button>
             </>
           )}
+          <div style={{ display: 'flex', gap: 14, padding: '10px 20px 2px', fontSize: 11 }}>
+            <Link href="/privacy" style={{ color: MUTED, textDecoration: 'none' }}>Privacy</Link>
+            <Link href="/terms" style={{ color: MUTED, textDecoration: 'none' }}>Terms</Link>
+          </div>
         </div>
       </nav>
 

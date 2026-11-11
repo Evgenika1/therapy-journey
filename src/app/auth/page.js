@@ -266,6 +266,13 @@ export default function AuthPage() {
         </button>
       </form>
 
+      <p style={{ fontSize: 11, color: SEC, margin: '12px 0 0', textAlign: 'center', lineHeight: 1.6 }}>
+        By continuing you agree to our{' '}
+        <Link href="/terms" style={{ color: SEC, textDecoration: 'underline', textUnderlineOffset: 2 }}>Terms</Link>
+        {' '}and{' '}
+        <Link href="/privacy" style={{ color: SEC, textDecoration: 'underline', textUnderlineOffset: 2 }}>Privacy Policy</Link>
+      </p>
+
       {mode === 'signin' && (
         <button onClick={() => switchMode('forgot')}
           style={{ width: '100%', marginTop: 10, padding: '8px', background: 'none', border: 'none', color: SEC, fontSize: 12, cursor: 'pointer' }}>
