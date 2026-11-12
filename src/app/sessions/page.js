@@ -22,6 +22,9 @@ import {
   LEGACY_ANALYSIS_FIELDS, analysisToText, hasValue, fieldsForKind, analysisKind,
 } from '@/lib/analysisFormat';
 import { CBT_PRESETS } from '@/lib/chatPresets';
+import Link from 'next/link';
+import { myUsage } from '@/lib/usageClient';
+import { blockedMessage } from '@/lib/plans';
 import SuggestionList from '@/components/SuggestionList';
 import { proposedTasks, reconcileHomework, describeTask } from '@/lib/sessionHomework';
 import { aiTopics, reconcileTopics } from '@/lib/sessionTopics';
@@ -235,6 +238,9 @@ function SessionsPageInner() {
   const [transcribeFailed, setTranscribeFailed] = useState(false); // → show Retry
   const [uploadProgress,   setUploadProgress]   = useState(0);
   const [recovered,        setRecovered]        = useState(null); // recording found in IndexedDB after a reload
+  // Set when the account may not record (no plan, or the period's sessions
+  // are used up): why, so the notice can say it.
+  const [limitReason,      setLimitReason]      = useState(null);
 
   // Paste an existing transcript (Zoom export, notes, another app) — a session
   // with text but no audio.
@@ -301,7 +307,7 @@ function SessionsPageInner() {
         if (!shouldAutoOpenRecordModal({
           wantsRecord: true, hasHeldRecording: !!held, hasPendingJob: !!loadPendingJob(),
         })) { router.replace('/sessions'); return; }
-        openRecordModal(
+        await openRecordGuarded(
           preMoodParam !== null ? Number(preMoodParam) : undefined,
           searchParams.get('name') || '',
         );
@@ -440,6 +446,22 @@ function SessionsPageInner() {
       const devices = await navigator.mediaDevices.enumerateDevices();
       setMicDevices(devices.filter(d => d.kind === 'audioinput'));
     } catch { /* ignore — dropdown just stays empty */ }
+  }
+
+  // Asked before a recording or upload starts, not after: the server refuses
+  // to transcribe for a blocked account, and finding that out after an hour of
+  // recording is the worst moment to. Fresh on every click, so a plan bought in
+  // another tab counts. Fails open — an unreadable allowance never stops a
+  // session; the server's gate is still there.
+  async function mayRecord() {
+    const u = supabase ? await myUsage(supabase).catch(() => null) : null;
+    if (u?.status === 'blocked') { setLimitReason(u.reason || 'limit'); return false; }
+    setLimitReason(null);
+    return true;
+  }
+
+  async function openRecordGuarded(...args) {
+    if (await mayRecord()) openRecordModal(...args);
   }
 
   function openRecordModal(preMoodIntensity, title = '') {
@@ -753,7 +775,7 @@ function SessionsPageInner() {
   }
 
   // ── Import audio (upload a recording → transcribe → session) ──────────────────
-  function pickImportFile() { importInputRef.current?.click(); }
+  async function pickImportFile() { if (await mayRecord()) importInputRef.current?.click(); }
 
   async function handleImportFile(e) {
     const file = e.target.files?.[0];
@@ -1210,6 +1232,18 @@ function SessionsPageInner() {
             </div>
           )}
 
+          {limitReason && (
+            <div style={{ margin: '0 14px 10px', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: SURFACE, fontSize: 12, lineHeight: 1.5, color: TEXT }}>
+              <div style={{ fontWeight: 600, marginBottom: 2 }}>
+                {limitReason === 'no_plan' ? 'Choose a plan to record' : 'You\u2019ve used all sessions this month'}
+              </div>
+              <div style={{ color: MUTED, marginBottom: 6 }}>{blockedMessage(limitReason)}</div>
+              <Link href="/billing" style={{ color: A, fontWeight: 600, textDecoration: 'none' }}>
+                {limitReason === 'no_plan' ? 'See plans →' : 'Upgrade plan →'}
+              </Link>
+            </div>
+          )}
+
           {/* Import + Record */}
           <input ref={importInputRef} type="file" accept=".mp3,.m4a,.wav,.mp4,audio/*,video/mp4"
             onChange={handleImportFile} style={{ display: 'none' }} />
@@ -1218,7 +1252,7 @@ function SessionsPageInner() {
               style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
               ↑ Upload audio
             </button>
-            <button onClick={openRecordModal}
+            <button onClick={() => openRecordGuarded()}
               style={{ flex: 1, padding: '8px 0', borderRadius: 999, border: 'none', background: ACCENT_DEEP, color: isDark ? BG : '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="3.5" fill="white" opacity="0.35"/><circle cx="5" cy="5" r="2" fill="white"/></svg>
               Record

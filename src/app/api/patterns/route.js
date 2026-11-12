@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServerUser } from '@/lib/supabaseServer';
-import { usageThisMonth, recordUsage } from '@/lib/usageLedger';
-import { BLOCKED_MESSAGE } from '@/lib/usageQuota';
+import { usageThisPeriod, recordUsage, blockedResponseBody } from '@/lib/usageLedger';
 import { parseAnalysis } from '@/lib/analysisParse';
 import { PATTERNS_SCHEMA, MIN_ANALYSED_SESSIONS } from '@/lib/patternsInput';
 
@@ -34,9 +33,9 @@ export async function POST(req) {
 
     // The limit is soft: an account only stops here once it is past the
     // overdraft, and work already in flight is never interrupted.
-    const quota = await usageThisMonth(supabase, user.id);
+    const quota = await usageThisPeriod(supabase, user.id);
     if (quota.status === 'blocked') {
-      return NextResponse.json({ error: BLOCKED_MESSAGE, quota: { status: quota.status, remaining: quota.remaining } }, { status: 402 });
+      return NextResponse.json(blockedResponseBody(quota), { status: 402 });
     }
 
     const { history } = await req.json();

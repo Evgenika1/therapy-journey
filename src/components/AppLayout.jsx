@@ -104,6 +104,11 @@ export default function AppLayout({ children }) {
               </div>
               {/* /account exists but had no link anywhere, so changing a password
                   or deleting an account was unreachable. */}
+              <Link href="/billing"
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', paddingLeft: pathname.startsWith('/billing') ? 17 : 20, textDecoration: 'none', borderLeft: `3px solid ${pathname.startsWith('/billing') ? CORAL : 'transparent'}`, color: pathname.startsWith('/billing') ? CORAL : TEXT, fontWeight: pathname.startsWith('/billing') ? 600 : 400, fontSize: 14 }}>
+                <span style={{ fontSize: 15 }}>€</span>
+                Billing
+              </Link>
               <Link href="/account"
                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', paddingLeft: pathname.startsWith('/account') ? 17 : 20, textDecoration: 'none', borderLeft: `3px solid ${pathname.startsWith('/account') ? CORAL : 'transparent'}`, color: pathname.startsWith('/account') ? CORAL : TEXT, fontWeight: pathname.startsWith('/account') ? 600 : 400, fontSize: 14 }}>
                 <span style={{ fontSize: 15 }}>⚙</span>

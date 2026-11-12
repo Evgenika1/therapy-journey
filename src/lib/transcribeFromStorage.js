@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServerUser } from '@/lib/supabaseServer';
-import { usageThisMonth } from '@/lib/usageLedger';
-import { BLOCKED_MESSAGE } from '@/lib/usageQuota';
+import { usageThisPeriod, blockedResponseBody } from '@/lib/usageLedger';
 import { aaiFetch } from '@/lib/assemblyai';
 import { AAI_BASE, AAI_HEADERS, TRANSCRIBE_CONFIG } from '@/lib/transcribeJob';
 import { AUDIO_BUCKET, AUDIO_URL_TTL_SECONDS, isOwnAudioPath } from '@/lib/audioStorage';
@@ -19,9 +18,9 @@ export async function startJobFromStorage(req, { tag, allowedExt = null }) {
   // that matters most.
   const { supabase, user } = await getServerUser();
   if (!user) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
-  const quota = await usageThisMonth(supabase, user.id);
+  const quota = await usageThisPeriod(supabase, user.id);
   if (quota.status === 'blocked') {
-    return NextResponse.json({ error: BLOCKED_MESSAGE, quota: { status: quota.status, remaining: quota.remaining } }, { status: 402 });
+    return NextResponse.json(blockedResponseBody(quota), { status: 402 });
   }
   if (!process.env.ASSEMBLYAI_API_KEY) {
     return NextResponse.json({ error: 'ASSEMBLYAI_API_KEY not configured' }, { status: 500 });

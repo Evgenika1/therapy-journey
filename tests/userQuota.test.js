@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { usageThisMonth } from '../src/lib/usageLedger.js';
+import { usageThisPeriod } from '../src/lib/usageLedger.js';
 import { myUsage, allUsage, setUserQuota } from '../src/lib/usageClient.js';
 import { MONTHLY_MINUTES, MAX_QUOTA_MINUTES, USD_PER_MINUTE } from '../src/lib/usageQuota.js';
 import { fakeSupabase, pgError } from './helpers/fakeSupabase.js';
@@ -21,28 +21,67 @@ test('the server gate reads the account\'s own allowance', async () => {
     usage_events: { data: [tenMinutes] },
     user_quota: { data: { user_id: USER, monthly_minutes: 12 } },
   } });
-  const out = await usageThisMonth(sb, USER);
+  const out = await usageThisPeriod(sb, USER);
   assert.equal(out.quota, 12);
   assert.equal(Math.round(out.usedMinutes), 10);
   assert.equal(out.status, 'warn', '10 of 12 minutes is inside the 20% warning band');
 });
 
-test('no quota row means the default allowance', async () => {
+test('no quota row and no subscription means no minutes: there is no free tier', async () => {
+  const sb = fakeSupabase({ responses: {
+    usage_events: { data: [] },
+    user_quota: { data: null },
+    subscriptions: { data: null },
+  } });
+  const out = await usageThisPeriod(sb, USER);
+  assert.equal(out.quota, 0);
+  assert.equal(out.status, 'blocked');
+  assert.equal(out.reason, 'no_plan');
+});
+
+test('an active subscription gives its plan\'s minutes, counted from its own period start', async () => {
   const sb = fakeSupabase({ responses: {
     usage_events: { data: [tenMinutes] },
     user_quota: { data: null },
+    subscriptions: { data: { plan: 'pro', status: 'active', current_period_start: '2026-11-05T09:00:00.000Z', current_period_end: '2026-12-05T09:00:00.000Z' } },
   } });
-  const out = await usageThisMonth(sb, USER);
-  assert.equal(out.quota, MONTHLY_MINUTES);
+  const out = await usageThisPeriod(sb, USER);
+  assert.equal(out.quota, 1200);
   assert.equal(out.status, 'ok');
+  assert.equal(out.allowance.source, 'plan');
+  const ledger = sb.callsFor('usage_events')[0];
+  assert.deepEqual(ledger.filters.find(f => f[0] === 'gte'), ['gte', 'created_at', '2026-11-05T09:00:00.000Z']);
 });
 
-test('a failed quota read falls back to the default instead of locking the account out', async () => {
+test('an admin\'s allowance beats the plan', async () => {
   const sb = fakeSupabase({ responses: {
     usage_events: { data: [tenMinutes] },
-    user_quota: { error: pgError('42P01', 'relation "user_quota" does not exist') },
+    user_quota: { data: { user_id: USER, monthly_minutes: 5000 } },
+    subscriptions: { data: { plan: 'starter', status: 'active', current_period_start: '2026-11-05T09:00:00.000Z' } },
   } });
-  const out = await usageThisMonth(sb, USER);
+  const out = await usageThisPeriod(sb, USER);
+  assert.equal(out.quota, 5000);
+  assert.equal(out.allowance.source, 'override');
+});
+
+test('a cancelled subscription gives nothing', async () => {
+  const sb = fakeSupabase({ responses: {
+    usage_events: { data: [] },
+    user_quota: { data: null },
+    subscriptions: { data: { plan: 'pro', status: 'canceled' } },
+  } });
+  const out = await usageThisPeriod(sb, USER);
+  assert.equal(out.status, 'blocked');
+  assert.equal(out.reason, 'no_plan');
+});
+
+test('a failed allowance read falls back to the default instead of locking the account out', async () => {
+  const sb = fakeSupabase({ responses: {
+    usage_events: { data: [tenMinutes] },
+    user_quota: { data: null },
+    subscriptions: { error: pgError('42P01', 'relation "subscriptions" does not exist') },
+  } });
+  const out = await usageThisPeriod(sb, USER);
   assert.equal(out.quota, MONTHLY_MINUTES);
   assert.equal(out.status, 'ok');
 });
@@ -52,7 +91,7 @@ test('an allowance of zero blocks once past the overdraft, and is not mistaken f
     usage_events: { data: [{ cost_usd: (30 * USD_PER_MINUTE).toFixed(6) }] },
     user_quota: { data: { user_id: USER, monthly_minutes: 0 } },
   } });
-  const out = await usageThisMonth(sb, USER);
+  const out = await usageThisPeriod(sb, USER);
   assert.equal(out.quota, 0);
   assert.equal(out.status, 'blocked');
 });
@@ -79,8 +118,8 @@ test('the admin view shows each account against its own allowance', async () => 
   const byId = Object.fromEntries(rows.map(r => [r.userId, r]));
   assert.equal(byId.a.quota, 12);
   assert.equal(byId.a.status, 'warn');
-  assert.equal(byId.b.quota, MONTHLY_MINUTES, 'an account with no row keeps the default');
-  assert.equal(byId.b.status, 'ok');
+  assert.equal(byId.b.quota, 0, 'an account with no row and no plan has no minutes');
+  assert.equal(byId.b.status, 'blocked');
 });
 
 test('an account with an allowance but no spend still appears, so it can be edited', async () => {

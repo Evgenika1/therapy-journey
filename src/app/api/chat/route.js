@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServerUser } from '@/lib/supabaseServer';
-import { usageThisMonth, recordUsage } from '@/lib/usageLedger';
-import { BLOCKED_MESSAGE } from '@/lib/usageQuota';
+import { usageThisPeriod, recordUsage, blockedResponseBody } from '@/lib/usageLedger';
 import { cachedSystem } from '@/lib/chatPrompts';
 import { SEARCH_SESSIONS_TOOL, searchSessions, formatSearchResult } from '@/lib/sessionSearch';
 
@@ -16,9 +15,9 @@ export async function POST(req) {
     const { supabase, user } = await getServerUser();
     if (!user) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
 
-    const quota = await usageThisMonth(supabase, user.id);
+    const quota = await usageThisPeriod(supabase, user.id);
     if (quota.status === 'blocked') {
-      return NextResponse.json({ error: BLOCKED_MESSAGE, quota: { status: quota.status, remaining: quota.remaining } }, { status: 402 });
+      return NextResponse.json(blockedResponseBody(quota), { status: 402 });
     }
 
     const { messages, systemPrompt } = await req.json();

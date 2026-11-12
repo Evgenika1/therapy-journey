@@ -1,7 +1,6 @@
-import {
-  minutesFromCost, quotaState, monthStart,
-  resolveQuotaMinutes, isValidQuotaMinutes, MAX_QUOTA_MINUTES,
-} from './usageQuota.js';
+import { minutesFromCost, monthStart, isValidQuotaMinutes, MAX_QUOTA_MINUTES } from './usageQuota.js';
+import { usageThisPeriod } from './usageLedger.js';
+import { resolveAllowance, allowanceStatus } from './plans.js';
 
 // Reading the ledger from the browser.
 //
@@ -10,34 +9,25 @@ import {
 // second copy of a rule the database is enforcing anyway — and a second place
 // for that rule to be got wrong.
 
-// This account's month: what it cost us, what that is in minutes, and whether
-// they are ok / warned / blocked.
+// This account's period: what it cost us, what that is in minutes, and whether
+// they are ok / warned / blocked. The same function the server gates with, run
+// on the browser's own session, so the dashboard and the gate cannot disagree.
 export async function myUsage(supabase, { now = new Date() } = {}) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
+  return usageThisPeriod(supabase, user.id, { now });
+}
 
+// This account's subscription row, for the Billing page. Null without one.
+export async function mySubscription(supabase) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
   const { data, error } = await supabase
-    .from('usage_events')
-    .select('cost_usd')
-    .eq('user_id', user.id)
-    .gte('created_at', monthStart(now));
+    .from('subscriptions')
+    .select('plan, status, cancel_at_period_end, current_period_start, current_period_end')
+    .eq('user_id', user.id).maybeSingle();
   if (error) throw error;
-
-  const costUsd = (data ?? []).reduce((sum, r) => sum + Number(r.cost_usd || 0), 0);
-  const usedMinutes = minutesFromCost(costUsd);
-  // The policy on user_quota returns this account's own row; a read failure
-  // falls back to the default rather than blanking the card.
-  let quotaMinutes;
-  try {
-    const { data: q, error: qErr } = await supabase
-      .from('user_quota').select('monthly_minutes').eq('user_id', user.id).maybeSingle();
-    if (qErr) throw qErr;
-    quotaMinutes = resolveQuotaMinutes(q);
-  } catch (e) {
-    console.error('[usage] could not read my quota:', e?.message);
-    quotaMinutes = resolveQuotaMinutes(null);
-  }
-  return { costUsd, usedMinutes, ...quotaState({ usedMinutes, quotaMinutes }) };
+  return data ?? null;
 }
 
 // Whether the signed-in account is an admin. The policy on `admins` returns
@@ -72,7 +62,21 @@ export async function allUsage(supabase, { now = new Date() } = {}) {
   } catch (e) {
     console.error('[usage] could not read quotas:', e?.message);
   }
-  const quotaOf = new Map(quotas.map(q => [q.user_id, resolveQuotaMinutes(q)]));
+  const quotaOf = new Map(quotas.map(q => [q.user_id, q]));
+
+  // Subscriptions, for accounts without an override. A failed read is shown as
+  // the fallback allowance rather than as everyone being blocked.
+  let subs = [], subsFailed = false;
+  try {
+    const { data: sRows, error: sErr } = await supabase
+      .from('subscriptions').select('user_id, plan, status, current_period_start, current_period_end');
+    if (sErr) throw sErr;
+    subs = sRows ?? [];
+  } catch (e) {
+    subsFailed = true;
+    console.error('[usage] could not read subscriptions:', e?.message);
+  }
+  const subOf = new Map(subs.map(r => [r.user_id, r]));
 
   const byUser = new Map();
   for (const row of data ?? []) {
@@ -106,10 +110,20 @@ export async function allUsage(supabase, { now = new Date() } = {}) {
   return [...byUser.values()]
     .map(u => {
       const usedMinutes = minutesFromCost(u.costUsd);
-      const quotaMinutes = quotaOf.has(u.userId) ? quotaOf.get(u.userId) : resolveQuotaMinutes(null);
-      // Says whether the number came from a row or from the default, so the
-      // admin view can show an edited allowance as edited.
-      return { ...u, usedMinutes, hasOwnQuota: quotaOf.has(u.userId), ...quotaState({ usedMinutes, quotaMinutes }) };
+      // Spend here is this calendar month for everyone, not each account's own
+      // billing period: one query for the whole table, and close enough for an
+      // overview. The gate itself uses the exact period.
+      const allowance = resolveAllowance({
+        quotaRow: quotaOf.get(u.userId) ?? null,
+        subscription: subOf.get(u.userId) ?? null,
+        readFailed: subsFailed, now,
+      });
+      // hasOwnQuota says whether the number came from an admin's row, so the
+      // admin view can show an edited allowance as edited; plan, which one.
+      return {
+        ...u, usedMinutes, hasOwnQuota: allowance.source === 'override', plan: allowance.plan,
+        allowanceSource: allowance.source, ...allowanceStatus(allowance, usedMinutes),
+      };
     })
     .sort((a, b) => b.costUsd - a.costUsd);
 }

@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
@@ -95,6 +96,13 @@ export default function AccountPage() {
         <div style={{ maxWidth: 560, margin: '0 auto' }}>
           <h1 style={{ fontSize: 28, fontWeight: 300, color: TEXT, margin: '0 0 8px', fontFamily: 'var(--font-serif)' }}>Account</h1>
           <p style={{ fontSize: 13, color: MUTED, margin: '0 0 32px' }}>{user?.email}</p>
+
+          {section('Plan & Billing', (
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <p style={{ fontSize: 13, color: MUTED, margin: 0 }}>Your plan, sessions used this period, and payment.</p>
+              <Link href="/billing" style={{ ...btnStyle(false), textDecoration: 'none', display: 'inline-block' }}>Open Billing</Link>
+            </div>
+          ))}
 
           {section('Change Email', (
             <form onSubmit={handleEmailChange} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
