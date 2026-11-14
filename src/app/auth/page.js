@@ -90,12 +90,14 @@ export default function AuthPage() {
     try {
       const { data, error: err } = await supabase.auth.signUp({
         email: email.trim().toLowerCase(), password,
-        options: { data: consentMetadata() },
+        // The confirmation link returns to whichever site the signup came from
+        // (kevi.online, a preview, localhost); each is in Supabase's redirect list.
+        options: { data: consentMetadata(), emailRedirectTo: `${window.location.origin}/` },
       });
       if (err) {
         if (err.message?.toLowerCase().includes('sending confirmation email') ||
             err.message?.toLowerCase().includes('unexpected_failure')) {
-          throw new Error('Account created but confirmation email failed to send. Please disable "Confirm email" in your Supabase Auth settings, then try again.');
+          throw new Error('We couldn’t send your confirmation email. Please try again in a few minutes, or write to hi@kevi.online.');
         }
         throw err;
       }
