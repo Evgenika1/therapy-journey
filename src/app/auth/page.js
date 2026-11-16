@@ -37,6 +37,11 @@ export default function AuthPage() {
     cursor: disabled ? 'default' : 'pointer',
   });
 
+  // "Send a new reset link" on /auth/confirm opens straight onto the form.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('mode') === 'forgot') setMode('forgot');
+  }, []);
+
   useEffect(() => {
     if (!supabase) return;
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
@@ -90,9 +95,8 @@ export default function AuthPage() {
     try {
       const { data, error: err } = await supabase.auth.signUp({
         email: email.trim().toLowerCase(), password,
-        // The confirmation link returns to whichever site the signup came from
-        // (kevi.online, a preview, localhost); each is in Supabase's redirect list.
-        options: { data: consentMetadata(), emailRedirectTo: `${window.location.origin}/` },
+        // Links from our emails land on /auth/confirm (see src/lib/authLink.js).
+        options: { data: consentMetadata(), emailRedirectTo: `${window.location.origin}/auth/confirm` },
       });
       if (err) {
         if (err.message?.toLowerCase().includes('sending confirmation email') ||
@@ -121,7 +125,7 @@ export default function AuthPage() {
     try {
       const { error: err } = await supabase.auth.resetPasswordForEmail(
         email.trim().toLowerCase(),
-        { redirectTo: typeof window !== 'undefined' ? window.location.origin + '/auth' : '/auth' }
+        { redirectTo: `${window.location.origin}/auth/confirm` }
       );
       if (err) throw err;
       setInfo('reset-sent');

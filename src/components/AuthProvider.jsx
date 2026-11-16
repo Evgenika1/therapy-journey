@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import { isPublicPath } from '@/lib/publicPaths';
+import { hasAuthError } from '@/lib/authLink';
 
 const AuthCtx = createContext({ supabase: null, user: null, loading: true });
 
@@ -12,6 +13,16 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const router   = useRouter();
   const pathname = usePathname();
+
+  useEffect(() => {
+    // Supabase sends a refused email link (expired, already used) back to the
+    // site with the error in the URL. Show it on /auth/confirm rather than
+    // quietly opening the dashboard of whoever is signed in.
+    const { pathname: here, search, hash } = window.location;
+    if (here !== '/auth/confirm' && hasAuthError(search, hash)) {
+      window.location.replace(`/auth/confirm${search}${hash}`);
+    }
+  }, []);
 
   useEffect(() => {
     // Fast initial read from cached session (no network request)

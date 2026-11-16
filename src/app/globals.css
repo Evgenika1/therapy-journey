@@ -119,10 +119,12 @@ body {
 
 /* The legal pages are the exception: they must be readable on a phone, by
    people with no account and by app-store and payment reviewers. :has() keeps
-   this in CSS, so the right screen is still in the first paint. */
+   this in CSS, so the right screen is still in the first paint. So is the page
+   a link from our emails opens (.auth-link-shell): people confirm an account
+   or reset a password from the phone they read their mail on. */
 @media (max-width: 800px) and (pointer: coarse) {
-  .app-shell:has(.legal-shell)             { display: block; }
-  body:has(.legal-shell) .mobile-gate      { display: none; }
+  .app-shell:has(.legal-shell, .auth-link-shell)        { display: block; }
+  body:has(.legal-shell, .auth-link-shell) .mobile-gate { display: none; }
 }
 
 /* ── Design refresh: time-of-day palette, serif headings, ritual glow ─────────

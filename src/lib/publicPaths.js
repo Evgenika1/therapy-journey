@@ -2,9 +2,10 @@
 //
 // The legal pages have to be here: they are linked from the sign-in screen,
 // from app-store listings and from Stripe, all read by people who have no
-// account yet.
+// account yet. /auth/confirm is where links from our emails land, opened by
+// someone who is not signed in yet.
 
-export const PUBLIC_PATHS = ['/auth', '/privacy', '/terms'];
+export const PUBLIC_PATHS = ['/auth', '/auth/confirm', '/privacy', '/terms'];
 
 export function isPublicPath(pathname) {
   return PUBLIC_PATHS.includes(pathname);
