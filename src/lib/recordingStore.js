@@ -12,6 +12,12 @@
 // Record away from being gone. A record written under 'current' by that older
 // version is still read, and offered back like any other.
 //
+// While recording, the audio is written here as it is captured (a "live"
+// record plus numbered chunks, see startLiveRecording). Before that, everything
+// up to Stop lived only in the tab's memory: a closed tab, a reload, a crash or
+// a laptop that went to sleep mid-session lost the whole recording without a
+// trace. Now whatever reached disk comes back as an interrupted recording.
+//
 // It stays on the user's own device: this is therapy audio, so it is never
 // uploaded anywhere except AssemblyAI for transcription, and it is cleared as
 // soon as the transcript is safely saved.
@@ -114,10 +120,7 @@ export async function loadPendingRecordings() {
       return () => (keys.result || []).map((k, i) => [k, values.result?.[i]]);
     });
     db.close();
-    return pairs
-      .filter(([, rec]) => rec?.blob)
-      .map(([key, rec]) => withRecordedAt({ ...rec, id: key }))
-      .sort((a, b) => (b.recordedAt ?? 0) - (a.recordedAt ?? 0));
+    return assemble(pairs).sort((a, b) => (b.recordedAt ?? 0) - (a.recordedAt ?? 0));
   } catch (e) {
     console.warn('[recordingStore] load failed:', e?.message);
     return [];
@@ -129,6 +132,11 @@ export async function loadPendingRecording(id) {
   try {
     const db = await openDb();
     const rec = await tx(db, 'readonly', s => s.get(id));
+    if (rec?.live) {
+      const pairs = await tx(db, 'readonly', allPairs);
+      db.close();
+      return assemble(pairs).find(r => r.id === id) ?? null;
+    }
     db.close();
     return rec?.blob ? withRecordedAt({ ...rec, id }) : null;
   } catch (e) {
@@ -143,9 +151,124 @@ export async function clearPendingRecording(id) {
   if (!id) return;
   try {
     const db = await openDb();
-    await tx(db, 'readwrite', s => s.delete(id));
+    const keys = await tx(db, 'readonly', s => s.getAllKeys());
+    await tx(db, 'readwrite', s => {
+      s.delete(id);
+      for (const k of keys || []) if (isChunkOf(k, id)) s.delete(k);
+    });
     db.close();
   } catch (e) {
     console.warn('[recordingStore] clear failed:', e?.message);
+  }
+}
+
+// ── Live recording ──────────────────────────────────────────────────────────
+//
+// A header record under the recording's id ({ live: true, … }) and the audio as
+// numbered chunk records under "<id>#000001", "<id>#000002", … Appending a
+// chunk is one small write; rewriting one growing blob every few seconds would
+// copy a 90-minute file over and over. MediaRecorder's timesliced chunks
+// concatenate into a playable file, so the chunks in order ARE the recording.
+
+const CHUNK_SEP = '#';
+const chunkKey = (id, seq) => `${id}${CHUNK_SEP}${String(seq).padStart(6, '0')}`;
+const isChunkOf = (key, id) => typeof key === 'string' && key.startsWith(id + CHUNK_SEP);
+
+function allPairs(s) {
+  const keys = s.getAllKeys();
+  const values = s.getAll();
+  return () => (keys.result || []).map((k, i) => [k, values.result?.[i]]);
+}
+
+// Records as the rest of the app sees them: finished recordings as stored, a
+// live one as its chunks joined into one blob (and marked interrupted, since a
+// live record is only ever read back after its tab went away). Chunk records
+// themselves are never listed.
+function assemble(pairs) {
+  const chunks = new Map();
+  for (const [key, val] of pairs) {
+    if (val?.chunkOf) {
+      if (!chunks.has(val.chunkOf)) chunks.set(val.chunkOf, []);
+      chunks.get(val.chunkOf).push([key, val]);
+    }
+  }
+  const out = [];
+  for (const [key, rec] of pairs) {
+    if (!rec || rec.chunkOf) continue;
+    if (rec.live) {
+      const parts = (chunks.get(key) || []).sort(([a], [b]) => (a < b ? -1 : 1)).map(([, c]) => c.data);
+      if (!parts.length) continue;
+      const blob = new Blob(parts, { type: rec.mimeType || 'audio/webm' });
+      out.push(withRecordedAt({ ...rec, id: key, blob, interrupted: true }));
+    } else if (rec.blob) {
+      out.push(withRecordedAt({ ...rec, id: key }));
+    }
+  }
+  return out;
+}
+
+// Opens the record a recording will be written into as it happens. Returns
+// its id, or null — in which case the recording still works, held in memory
+// only, as before.
+export async function startLiveRecording({ mimeType, recordedAt }, { now = Date.now } = {}) {
+  try {
+    const savedAt = now();
+    const id = newRecordingId(savedAt);
+    const db = await openDb();
+    await tx(db, 'readwrite', s => s.put({
+      id, live: true, mimeType, seconds: 0, savedAt,
+      recordedAt: Number.isFinite(recordedAt) ? recordedAt : savedAt,
+    }, id));
+    db.close();
+    return id;
+  } catch (e) {
+    console.warn('[recordingStore] live start failed:', e?.message);
+    return null;
+  }
+}
+
+// Writes the next piece of a live recording. seq must increase by call;
+// seconds is how much has been recorded so far, for the recovery banner.
+export async function appendLiveChunks(id, parts, { seq, seconds, mimeType } = {}) {
+  if (!id || !Number.isInteger(seq) || !parts?.length) return false;
+  try {
+    const data = new Blob(parts, { type: mimeType || parts[0]?.type || 'audio/webm' });
+    const db = await openDb();
+    const header = await tx(db, 'readonly', s => s.get(id));
+    if (!header?.live) { db.close(); return false; }
+    await tx(db, 'readwrite', s => {
+      s.put({ chunkOf: id, seq, data }, chunkKey(id, seq));
+      s.put({ ...header, seconds: Number.isFinite(seconds) ? seconds : header.seconds, savedAt: Date.now() }, id);
+    });
+    db.close();
+    return true;
+  } catch (e) {
+    console.warn('[recordingStore] live append failed:', e?.message);
+    return false;
+  }
+}
+
+// Recording stopped normally: replace the live record and its chunks with one
+// finished record under the same id. Returns the id, or null if it could not
+// be written (the caller then falls back to savePendingRecording).
+export async function finalizeLiveRecording(id, { blob, mimeType, seconds }) {
+  if (!id || !blob) return null;
+  try {
+    const db = await openDb();
+    const header = await tx(db, 'readonly', s => s.get(id));
+    const keys = await tx(db, 'readonly', s => s.getAllKeys());
+    const savedAt = Date.now();
+    await tx(db, 'readwrite', s => {
+      s.put({
+        id, blob, mimeType, seconds, savedAt,
+        recordedAt: Number.isFinite(header?.recordedAt) ? header.recordedAt : savedAt - (seconds || 0) * 1000,
+      }, id);
+      for (const k of keys || []) if (isChunkOf(k, id)) s.delete(k);
+    });
+    db.close();
+    return id;
+  } catch (e) {
+    console.warn('[recordingStore] live finalize failed:', e?.message);
+    return null;
   }
 }

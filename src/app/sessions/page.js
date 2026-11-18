@@ -7,7 +7,10 @@ import { useTheme } from '@/lib/ThemeContext';
 import { sessions as sessionsApi, emotions as emotionsApi, aiChats, homework as homeworkApi, topics as topicsApi } from '@/lib/api';
 import { pendingTopics, prefillNotes } from '@/lib/sessionTopics';
 import { ALLOWED_EXT, MAX_UPLOAD_BYTES, extOf, tooLargeMessage, unsupportedTypeMessage } from '@/lib/audioUpload';
-import { savePendingRecording, loadPendingRecording, loadPendingRecordings, clearPendingRecording, savePendingTranscript } from '@/lib/recordingStore';
+import {
+  savePendingRecording, loadPendingRecording, loadPendingRecordings, clearPendingRecording, savePendingTranscript,
+  startLiveRecording, appendLiveChunks, finalizeLiveRecording,
+} from '@/lib/recordingStore';
 import { finishRecording, shouldClearHeldAudioOnClose, shouldAutoOpenRecordModal } from '@/lib/recordingOutcome';
 import {
   uploadToStorage, startTranscription, pollTranscript, TranscribeError,
@@ -103,6 +106,10 @@ function getSupportedMimeType() {
 // makes the same session ~21 MB. This is the single biggest reason long
 // recordings failed to upload.
 const SPEECH_BITS_PER_SECOND = 32000;
+
+// While recording, captured audio is written to IndexedDB every this many
+// 1-second chunks — the most a closed tab or a crash can cost.
+const LIVE_FLUSH_CHUNKS = 5;
 
 // Lightweight VU-meter shown during recording. Passive AnalyserNode tap on the
 // MediaRecorder stream — source.connect(analyser) only, NEVER connected to
@@ -280,6 +287,10 @@ function SessionsPageInner() {
   const timerRef       = useRef(null);
   const mediaRef       = useRef(null);
   const chunksRef      = useRef([]);
+  // Writing the recording to IndexedDB while it happens (recordingStore.js):
+  // the live record's id (or a promise of it), chunks not yet written, the
+  // next chunk number, and the chain that keeps writes in order.
+  const liveRef        = useRef({ id: null, idPromise: null, queue: [], seq: 0, chain: Promise.resolve(), mimeType: '' });
   const startGuardRef  = useRef(false); // sync re-entry guard — survives the getUserMedia await
   const recordParamHandled = useRef(false); // one-shot for the ?record=true auto-open effect
 
@@ -551,6 +562,35 @@ function SessionsPageInner() {
     startRecording();
   }
 
+  // Write the chunks captured since the last write. With 1-second chunks,
+  // every LIVE_FLUSH_CHUNKS seconds — at most that much is lost if the tab dies.
+  // Seconds are counted from chunks, which stop while paused, like the timer.
+  function flushLive(live = liveRef.current) {
+    if (!live?.idPromise || live.queue.length === 0) return live?.chain;
+    const parts = live.queue.splice(0);
+    const seq = ++live.seq;
+    const seconds = chunksRef.current.length;
+    live.chain = live.chain
+      .then(() => live.idPromise)
+      .then(id => (id ? appendLiveChunks(id, parts, { seq, seconds, mimeType: live.mimeType }) : false))
+      .catch(e => console.warn('[Recording] live write failed:', e?.message));
+    return live.chain;
+  }
+
+  // Hiding the tab is often the last chance to write: a closed lid, a switched
+  // app or a tab about to be discarded. Write what is queued right away.
+  useEffect(() => {
+    const onHidden = () => { if (document.visibilityState === 'hidden') flushLive(); };
+    const onPageHide = () => flushLive();
+    document.addEventListener('visibilitychange', onHidden);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onHidden);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function startRecording() {
     // Re-entry guard, set synchronously BEFORE any await. A second call during
     // the getUserMedia await (Strict Mode / double-fired handler) would otherwise
@@ -600,8 +640,19 @@ function SessionsPageInner() {
       audioBitsPerSecond: SPEECH_BITS_PER_SECOND,
     });
     mediaRef.current = mr;
-    mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-    mr.onerror = (e) => { setSpeechError('Recording error: ' + (e?.error?.message || 'unknown')); clearInterval(timerRef.current); setIsCapturing(false); };
+    // Open the live record before the first chunk can arrive. Not awaited: a
+    // slow or blocked IndexedDB must not delay or stop the recording itself.
+    const live = { id: null, queue: [], seq: 0, chain: Promise.resolve(), mimeType: mr.mimeType || mimeType || 'audio/webm' };
+    live.idPromise = startLiveRecording({ mimeType: live.mimeType, recordedAt: Date.now() })
+      .then(id => { live.id = id; return id; });
+    liveRef.current = live;
+    mr.ondataavailable = (e) => {
+      if (e.data.size === 0) return;
+      chunksRef.current.push(e.data);
+      live.queue.push(e.data);
+      if (live.queue.length >= LIVE_FLUSH_CHUNKS) flushLive(live);
+    };
+    mr.onerror = (e) => { setSpeechError('Recording error: ' + (e?.error?.message || 'unknown')); clearInterval(timerRef.current); setIsCapturing(false); flushLive(live); };
     mr.start(1000);
     setIsCapturing(true); setIsPaused(false); setSeconds(0);
     clearInterval(timerRef.current); // defensive: never leave a stale interval running
@@ -639,10 +690,16 @@ function SessionsPageInner() {
     const mimeType = mediaRef.current.mimeType || 'audio/webm';
     const chunks = chunksRef.current.slice();
     mediaRef.current = null;
+    // Let the last live writes land before the live record is replaced.
+    const live = liveRef.current;
+    liveRef.current = { id: null, idPromise: null, queue: [], seq: 0, chain: Promise.resolve(), mimeType: '' };
+    live.queue = [];
+    const liveId = live.idPromise ? await live.chain.then(() => live.idPromise).catch(() => null) : null;
     const audioBlob = new Blob(chunks, { type: mimeType });
     console.log('[Recording] mimeType:', mimeType, 'chunks:', chunks.length, 'size:', audioBlob.size, 'bytes');
 
     if (audioBlob.size < 1000) {
+      clearPendingRecording(liveId); // nothing worth offering back
       setSpeechError(`Recording too short (${chunks.length} chunks, ${audioBlob.size} bytes).`);
       setIsReview(true); return;
     }
@@ -680,9 +737,11 @@ function SessionsPageInner() {
         hold: async (rec) => {
           const recordedAt = Date.now() - (rec.seconds || 0) * 1000;
           pendingAudioRef.current = { blob: rec.blob, mimeType: rec.mimeType, recordedAt };
-          // A new record every time: it must never land on top of a recording
-          // from an earlier session that is still waiting to be saved.
-          const id = await savePendingRecording({ ...rec, recordedAt });
+          // Its own record, never one of an earlier session still waiting to
+          // be saved: the live record this recording was written into, now
+          // replaced by the whole file — or, if that never opened, a new one.
+          const id = (liveId && await finalizeLiveRecording(liveId, rec))
+            || await savePendingRecording({ ...rec, recordedAt });
           if (!id) throw new Error('savePendingRecording failed');
           if (pendingAudioRef.current?.blob === rec.blob) pendingAudioRef.current.id = id;
         },
@@ -1239,12 +1298,16 @@ function SessionsPageInner() {
                   kept. Saying which one it is decides whether the button costs
                   money. One banner per held recording: there can be several. */}
               <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT, margin: '0 0 4px' }}>
-                {rec.transcript ? 'An unsaved session was found' : 'An untranscribed recording was found'}
+                {rec.transcript ? 'An unsaved session was found'
+                  : rec.interrupted ? 'An interrupted recording was found'
+                  : 'An untranscribed recording was found'}
               </p>
               <p style={{ fontSize: 11.5, color: MUTED, margin: '0 0 10px', lineHeight: 1.5 }}>
                 {rec.recordedAt ? `Recorded ${new Date(rec.recordedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · ` : ''}
                 {fmt(rec.seconds || 0)} · {(rec.blob.size / 1024 / 1024).toFixed(1)} MB —{' '}
-                {rec.transcript ? 'the transcript is ready, the session was never saved.' : 'transcription never finished.'}
+                {rec.transcript ? 'the transcript is ready, the session was never saved.'
+                  : rec.interrupted ? 'the page closed before Stop; everything recorded until then was kept.'
+                  : 'transcription never finished.'}
               </p>
               <div style={{ display: 'flex', gap: 7 }}>
                 <button onClick={() => resumeRecovered(rec)}

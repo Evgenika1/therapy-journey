@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import {
   savePendingRecording, loadPendingRecording, loadPendingRecordings, clearPendingRecording,
   savePendingTranscript, LEGACY_KEY,
+  startLiveRecording, appendLiveChunks, finalizeLiveRecording,
 } from '../src/lib/recordingStore.js';
 
 // A minimal in-memory stand-in for the one object store this module uses.
@@ -158,4 +159,93 @@ test('a storage failure is reported, never thrown at the recording flow', async 
   assert.equal(await savePendingRecording({ blob, mimeType: 'audio/webm', seconds: 1 }), null);
   assert.equal(await loadPendingRecording('rec-1'), null);
   assert.deepEqual(await loadPendingRecordings(), []);
+});
+
+// ── Live recording: audio reaches disk while it is being recorded ───────────
+
+const part = (text) => new Blob([text], { type: 'audio/webm' });
+const textOf = async (b) => Buffer.from(await b.arrayBuffer()).toString();
+
+test('a recording whose tab died mid-session comes back with everything written so far', async () => {
+  fakeIndexedDb();
+  const id = await startLiveRecording({ mimeType: 'audio/webm', recordedAt: 1_000 });
+  assert.ok(id);
+  assert.deepEqual(await loadPendingRecordings(), [], 'nothing to offer before any audio is written');
+
+  await appendLiveChunks(id, [part('AA'), part('BB')], { seq: 1, seconds: 10 });
+  await appendLiveChunks(id, [part('CC')], { seq: 2, seconds: 15 });
+  // …and here the tab closes. No Stop, no finalize.
+
+  const [rec] = await loadPendingRecordings();
+  assert.equal(rec.id, id);
+  assert.equal(rec.interrupted, true);
+  assert.equal(rec.seconds, 15);
+  assert.equal(rec.recordedAt, 1_000);
+  assert.equal(await textOf(rec.blob), 'AABBCC', 'chunks joined in recording order');
+  assert.equal(await textOf((await loadPendingRecording(id)).blob), 'AABBCC');
+});
+
+test('chunks are joined by their sequence, not by the order they come back in', async () => {
+  const data = fakeIndexedDb();
+  const id = await startLiveRecording({ mimeType: 'audio/webm' });
+  await appendLiveChunks(id, [part('2')], { seq: 2, seconds: 2 });
+  await appendLiveChunks(id, [part('10')], { seq: 10, seconds: 10 });
+  await appendLiveChunks(id, [part('1')], { seq: 1, seconds: 1 });
+  assert.ok(data.size > 3);
+  assert.equal(await textOf((await loadPendingRecordings())[0].blob), '1210');
+});
+
+test('stopping normally turns the live record into one finished recording under the same id', async () => {
+  const data = fakeIndexedDb();
+  const id = await startLiveRecording({ mimeType: 'audio/webm', recordedAt: 7_000 });
+  await appendLiveChunks(id, [part('AA')], { seq: 1, seconds: 5 });
+  const full = part('AA-and-the-rest');
+  assert.equal(await finalizeLiveRecording(id, { blob: full, mimeType: 'audio/webm', seconds: 60 }), id);
+
+  assert.equal(data.size, 1, 'no chunk records left behind');
+  const [rec] = await loadPendingRecordings();
+  assert.equal(rec.id, id);
+  assert.equal(rec.blob, full);
+  assert.equal(rec.interrupted, undefined);
+  assert.equal(rec.recordedAt, 7_000, 'dated from when recording started');
+  assert.equal(await savePendingTranscript(id, 'текст'), true, 'a finished live recording takes its transcript');
+});
+
+test('a live recording never disturbs another held recording', async () => {
+  fakeIndexedDb();
+  const old = await savePendingRecording({ blob, mimeType: 'audio/webm', seconds: 5603 });
+  await savePendingTranscript(old, 'девяносто три минуты');
+  const live = await startLiveRecording({ mimeType: 'audio/webm' });
+  await appendLiveChunks(live, [part('x')], { seq: 1, seconds: 1 });
+  await finalizeLiveRecording(live, { blob: part('x'), mimeType: 'audio/webm', seconds: 1 });
+
+  const all = await loadPendingRecordings();
+  assert.equal(all.length, 2);
+  assert.equal(all.find(r => r.id === old).transcript, 'девяносто три минуты');
+});
+
+test('discarding a live recording removes its chunks too', async () => {
+  const data = fakeIndexedDb();
+  const keep = await savePendingRecording({ blob, mimeType: 'audio/webm', seconds: 60 });
+  const id = await startLiveRecording({ mimeType: 'audio/webm' });
+  await appendLiveChunks(id, [part('a')], { seq: 1, seconds: 1 });
+  await appendLiveChunks(id, [part('b')], { seq: 2, seconds: 2 });
+  await clearPendingRecording(id);
+  assert.deepEqual([...data.keys()], [keep]);
+});
+
+test('appending to a recording that is not live writes nothing', async () => {
+  const data = fakeIndexedDb();
+  const done = await savePendingRecording({ blob, mimeType: 'audio/webm', seconds: 60 });
+  assert.equal(await appendLiveChunks(done, [part('x')], { seq: 1, seconds: 1 }), false);
+  assert.equal(await appendLiveChunks('rec-missing', [part('x')], { seq: 1 }), false);
+  assert.equal(await appendLiveChunks(done, [], { seq: 1 }), false);
+  assert.equal(data.size, 1);
+});
+
+test('live storage failing never breaks the recording', async () => {
+  globalThis.indexedDB = { open: () => { throw new Error('blocked'); } };
+  assert.equal(await startLiveRecording({ mimeType: 'audio/webm' }), null);
+  assert.equal(await appendLiveChunks('rec-1', [part('x')], { seq: 1 }), false);
+  assert.equal(await finalizeLiveRecording('rec-1', { blob: part('x'), seconds: 1 }), null);
 });
