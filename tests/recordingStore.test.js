@@ -249,3 +249,15 @@ test('live storage failing never breaks the recording', async () => {
   assert.equal(await appendLiveChunks('rec-1', [part('x')], { seq: 1 }), false);
   assert.equal(await finalizeLiveRecording('rec-1', { blob: part('x'), seconds: 1 }), null);
 });
+
+test('a recording whose transcription found no speech says so, and keeps its audio', async () => {
+  fakeIndexedDb();
+  const { markPendingNoSpeech } = await import('../src/lib/recordingStore.js');
+  const id = await savePendingRecording({ blob, mimeType: 'audio/webm', seconds: 3 });
+  assert.equal(await markPendingNoSpeech(id), true);
+  const rec = await loadPendingRecording(id);
+  assert.equal(rec.noSpeech, true);
+  assert.equal(rec.blob, blob);
+  assert.equal(await markPendingNoSpeech('rec-missing'), false, 'no bare record is created');
+  assert.equal(await markPendingNoSpeech(null), false);
+});

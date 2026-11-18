@@ -110,6 +110,23 @@ export async function savePendingTranscript(id, transcript) {
   }
 }
 
+// Transcription came back with no words. Kept on the record so the recovery
+// banner can say so, instead of claiming transcription never finished.
+export async function markPendingNoSpeech(id) {
+  if (!id) return false;
+  try {
+    const db = await openDb();
+    const existing = await tx(db, 'readonly', s => s.get(id));
+    if (!existing?.blob) { db.close(); return false; }
+    await tx(db, 'readwrite', s => s.put({ ...existing, noSpeech: true, transcribedAt: Date.now() }, id));
+    db.close();
+    return true;
+  } catch (e) {
+    console.warn('[recordingStore] no-speech mark failed:', e?.message);
+    return false;
+  }
+}
+
 // Every held recording, newest first.
 export async function loadPendingRecordings() {
   try {

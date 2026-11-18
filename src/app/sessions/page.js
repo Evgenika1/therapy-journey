@@ -9,7 +9,7 @@ import { pendingTopics, prefillNotes } from '@/lib/sessionTopics';
 import { ALLOWED_EXT, MAX_UPLOAD_BYTES, extOf, tooLargeMessage, unsupportedTypeMessage } from '@/lib/audioUpload';
 import {
   savePendingRecording, loadPendingRecording, loadPendingRecordings, clearPendingRecording, savePendingTranscript,
-  startLiveRecording, appendLiveChunks, finalizeLiveRecording,
+  startLiveRecording, appendLiveChunks, finalizeLiveRecording, markPendingNoSpeech,
 } from '@/lib/recordingStore';
 import { finishRecording, shouldClearHeldAudioOnClose, shouldAutoOpenRecordModal, stopRecorder, needsStopConfirmation, SHORT_STOP_SECONDS } from '@/lib/recordingOutcome';
 import {
@@ -248,6 +248,7 @@ function SessionsPageInner() {
   // Recordings held in IndexedDB with no saved session — each gets its own banner.
   const [recovered,        setRecovered]        = useState([]);
   const [confirmStop,      setConfirmStop]      = useState(false); // Stop pressed under SHORT_STOP_SECONDS
+  const [confirmDelete,    setConfirmDelete]    = useState(false); // Delete pressed on Review
   // Set when the account may not record (no plan, or the period's sessions
   // are used up): why, so the notice can say it.
   const [limitReason,      setLimitReason]      = useState(null);
@@ -530,7 +531,7 @@ function SessionsPageInner() {
     setSeconds(0); setTranscript(''); setRecNotes(''); setRecTitle(''); setSaved(false);
     setShowPreMood(false); setPreRecordMoodIdx(null);
     setPostRecordMoodIdx(null); setPostMoodSaved(false);
-    setSpeechError(''); setSaveError('');
+    setSpeechError(''); setSaveError(''); setConfirmDelete(false);
     setTranscribeFailed(false); setUploadProgress(0);
     chunksRef.current = [];
     // Closing the modal is NOT a discard. The audio is deleted in exactly two
@@ -863,6 +864,7 @@ function SessionsPageInner() {
       // way: it sat on screen waiting for "Save Session", the tab went away,
       // and the only copy went with it — after AssemblyAI had billed for it.
       await savePendingTranscript(pending.id, finalText);
+      if (!finalText) await markPendingNoSpeech(pending.id);
       setTranscript(finalText);
       if (!finalText) setSpeechError('No speech detected in the recording.');
     } catch (err) {
@@ -956,6 +958,7 @@ function SessionsPageInner() {
         forgetPendingJob();
         const finalText = data.text || '';
         await savePendingTranscript(resumedRecordingId, finalText);
+        if (!finalText) await markPendingNoSpeech(resumedRecordingId);
         setTranscript(finalText);
         if (!finalText) setSpeechError('No speech detected in the recording.');
         // Re-adopt the held audio so Retry and Save behave as if we never left.
@@ -1006,6 +1009,19 @@ function SessionsPageInner() {
     // Only a recording with no text goes back for transcription.
     setTranscript(heldText);
     if (!heldText) transcribePending();
+  }
+
+  // Delete from Review: the one way out of the modal that really throws the
+  // recording away, so it asks first. Closing ("Later") keeps it on a banner.
+  async function deleteReviewedRecording() {
+    const held = pendingAudioRef.current;
+    pendingAudioRef.current = null;
+    setConfirmDelete(false);
+    if (held?.id) {
+      if (loadPendingRecordingId() === held.id) forgetPendingJob();
+      await clearPendingRecording(held.id);
+    }
+    closeModal();
   }
 
   async function discardRecovered(rec) {
@@ -1342,6 +1358,7 @@ function SessionsPageInner() {
               <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT, margin: '0 0 4px' }}>
                 {rec.transcript ? 'An unsaved session was found'
                   : rec.interrupted ? 'An interrupted recording was found'
+                  : rec.noSpeech ? 'A recording with no speech was found'
                   : 'An untranscribed recording was found'}
               </p>
               <p style={{ fontSize: 11.5, color: MUTED, margin: '0 0 10px', lineHeight: 1.5 }}>
@@ -1349,6 +1366,7 @@ function SessionsPageInner() {
                 {fmt(rec.seconds || 0)} · {(rec.blob.size / 1024 / 1024).toFixed(1)} MB —{' '}
                 {rec.transcript ? 'the transcript is ready, the session was never saved.'
                   : rec.interrupted ? 'the page closed before Stop; everything recorded until then was kept.'
+                  : rec.noSpeech ? 'no speech was detected in it.'
                   : 'transcription never finished.'}
               </p>
               <div style={{ display: 'flex', gap: 7 }}>
@@ -1768,8 +1786,25 @@ function SessionsPageInner() {
                       style={{ width: '100%', boxSizing: 'border-box', minHeight: 60, padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 13, resize: 'vertical', outline: 'none', fontFamily: 'inherit', lineHeight: 1.7, marginBottom: 16 }} />
 
                     {saveError && <p style={{ fontSize: 12, color: '#DC2626', margin: '0 0 10px' }}>⚠ {saveError}</p>}
+                    {/* "Discard" used to only close: the recording came back on a
+                        banner, which read as a bug. Now Later keeps it, Delete
+                        deletes it — after asking. */}
+                    {confirmDelete && !saved && (
+                      <div role="alertdialog" aria-label="Delete recording?" style={{ marginBottom: 10, padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, fontSize: 12.5, color: TEXT, lineHeight: 1.5 }}>
+                        Delete this recording{transcript ? ' and its transcript' : ''}? It can&apos;t be recovered.
+                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                          <button onClick={() => setConfirmDelete(false)} autoFocus
+                            style={{ padding: '6px 14px', borderRadius: 999, border: 'none', background: A, color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>Keep</button>
+                          <button onClick={deleteReviewedRecording}
+                            style={{ padding: '6px 14px', borderRadius: 999, border: '1px solid #DC2626', background: 'transparent', color: '#DC2626', fontSize: 12, cursor: 'pointer' }}>Delete</button>
+                        </div>
+                      </div>
+                    )}
                     <div style={{ display: 'flex', gap: 10 }}>
-                      <button onClick={closeModal} style={{ flex: 1, padding: 11, borderRadius: 11, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>Discard</button>
+                      <button onClick={() => setConfirmDelete(true)} disabled={saving || saved} title="Delete this recording"
+                        style={{ flex: 1, padding: 11, borderRadius: 11, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>Delete</button>
+                      <button onClick={closeModal} disabled={saving} title="Close and keep the recording to save later"
+                        style={{ flex: 1, padding: 11, borderRadius: 11, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>Later</button>
                       <button onClick={saveSession} disabled={saving || saved}
                         style={{ flex: 2, padding: 11, borderRadius: 11, border: 'none', background: saved ? '#15803D' : A, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
                         {saved ? '✓ Saved!' : saving ? 'Saving…' : 'Save Session'}
