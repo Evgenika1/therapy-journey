@@ -154,9 +154,13 @@ export const PENDING_JOB_KEY = 'miru_pending_transcribe_job';
 // timeout for nothing.
 export const PENDING_JOB_TTL_MS = POLL_TIMEOUT_MS;
 
-export function rememberPendingJob(jobId, { storage = safeStorage(), now = Date.now, audioPath = null } = {}) {
+// recordingId names the held recording (recordingStore.js) this job is
+// transcribing, so a rejoined job writes its text to that recording and no other.
+export function rememberPendingJob(jobId, { storage = safeStorage(), now = Date.now, audioPath = null, recordingId = null } = {}) {
   if (!jobId || !storage) return;
-  const entry = audioPath ? { jobId, startedAt: now(), audioPath } : { jobId, startedAt: now() };
+  const entry = { jobId, startedAt: now() };
+  if (audioPath) entry.audioPath = audioPath;
+  if (recordingId) entry.recordingId = recordingId;
   try { storage.setItem(PENDING_JOB_KEY, JSON.stringify(entry)); } catch {}
 }
 
@@ -186,6 +190,17 @@ export function loadPendingAudioPath({ storage = safeStorage() } = {}) {
   try {
     const parsed = JSON.parse(storage.getItem(PENDING_JOB_KEY));
     return typeof parsed?.audioPath === 'string' ? parsed.audioPath : null;
+  } catch { return null; }
+}
+
+// The held recording the resumed job belongs to. A job remembered by the
+// single-slot version has none; its audio sits under the old 'current' key.
+export function loadPendingRecordingId({ storage = safeStorage() } = {}) {
+  if (!storage) return null;
+  try {
+    const parsed = JSON.parse(storage.getItem(PENDING_JOB_KEY));
+    if (!parsed?.jobId) return null;
+    return typeof parsed.recordingId === 'string' ? parsed.recordingId : 'current';
   } catch { return null; }
 }
 

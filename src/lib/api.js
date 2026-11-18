@@ -85,6 +85,12 @@ export const sessions = {
       notes:       session.notes       || null,
       kind:        normalizeKind(session.kind),
     };
+    // A session saved from a held recording is dated when it was recorded
+    // (ms since epoch or ISO). Anything unreadable falls back to now.
+    const recordedAt = session.created_at == null ? null : new Date(session.created_at);
+    if (recordedAt && !Number.isNaN(recordedAt.getTime()) && recordedAt.getTime() <= Date.now()) {
+      insert.created_at = recordedAt.toISOString();
+    }
     let { data, error } = await supabase.from('sessions').insert(insert).select();
     // Migration 023 adds kind. Without it every row is therapy anyway, so a
     // recording must not be lost for want of a column that says so.

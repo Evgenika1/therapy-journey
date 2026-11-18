@@ -349,3 +349,16 @@ test('a refused start surfaces the server message', async () => {
     err => err instanceof TranscribeError && /Monthly minutes used up/.test(err.message),
   );
 });
+
+test('a remembered job names the recording it is transcribing', async () => {
+  const { rememberPendingJob, loadPendingRecordingId, forgetPendingJob } = await import('../src/lib/transcribeClient.js');
+  const mem = new Map();
+  const storage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v), removeItem: k => mem.delete(k) };
+  rememberPendingJob('job-1', { storage, now: () => 1000, recordingId: 'rec-1-abc' });
+  assert.equal(loadPendingRecordingId({ storage }), 'rec-1-abc');
+  // A job from the single-slot version: its audio is under the old key.
+  rememberPendingJob('job-2', { storage, now: () => 1000 });
+  assert.equal(loadPendingRecordingId({ storage }), 'current');
+  forgetPendingJob({ storage });
+  assert.equal(loadPendingRecordingId({ storage }), null);
+});

@@ -7,11 +7,11 @@ import { useTheme } from '@/lib/ThemeContext';
 import { sessions as sessionsApi, emotions as emotionsApi, aiChats, homework as homeworkApi, topics as topicsApi } from '@/lib/api';
 import { pendingTopics, prefillNotes } from '@/lib/sessionTopics';
 import { ALLOWED_EXT, MAX_UPLOAD_BYTES, extOf, tooLargeMessage, unsupportedTypeMessage } from '@/lib/audioUpload';
-import { savePendingRecording, loadPendingRecording, clearPendingRecording, savePendingTranscript } from '@/lib/recordingStore';
+import { savePendingRecording, loadPendingRecording, loadPendingRecordings, clearPendingRecording, savePendingTranscript } from '@/lib/recordingStore';
 import { finishRecording, shouldClearHeldAudioOnClose, shouldAutoOpenRecordModal } from '@/lib/recordingOutcome';
 import {
   uploadToStorage, startTranscription, pollTranscript, TranscribeError,
-  rememberPendingJob, forgetPendingJob, loadPendingJob, loadPendingAudioPath,
+  rememberPendingJob, forgetPendingJob, loadPendingJob, loadPendingAudioPath, loadPendingRecordingId,
 } from '@/lib/transcribeClient';
 import { AUDIO_BUCKET, audioPath as newAudioPath, storageContentType } from '@/lib/audioStorage';
 import {
@@ -234,10 +234,12 @@ function SessionsPageInner() {
 
   // The recorded audio is held until the session is SAVED, not until it is
   // transcribed — a failed upload must never cost the user the recording.
-  const pendingAudioRef = useRef(null); // { blob, mimeType }
+  // { id, blob, mimeType, recordedAt, fromRecovery } — id is its record in IndexedDB
+  const pendingAudioRef = useRef(null);
   const [transcribeFailed, setTranscribeFailed] = useState(false); // → show Retry
   const [uploadProgress,   setUploadProgress]   = useState(0);
-  const [recovered,        setRecovered]        = useState(null); // recording found in IndexedDB after a reload
+  // Recordings held in IndexedDB with no saved session — each gets its own banner.
+  const [recovered,        setRecovered]        = useState([]);
   // Set when the account may not record (no plan, or the period's sessions
   // are used up): why, so the notice can say it.
   const [limitReason,      setLimitReason]      = useState(null);
@@ -303,9 +305,9 @@ function SessionsPageInner() {
       // Reloading this URL must not cover the recovery banner with an empty
       // record modal — that is the only way back to a held recording.
       (async () => {
-        const held = await loadPendingRecording().catch(() => null);
+        const held = await loadPendingRecordings().catch(() => []);
         if (!shouldAutoOpenRecordModal({
-          wantsRecord: true, hasHeldRecording: !!held, hasPendingJob: !!loadPendingJob(),
+          wantsRecord: true, hasHeldRecording: held.length > 0, hasPendingJob: !!loadPendingJob(),
         })) { router.replace('/sessions'); return; }
         await openRecordGuarded(
           preMoodParam !== null ? Number(preMoodParam) : undefined,
@@ -520,17 +522,23 @@ function SessionsPageInner() {
     // so it destroyed every recording whose transcription had *succeeded*
     // without the session ever being saved.
     if (shouldClearHeldAudioOnClose({ saved })) {
+      const savedId = pendingAudioRef.current?.id;
       pendingAudioRef.current = null;
       forgetPendingJob();
-      clearPendingRecording();
+      clearPendingRecording(savedId);
       return;
     }
     // Still holding audio — hand it straight to the recovery banner. The mount
     // effect only looks in IndexedDB once, so without this the recording would
     // stay hidden until the next page load.
     const held = pendingAudioRef.current;
+    pendingAudioRef.current = null;
     if (held?.blob) {
-      setRecovered(prev => prev || { blob: held.blob, mimeType: held.mimeType, seconds: heldSeconds });
+      // Re-read it from IndexedDB so the banner knows whether the transcript
+      // was kept; fall back to what is in memory if the store is unavailable.
+      const fallback = { ...held, seconds: heldSeconds };
+      (held.id ? loadPendingRecording(held.id) : Promise.resolve(null))
+        .then(rec => addRecovered(rec || fallback));
     }
   }
 
@@ -670,9 +678,13 @@ function SessionsPageInner() {
       { blob: audioBlob, mimeType, seconds },
       {
         hold: async (rec) => {
-          pendingAudioRef.current = { blob: rec.blob, mimeType: rec.mimeType };
-          const ok = await savePendingRecording(rec);
-          if (!ok) throw new Error('savePendingRecording failed');
+          const recordedAt = Date.now() - (rec.seconds || 0) * 1000;
+          pendingAudioRef.current = { blob: rec.blob, mimeType: rec.mimeType, recordedAt };
+          // A new record every time: it must never land on top of a recording
+          // from an earlier session that is still waiting to be saved.
+          const id = await savePendingRecording({ ...rec, recordedAt });
+          if (!id) throw new Error('savePendingRecording failed');
+          if (pendingAudioRef.current?.blob === rec.blob) pendingAudioRef.current.id = id;
         },
         measure: measureLoudestWindow,
         transcribe: transcribePending,
@@ -739,7 +751,7 @@ function SessionsPageInner() {
       setUploadProgress(100); // upload done — the wait is now server-side
       // The upload is the expensive half. Remember the job so a reload rejoins
       // this same transcription instead of re-uploading the recording.
-      rememberPendingJob(job_id, { audioPath: path });
+      rememberPendingJob(job_id, { audioPath: path, recordingId: pending.id });
       const data = await pollTranscript(job_id, { audioPath: path });
       // The server already strips hallucination boilerplate (per-utterance when
       // the audio is diarized), so use its text verbatim — re-stripping here
@@ -749,7 +761,7 @@ function SessionsPageInner() {
       // Hold the text BEFORE showing it. A 99-minute transcript was lost this
       // way: it sat on screen waiting for "Save Session", the tab went away,
       // and the only copy went with it — after AssemblyAI had billed for it.
-      await savePendingTranscript(finalText);
+      await savePendingTranscript(pending.id, finalText);
       setTranscript(finalText);
       if (!finalText) setSpeechError('No speech detected in the recording.');
     } catch (err) {
@@ -831,6 +843,7 @@ function SessionsPageInner() {
     const jobId = loadPendingJob();
     if (!jobId) return;
     const resumedAudioPath = loadPendingAudioPath();
+    const resumedRecordingId = loadPendingRecordingId();
     let cancelled = false;
     (async () => {
       setShowImport(false); setSelectedSession(null);
@@ -841,13 +854,13 @@ function SessionsPageInner() {
         if (cancelled) return;
         forgetPendingJob();
         const finalText = data.text || '';
-        await savePendingTranscript(finalText);
+        await savePendingTranscript(resumedRecordingId, finalText);
         setTranscript(finalText);
         if (!finalText) setSpeechError('No speech detected in the recording.');
         // Re-adopt the held audio so Retry and Save behave as if we never left.
-        const rec = await loadPendingRecording();
+        const rec = await loadPendingRecording(resumedRecordingId);
         if (rec && !cancelled) {
-          pendingAudioRef.current = { blob: rec.blob, mimeType: rec.mimeType || 'audio/webm' };
+          pendingAudioRef.current = { id: rec.id, blob: rec.blob, mimeType: rec.mimeType || 'audio/webm', recordedAt: rec.recordedAt };
           setSeconds(rec.seconds || 0);
         }
       } catch (err) {
@@ -868,16 +881,24 @@ function SessionsPageInner() {
   // flow — is offered back instead of silently rotting in IndexedDB. Skipped
   // while a resumed job is still being polled, so the two can't both claim it.
   useEffect(() => {
-    if (loadPendingJob()) return;
-    loadPendingRecording().then(rec => { if (rec) setRecovered(rec); });
+    const busyId = loadPendingJob() ? loadPendingRecordingId() : null;
+    loadPendingRecordings().then(list => setRecovered(list.filter(r => r.id !== busyId)));
   }, []);
 
-  function resumeRecovered() {
-    if (!recovered) return;
-    pendingAudioRef.current = { blob: recovered.blob, mimeType: recovered.mimeType || 'audio/webm' };
-    setSeconds(recovered.seconds || 0);
-    const heldText = typeof recovered.transcript === 'string' ? recovered.transcript : '';
-    setRecovered(null);
+  function addRecovered(rec) {
+    if (!rec?.blob) return;
+    setRecovered(list => (rec.id && list.some(r => r.id === rec.id)) ? list : [rec, ...list]);
+  }
+
+  function resumeRecovered(rec) {
+    if (!rec) return;
+    pendingAudioRef.current = {
+      id: rec.id, blob: rec.blob, mimeType: rec.mimeType || 'audio/webm',
+      recordedAt: rec.recordedAt, fromRecovery: true,
+    };
+    setSeconds(rec.seconds || 0);
+    const heldText = typeof rec.transcript === 'string' ? rec.transcript : '';
+    setRecovered(list => list.filter(r => r !== rec));
     setShowModal(true); setIsReview(true); setSaved(false); setRecNotes('');
     // This recording was already transcribed once and the text was kept, so
     // hand it back rather than paying AssemblyAI for the same audio twice.
@@ -886,11 +907,11 @@ function SessionsPageInner() {
     if (!heldText) transcribePending();
   }
 
-  async function discardRecovered() {
-    setRecovered(null);
-    pendingAudioRef.current = null;
-    forgetPendingJob();
-    await clearPendingRecording();
+  async function discardRecovered(rec) {
+    setRecovered(list => list.filter(r => r !== rec));
+    if (pendingAudioRef.current?.id === rec.id) pendingAudioRef.current = null;
+    if (loadPendingRecordingId() === rec.id) forgetPendingJob();
+    await clearPendingRecording(rec.id);
   }
 
   async function saveSession() {
@@ -908,8 +929,11 @@ function SessionsPageInner() {
         mood_before: preRecordMoodIdx  !== null ? SESSION_MOODS[preRecordMoodIdx].intensity  : null,
         mood_after:  postRecordMoodIdx !== null ? SESSION_MOODS[postRecordMoodIdx].intensity : null,
         kind: readLastKind(),
+        // Saved from a recovery banner: date it when it was recorded, not
+        // when someone finally pressed Save — that can be a week later.
+        created_at: pendingAudioRef.current?.fromRecovery ? pendingAudioRef.current.recordedAt : null,
       });
-      setSessions(s => [result, ...s]);
+      setSessions(s => [result, ...s].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
       setSaved(true);
       // The session just happened, so the topics ticked off before it have been
       // raised. File them away: the Dashboard block is the shortlist for the
@@ -923,11 +947,13 @@ function SessionsPageInner() {
         // A failed archive must not turn a saved session into an error.
         console.error('[Sessions] archive topics:', e?.message);
       }
-      // The transcript is safely in the database — the audio copy can go now.
+      // The transcript is safely in the database — this recording's audio copy
+      // can go now. Any other held recording stays where it is.
+      const savedId = pendingAudioRef.current?.id;
       pendingAudioRef.current = null;
-      setRecovered(null);
+      if (savedId) setRecovered(list => list.filter(r => r.id !== savedId));
       forgetPendingJob();
-      clearPendingRecording();
+      clearPendingRecording(savedId);
       setTimeout(() => { closeModal(); setSelectedSession(result); }, 1500);
     } catch (err) {
       console.error('[Sessions] save error:', err?.message, err?.code);
@@ -1206,31 +1232,32 @@ function SessionsPageInner() {
 
           {/* A recording survived a failed transcription or a reload — offer it back
               rather than leaving the user to assume the session is gone. */}
-          {recovered && !showModal && (
-            <div style={{ margin: '0 14px 12px', background: A + '14', border: `1px solid ${A}55`, borderRadius: 14, padding: '12px 13px' }}>
+          {!showModal && recovered.map(rec => (
+            <div key={rec.id || rec.recordedAt} style={{ margin: '0 14px 12px', background: A + '14', border: `1px solid ${A}55`, borderRadius: 14, padding: '12px 13px' }}>
               {/* Two different situations wear the same banner: audio with no
                   text yet, and audio whose transcript was already paid for and
                   kept. Saying which one it is decides whether the button costs
-                  money. */}
+                  money. One banner per held recording: there can be several. */}
               <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT, margin: '0 0 4px' }}>
-                {recovered.transcript ? 'An unsaved session was found' : 'An untranscribed recording was found'}
+                {rec.transcript ? 'An unsaved session was found' : 'An untranscribed recording was found'}
               </p>
               <p style={{ fontSize: 11.5, color: MUTED, margin: '0 0 10px', lineHeight: 1.5 }}>
-                {fmt(recovered.seconds || 0)} · {(recovered.blob.size / 1024 / 1024).toFixed(1)} MB —{' '}
-                {recovered.transcript ? 'the transcript is ready, the session was never saved.' : 'transcription never finished.'}
+                {rec.recordedAt ? `Recorded ${new Date(rec.recordedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · ` : ''}
+                {fmt(rec.seconds || 0)} · {(rec.blob.size / 1024 / 1024).toFixed(1)} MB —{' '}
+                {rec.transcript ? 'the transcript is ready, the session was never saved.' : 'transcription never finished.'}
               </p>
               <div style={{ display: 'flex', gap: 7 }}>
-                <button onClick={resumeRecovered}
+                <button onClick={() => resumeRecovered(rec)}
                   style={{ flex: 2, padding: '7px 0', borderRadius: 8, border: 'none', background: A, color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
-                  {recovered.transcript ? '↻ Open and save' : '↻ Transcribe'}
+                  {rec.transcript ? '↻ Open and save' : '↻ Transcribe'}
                 </button>
-                <button onClick={discardRecovered}
+                <button onClick={() => discardRecovered(rec)}
                   style={{ flex: 1, padding: '7px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 12, cursor: 'pointer' }}>
                   Delete
                 </button>
               </div>
             </div>
-          )}
+          ))}
 
           {limitReason && (
             <div style={{ margin: '0 14px 10px', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: SURFACE, fontSize: 12, lineHeight: 1.5, color: TEXT }}>

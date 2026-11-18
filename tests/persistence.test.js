@@ -32,6 +32,21 @@ test('saving a session writes the transcript, mood pair and duration', async () 
   assert.equal(payload.mood_after, 8);
 });
 
+test('a session saved from a held recording keeps the date it was recorded', async () => {
+  const sb = fakeSupabase({ responses: { sessions: { data: [row()] } } });
+  const recordedAt = Date.UTC(2026, 10, 11, 9, 0);
+  await sessions.save(sb, { transcript: 'т', duration: 5603, created_at: recordedAt });
+  assert.equal(sb.lastCall().payload.created_at, '2026-11-11T09:00:00.000Z');
+});
+
+test('a fresh recording, or an unreadable or future date, leaves created_at to the database', async () => {
+  for (const created_at of [undefined, null, 'not a date', Date.now() + 86_400_000]) {
+    const sb = fakeSupabase({ responses: { sessions: { data: [row()] } } });
+    await sessions.save(sb, { transcript: 'т', created_at });
+    assert.equal('created_at' in sb.lastCall().payload, false, String(created_at));
+  }
+});
+
 test('a mood of 0 is stored, not dropped as falsy', async () => {
   const sb = fakeSupabase({ responses: { sessions: { data: [row()] } } });
   await sessions.save(sb, { transcript: 't', mood_before: 0, mood_after: 0, duration: 0 });
