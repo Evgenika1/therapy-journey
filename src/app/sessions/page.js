@@ -11,7 +11,7 @@ import {
   savePendingRecording, loadPendingRecording, loadPendingRecordings, clearPendingRecording, savePendingTranscript,
   startLiveRecording, appendLiveChunks, finalizeLiveRecording,
 } from '@/lib/recordingStore';
-import { finishRecording, shouldClearHeldAudioOnClose, shouldAutoOpenRecordModal } from '@/lib/recordingOutcome';
+import { finishRecording, shouldClearHeldAudioOnClose, shouldAutoOpenRecordModal, stopRecorder, needsStopConfirmation, SHORT_STOP_SECONDS } from '@/lib/recordingOutcome';
 import {
   uploadToStorage, startTranscription, pollTranscript, TranscribeError,
   rememberPendingJob, forgetPendingJob, loadPendingJob, loadPendingAudioPath, loadPendingRecordingId,
@@ -247,6 +247,7 @@ function SessionsPageInner() {
   const [uploadProgress,   setUploadProgress]   = useState(0);
   // Recordings held in IndexedDB with no saved session — each gets its own banner.
   const [recovered,        setRecovered]        = useState([]);
+  const [confirmStop,      setConfirmStop]      = useState(false); // Stop pressed under SHORT_STOP_SECONDS
   // Set when the account may not record (no plan, or the period's sessions
   // are used up): why, so the notice can say it.
   const [limitReason,      setLimitReason]      = useState(null);
@@ -290,6 +291,11 @@ function SessionsPageInner() {
   // Writing the recording to IndexedDB while it happens (recordingStore.js):
   // the live record's id (or a promise of it), chunks not yet written, the
   // next chunk number, and the chain that keeps writes in order.
+  // Why a recording stopped on its own (mic gone, recorder error), shown once
+  // it has been held. And the latest stopRecording, for listeners attached at
+  // start, which would otherwise call a stale copy with a stale timer.
+  const stopNoteRef    = useRef('');
+  const stopRecordingRef = useRef(null);
   const liveRef        = useRef({ id: null, idPromise: null, queue: [], seq: 0, chain: Promise.resolve(), mimeType: '' });
   const startGuardRef  = useRef(false); // sync re-entry guard — survives the getUserMedia await
   const recordParamHandled = useRef(false); // one-shot for the ?record=true auto-open effect
@@ -652,7 +658,21 @@ function SessionsPageInner() {
       live.queue.push(e.data);
       if (live.queue.length >= LIVE_FLUSH_CHUNKS) flushLive(live);
     };
-    mr.onerror = (e) => { setSpeechError('Recording error: ' + (e?.error?.message || 'unknown')); clearInterval(timerRef.current); setIsCapturing(false); flushLive(live); };
+    // The browser can end a recording on its own: an error, or the microphone
+    // (or shared tab) going away. Stop through the normal path, so what was
+    // recorded is held and transcribed rather than left in a dead recorder.
+    const stopOnItsOwn = (note) => {
+      if (mediaRef.current !== mr) return; // already stopped by us
+      stopNoteRef.current = note;
+      stopRecordingRef.current?.();
+    };
+    mr.onerror = (e) => stopOnItsOwn(
+      `Recording stopped because of an error (${e?.error?.message || 'unknown'}). Everything recorded until then was kept.`);
+    stream.getAudioTracks().forEach(t => t.addEventListener('ended', () => stopOnItsOwn(
+      captureSource === 'tab'
+        ? 'Tab sharing ended, so recording stopped. Everything recorded until then was kept.'
+        : 'The microphone was disconnected, so recording stopped. Everything recorded until then was kept.')));
+    setConfirmStop(false);
     mr.start(1000);
     setIsCapturing(true); setIsPaused(false); setSeconds(0);
     clearInterval(timerRef.current); // defensive: never leave a stale interval running
@@ -679,17 +699,32 @@ function SessionsPageInner() {
     setIsPaused(false);
   }
 
+  // Stop, unless it is very early: then ask first (see SHORT_STOP_SECONDS).
+  function requestStop() {
+    if (needsStopConfirmation(seconds, { alreadyConfirmed: confirmStop })) { setConfirmStop(true); return; }
+    setConfirmStop(false);
+    stopRecording();
+  }
+
   async function stopRecording() {
     clearInterval(timerRef.current);
-    setIsCapturing(false); setIsPaused(false);
-    if (!mediaRef.current) return;
-
-    await new Promise(resolve => { mediaRef.current.onstop = resolve; mediaRef.current.stop(); });
-    mediaRef.current.stream.getTracks().forEach(t => t.stop());
-
-    const mimeType = mediaRef.current.mimeType || 'audio/webm';
-    const chunks = chunksRef.current.slice();
+    setIsCapturing(false); setIsPaused(false); setConfirmStop(false);
+    // Take the recorder off the ref first: a second stop (Stop pressed as the
+    // mic drops) must find nothing to do rather than process it twice.
+    const mr = mediaRef.current;
+    if (!mr) return;
     mediaRef.current = null;
+
+    // Safe on a recorder the browser already stopped — see stopRecorder.
+    await stopRecorder(mr);
+    mr.stream.getTracks().forEach(t => t.stop());
+
+    const mimeType = mr.mimeType || 'audio/webm';
+    const chunks = chunksRef.current.slice();
+    // A stop from a listener runs a copy of this function from when recording
+    // started, whose `seconds` is stale; one-second chunks count it too.
+    const elapsed = Math.max(seconds, chunks.length);
+    setSeconds(elapsed);
     // Let the last live writes land before the live record is replaced.
     const live = liveRef.current;
     liveRef.current = { id: null, idPromise: null, queue: [], seq: 0, chain: Promise.resolve(), mimeType: '' };
@@ -732,7 +767,7 @@ function SessionsPageInner() {
     // with no recovery banner to offer it back. The 91-minute session was lost
     // the same way, to an upload error on a blob that lived only in a ref.
     const { outcome } = await finishRecording(
-      { blob: audioBlob, mimeType, seconds },
+      { blob: audioBlob, mimeType, seconds: elapsed },
       {
         hold: async (rec) => {
           const recordedAt = Date.now() - (rec.seconds || 0) * 1000;
@@ -755,7 +790,14 @@ function SessionsPageInner() {
       setSpeechError('No speech detected — the recording was silent. You can type manually.');
       setIsReview(true);
     }
+    // Stopped on its own: say why, once the recording is safe.
+    if (stopNoteRef.current) {
+      const note = stopNoteRef.current;
+      stopNoteRef.current = '';
+      setSpeechError(prev => (prev ? `${note} ${prev}` : note));
+    }
   }
+  stopRecordingRef.current = stopRecording;
 
   // Upload the held recording and transcribe it. Split out of stopRecording so
   // Retry re-runs exactly this path — no re-recording, no second code path.
@@ -1646,11 +1688,30 @@ function SessionsPageInner() {
                               style={{ padding: '11px 30px', borderRadius: 999, border: `1px solid ${A}`, background: 'transparent', color: A, fontSize: 14, fontWeight: 500, cursor: 'pointer', letterSpacing: '0.02em' }}>
                               ⏸ Pause
                             </button>}
-                        <button onClick={stopRecording}
+                        <button onClick={requestStop}
                           style={{ padding: '11px 32px', borderRadius: 999, border: 'none', background: ACCENT_DEEP, color: isDark ? BG : '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer', letterSpacing: '0.02em' }}>
                           ⏹ Stop
                         </button>
                       </div>
+                      {/* Stop under SHORT_STOP_SECONDS asks first: a stray tap
+                          once ended a session at 4 seconds. */}
+                      {confirmStop && seconds < SHORT_STOP_SECONDS && (
+                        <div role="alertdialog" aria-label="Stop recording?" style={{ marginTop: 14, padding: '12px 14px', borderRadius: 12, border: `1px solid ${BORDER}`, background: SURFACE, textAlign: 'center', maxWidth: 340 }}>
+                          <p style={{ fontSize: 13, color: TEXT, margin: '0 0 10px', lineHeight: 1.5 }}>
+                            Stop already? Only {seconds} second{seconds === 1 ? '' : 's'} recorded.
+                          </p>
+                          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                            <button onClick={() => setConfirmStop(false)} autoFocus
+                              style={{ padding: '8px 16px', borderRadius: 999, border: 'none', background: ACCENT_DEEP, color: isDark ? BG : '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                              Keep recording
+                            </button>
+                            <button onClick={requestStop}
+                              style={{ padding: '8px 16px', borderRadius: 999, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 13, cursor: 'pointer' }}>
+                              Stop anyway
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}

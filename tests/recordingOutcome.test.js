@@ -149,3 +149,60 @@ test('a reload with ?record=true opens the modal only when nothing is held', asy
   assert.equal(shouldAutoOpenRecordModal({ wantsRecord: false, hasHeldRecording: false, hasPendingJob: false }), false);
   assert.equal(shouldAutoOpenRecordModal({}), false);
 });
+
+// ── Stopping ────────────────────────────────────────────────────────────────
+
+import { stopRecorder, needsStopConfirmation, SHORT_STOP_SECONDS } from '../src/lib/recordingOutcome.js';
+
+function fakeRecorder(state) {
+  const listeners = {};
+  return {
+    state, stopCalls: 0,
+    addEventListener: (type, fn) => { listeners[type] = fn; },
+    stop() {
+      this.stopCalls++;
+      if (this.state === 'inactive') throw new DOMException('not recording', 'InvalidStateError');
+      this.state = 'inactive';
+      queueMicrotask(() => listeners.stop?.());
+    },
+  };
+}
+
+test('stopping a running recorder waits for its stop event', async () => {
+  const mr = fakeRecorder('recording');
+  await stopRecorder(mr);
+  assert.equal(mr.stopCalls, 1);
+  assert.equal(mr.state, 'inactive');
+});
+
+test('a paused recorder is stopped too', async () => {
+  const mr = fakeRecorder('paused');
+  await stopRecorder(mr);
+  assert.equal(mr.state, 'inactive');
+});
+
+test('a recorder the browser already stopped (mic gone) resolves instead of throwing', async () => {
+  const mr = fakeRecorder('inactive');
+  await assert.doesNotReject(() => stopRecorder(mr));
+  assert.equal(mr.stopCalls, 0, 'stop() is not called on an inactive recorder');
+});
+
+test('a recorder whose stop() throws anyway still lets the recording be held', async () => {
+  const mr = fakeRecorder('recording');
+  mr.stop = () => { throw new Error('boom'); };
+  await assert.doesNotReject(() => stopRecorder(mr));
+});
+
+test('no recorder at all is not an error', async () => {
+  await assert.doesNotReject(() => stopRecorder(null));
+});
+
+test('Stop asks first under ten seconds, and only once', () => {
+  assert.equal(SHORT_STOP_SECONDS, 10);
+  assert.equal(needsStopConfirmation(4), true);
+  assert.equal(needsStopConfirmation(0), true);
+  assert.equal(needsStopConfirmation(4, { alreadyConfirmed: true }), false);
+  assert.equal(needsStopConfirmation(10), false);
+  assert.equal(needsStopConfirmation(5400), false);
+  assert.equal(needsStopConfirmation(undefined), false, 'an unknown length never blocks Stop');
+});

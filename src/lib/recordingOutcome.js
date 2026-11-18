@@ -90,3 +90,29 @@ export async function finishRecording({ blob, mimeType, seconds }, { hold, measu
   await transcribe();
   return { outcome: 'transcribing', held, measurement };
 }
+
+// Stops a MediaRecorder and resolves once it has handed over its last data.
+//
+// A recorder can already be stopped when Stop is pressed: the browser stops it
+// itself when its microphone goes away (a headset unplugged, Bluetooth
+// switching, another app taking the mic) or on a recording error. The old code
+// — stop() inside a Promise waiting for the stop event — then waited forever
+// (Chrome: no error, and the event had already fired), so nothing was held:
+// the recording was lost, and the recorder ref stayed set, so a new recording
+// could not start either. Some browsers throw instead; that is covered too.
+export function stopRecorder(mr) {
+  return new Promise(resolve => {
+    if (!mr || mr.state === 'inactive') { resolve(); return; }
+    mr.addEventListener('stop', () => resolve(), { once: true });
+    try { mr.stop(); } catch { resolve(); }
+  });
+}
+
+// Below this, Stop asks first. A session stopped at 4 seconds — a tap that
+// landed on Stop — was saved as an empty session and the real one never
+// recorded. A deliberate short test costs one extra tap.
+export const SHORT_STOP_SECONDS = 10;
+
+export function needsStopConfirmation(seconds, { alreadyConfirmed = false } = {}) {
+  return !alreadyConfirmed && Number.isFinite(seconds) && seconds < SHORT_STOP_SECONDS;
+}
