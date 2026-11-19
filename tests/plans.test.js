@@ -117,3 +117,21 @@ test('the blocked message names the way out', () => {
   assert.match(blockedMessage('no_plan'), /Billing/);
   assert.match(blockedMessage('limit'), /used all sessions/);
 });
+
+test('a free trial counts only when there is no plan, and runs from when it was granted', () => {
+  const trialRow = { minutes: 30, granted_at: '2026-10-20T08:00:00.000Z' };
+  const t = resolveAllowance({ trialRow, now: NOW });
+  assert.deepEqual([t.minutes, t.source, t.periodStart, t.periodEnd], [30, 'trial', '2026-10-20T08:00:00.000Z', null]);
+  const sub = { plan: 'starter', status: 'active', current_period_start: '2026-11-05T09:00:00.000Z' };
+  assert.equal(resolveAllowance({ trialRow, subscription: sub, now: NOW }).source, 'plan');
+  assert.equal(resolveAllowance({ trialRow, quotaRow: { monthly_minutes: 100 }, now: NOW }).source, 'override');
+  assert.equal(resolveAllowance({ trialRow: { minutes: 30 }, now: NOW }).source, 'none', 'a row without a date grants nothing');
+});
+
+test('a used-up trial says so, and points to the plans', () => {
+  const used = allowanceStatus({ minutes: 30, source: 'trial' }, 50);
+  assert.deepEqual([used.status, used.reason], ['blocked', 'trial_used']);
+  assert.equal(allowanceStatus({ minutes: 30, source: 'trial' }, 10).status, 'ok');
+  assert.match(blockedMessage('trial_used'), /free 30 minutes.*Billing/);
+  assert.match(blockedMessage('trial_import'), /paid plans/);
+});

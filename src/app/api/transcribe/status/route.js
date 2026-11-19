@@ -7,6 +7,7 @@ import {
   shouldRetryForcedRu, isNoSpeech, completedPayload,
 } from '@/lib/transcribeJob';
 import { deleteStoredAudio } from '@/lib/transcribeFromStorage';
+import { billedAudioSeconds, wasCutShort } from '@/lib/freeTrial';
 
 // One poll of a transcription job. GET /api/transcribe/status?job_id=…[&path=…]
 //
@@ -62,10 +63,10 @@ export async function GET(req) {
       // a reload cannot bill the same audio twice.
       await recordUsage(supabase, {
         userId: user.id, kind: 'transcribe', externalId: jobId,
-        audioSeconds: Math.round(transcript.audio_duration ?? 0),
+        audioSeconds: billedAudioSeconds(transcript),
       });
       await settle();
-      return NextResponse.json(completedPayload(transcript));
+      return NextResponse.json({ ...completedPayload(transcript), cutShort: wasCutShort(transcript) });
     }
 
     if (transcript.status === 'error') {
@@ -82,7 +83,11 @@ export async function GET(req) {
         const retryRes = await aaiFetch(`${AAI_BASE}/v2/transcript`, {
           method: 'POST',
           headers: AAI_HEADERS(),
-          body: JSON.stringify({ audio_url: transcript.audio_url, ...FORCED_RU_CONFIG }),
+          // A trial's cut-off carries over to the retry.
+          body: JSON.stringify({
+            audio_url: transcript.audio_url, ...FORCED_RU_CONFIG,
+            ...(Number(transcript.audio_end_at) > 0 ? { audio_end_at: transcript.audio_end_at } : {}),
+          }),
         }, 'Recreate transcript', 'transcribe-status');
         if (retryRes.ok) {
           const { id } = await retryRes.json();

@@ -14,6 +14,13 @@ import { MONTHLY_MINUTES, isValidQuotaMinutes, quotaState, monthStart } from './
 
 export const MINUTES_PER_SESSION = 100;
 
+// A new account's free trial: once per person, not per month. Granted by the
+// database function claim_free_trial (migration 027), which is where the
+// anti-abuse rules live — one trial per normalised email, none for throwaway
+// mail domains, and a cap on new trials a day, so a script registering
+// accounts can cost at most a few dollars a day. See freeTrial.js.
+export const FREE_TRIAL_MINUTES = 30;
+
 export const PLANS = {
   starter:   { id: 'starter',   name: 'Starter',   priceEur: 9,  sessions: 4,  minutes: 400,  envPrice: 'STRIPE_PRICE_STARTER' },
   pro:       { id: 'pro',       name: 'Pro',       priceEur: 19, sessions: 12, minutes: 1200, envPrice: 'STRIPE_PRICE_PRO' },
@@ -83,10 +90,11 @@ export function shouldReplace(existing, incoming) {
 //   1. its own row in user_quota (migration 025) — set by an admin, for the
 //      owner's and test accounts; it beats any plan;
 //   2. an active subscription's plan;
-//   3. nothing: no free tier, zero minutes.
+//   3. a free trial (one per person, counted from when it was granted);
+//   4. nothing: zero minutes.
 // When a read failed, the answer is the old default rather than zero: a broken
 // query must not lock someone out of recording (see usageLedger.js).
-export function resolveAllowance({ quotaRow = null, subscription = null, readFailed = false, now = new Date() } = {}) {
+export function resolveAllowance({ quotaRow = null, subscription = null, trialRow = null, readFailed = false, now = new Date() } = {}) {
   const grants = subscriptionGrants(subscription);
   const period = grants && subscription.current_period_start
     ? { periodStart: subscription.current_period_start, periodEnd: subscription.current_period_end ?? null }
@@ -97,6 +105,10 @@ export function resolveAllowance({ quotaRow = null, subscription = null, readFai
     return { minutes: quotaRow.monthly_minutes, source: 'override', plan, ...period };
   }
   if (grants) return { minutes: PLANS[plan].minutes, source: 'plan', plan, ...period };
+  if (trialRow?.granted_at && isValidQuotaMinutes(trialRow.minutes)) {
+    // Never renews: everything spent since it was granted counts against it.
+    return { minutes: trialRow.minutes, source: 'trial', plan: null, periodStart: trialRow.granted_at, periodEnd: null };
+  }
   if (readFailed) return { minutes: MONTHLY_MINUTES, source: 'fallback', plan: null, ...period };
   return { minutes: 0, source: 'none', plan: null, ...period };
 }
@@ -108,7 +120,8 @@ export function resolveAllowance({ quotaRow = null, subscription = null, readFai
 export function allowanceStatus(allowance, usedMinutes) {
   const state = quotaState({ usedMinutes, quotaMinutes: allowance.minutes });
   if (allowance.source === 'none') return { ...state, status: 'blocked', reason: 'no_plan' };
-  return { ...state, reason: state.status === 'blocked' ? 'limit' : null };
+  if (state.status !== 'blocked') return { ...state, reason: null };
+  return { ...state, reason: allowance.source === 'trial' ? 'trial_used' : 'limit' };
 }
 
 export function sessionsFromMinutes(minutes) {
@@ -120,6 +133,14 @@ export const NO_PLAN_MESSAGE =
 export const LIMIT_MESSAGE =
   'You’ve used all sessions this period. Upgrade your plan on the Billing page, or wait until it renews.';
 
+export const TRIAL_USED_MESSAGE =
+  `You’ve used your free ${FREE_TRIAL_MINUTES} minutes. Choose a plan on the Billing page to keep recording.`;
+export const TRIAL_IMPORT_MESSAGE =
+  'Uploading recordings is part of the paid plans. You can record a session live with your free minutes.';
+
 export function blockedMessage(reason) {
-  return reason === 'no_plan' ? NO_PLAN_MESSAGE : LIMIT_MESSAGE;
+  if (reason === 'no_plan') return NO_PLAN_MESSAGE;
+  if (reason === 'trial_used') return TRIAL_USED_MESSAGE;
+  if (reason === 'trial_import') return TRIAL_IMPORT_MESSAGE;
+  return LIMIT_MESSAGE;
 }

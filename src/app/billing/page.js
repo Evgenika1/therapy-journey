@@ -76,6 +76,7 @@ function BillingInner() {
   const active = subscriptionGrants(sub);
   const current = active ? PLANS[sub.plan] : null;
   const override = usage?.allowance?.source === 'override';
+  const trial = !active && usage?.allowance?.source === 'trial';
   const quotaMinutes = usage?.quota ?? 0;
   const usedMinutes = Math.max(0, usage?.usedMinutes ?? 0);
   const usedSessions = sessionsFromMinutes(usedMinutes);
@@ -123,15 +124,17 @@ function BillingInner() {
           {error && <p style={{ color: ERR, fontSize: 13, margin: '0 0 16px' }}>{error}</p>}
 
           {/* Current plan and what is left of it */}
-          {loaded && (active || override) && (
+          {loaded && (active || override || trial) && (
             <div style={{ ...card, marginBottom: 28 }}>
-              <div className="ritual-label" style={{ marginBottom: 10 }}>{active ? 'Current plan' : 'Your allowance'}</div>
+              <div className="ritual-label" style={{ marginBottom: 10 }}>{active ? 'Current plan' : trial ? 'Free trial' : 'Your allowance'}</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
                 <div style={{ fontSize: 24, color: TEXT, fontFamily: 'var(--font-serif)' }}>
-                  {active ? `${current.name} · €${current.priceEur}/month` : 'Custom allowance'}
+                  {active ? `${current.name} · €${current.priceEur}/month` : trial ? `${quotaMinutes} free minutes` : 'Custom allowance'}
                 </div>
                 <div style={{ fontSize: 14, color: TEXT }}>
-                  <strong>{fmtSessions(usedSessions)}</strong> of {fmtSessions(totalSessions)} sessions used
+                  {trial
+                    ? <><strong>{Math.min(quotaMinutes, Math.round(usedMinutes))}</strong> of {quotaMinutes} minutes used</>
+                    : <><strong>{fmtSessions(usedSessions)}</strong> of {fmtSessions(totalSessions)} sessions used</>}
                 </div>
               </div>
               <div style={{ height: 8, borderRadius: 999, background: NAV_ACTIVE, margin: '14px 0 8px', overflow: 'hidden' }}>
@@ -140,6 +143,7 @@ function BillingInner() {
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 16 }}>
                 {Math.round(usedMinutes)} of {quotaMinutes} minutes
                 {override && active && ' — your account has a custom allowance, which replaces the plan’s'}
+                {trial && ' — once, to try Kevi with a live recording. Uploading files comes with a plan.'}
                 {statusLine && <> · {statusLine}</>}
               </div>
               {active && (

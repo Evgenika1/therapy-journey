@@ -56,16 +56,17 @@ export async function recordUsage(supabase, { userId, kind, sessionId = null, mo
 }
 
 // One account's allowance and the period it runs over: its own user_quota row
-// (an admin's override) beats the plan of an active subscription, which beats
-// nothing — see resolveAllowance in plans.js. Both reads use the caller's own
-// session; RLS returns their own rows.
+// (an admin's override) beats the plan of an active subscription, which beats a
+// free trial, which beats nothing — see resolveAllowance in plans.js. Every
+// read uses the caller's own session; RLS returns their own rows.
 export async function allowanceFor(supabase, userId, { now = new Date() } = {}) {
   let quotaRow = null, subscription = null, readFailed = false;
-  const [q, sub] = await Promise.allSettled([
+  const [q, sub, trial] = await Promise.allSettled([
     supabase.from('user_quota').select('monthly_minutes').eq('user_id', userId).maybeSingle(),
     supabase.from('subscriptions')
       .select('plan, status, cancel_at_period_end, current_period_start, current_period_end')
       .eq('user_id', userId).maybeSingle(),
+    supabase.from('free_trials').select('minutes, granted_at').eq('user_id', userId).maybeSingle(),
   ]);
   for (const [r, set] of [[q, v => { quotaRow = v; }], [sub, v => { subscription = v; }]]) {
     if (r.status === 'fulfilled' && !r.value.error) set(r.value.data ?? null);
@@ -76,7 +77,24 @@ export async function allowanceFor(supabase, userId, { now = new Date() } = {}) 
       console.error('[usage] could not read the allowance:', r.reason?.message ?? r.value?.error?.message);
     }
   }
-  return resolveAllowance({ quotaRow, subscription, readFailed, now });
+  // The trial is the one read that fails closed: free minutes are what an
+  // abuser is after, and a broken read must not hand them out.
+  let trialRow = trial.status === 'fulfilled' && !trial.value.error ? trial.value.data ?? null : null;
+
+  const allowance = resolveAllowance({ quotaRow, subscription, trialRow, readFailed, now });
+  if (allowance.source !== 'none' || trialRow) return allowance;
+
+  // No plan and no trial yet: ask for one. The database decides (migration
+  // 027) and answers the same way however often it is asked.
+  try {
+    const { data, error } = await supabase.rpc('claim_free_trial');
+    if (error) throw error;
+    if (data?.granted) trialRow = { minutes: data.minutes, granted_at: data.granted_at };
+    else if (data?.reason) console.log('[usage] no free trial:', data.reason);
+  } catch (e) {
+    console.error('[usage] could not claim the free trial:', e?.message);
+  }
+  return resolveAllowance({ quotaRow, subscription, trialRow, readFailed, now });
 }
 
 // This period's spend for one account, in dollars and in minutes, plus whether

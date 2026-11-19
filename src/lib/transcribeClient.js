@@ -19,7 +19,7 @@ export class TranscribeError extends Error {}
 /**
  * Poll a transcription job to completion.
  *
- * @returns {Promise<{text: string, utterances: array, language_code: string|null, noSpeech: boolean}>}
+ * @returns {Promise<{text: string, utterances: array, language_code: string|null, noSpeech: boolean, cutShort: boolean}>}
  * @throws {TranscribeError} on a failed job, a timeout, or cancellation.
  */
 export async function pollTranscript(jobId, {
@@ -73,6 +73,8 @@ export async function pollTranscript(jobId, {
         utterances: body.utterances || [],
         language_code: body.language_code ?? null,
         noSpeech: !!body.noSpeech,
+        // A free trial's minutes ran out partway: the text stops there.
+        cutShort: !!body.cutShort,
       };
     }
     if (body.status === 'error') throw new TranscribeError(body.error || 'transcription failed');

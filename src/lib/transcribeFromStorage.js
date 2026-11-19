@@ -5,6 +5,8 @@ import { aaiFetch } from '@/lib/assemblyai';
 import { AAI_BASE, AAI_HEADERS, TRANSCRIBE_CONFIG } from '@/lib/transcribeJob';
 import { AUDIO_BUCKET, AUDIO_URL_TTL_SECONDS, isOwnAudioPath } from '@/lib/audioStorage';
 import { extOf, unsupportedTypeMessage } from '@/lib/audioUpload';
+import { trialAudioLimitMs } from '@/lib/freeTrial';
+import { blockedMessage } from '@/lib/plans';
 
 // Start a transcription job for audio the browser has already put in Storage.
 // Shared by /api/transcribe (a live recording) and /api/transcribe-file (an
@@ -13,7 +15,7 @@ import { extOf, unsupportedTypeMessage } from '@/lib/audioUpload';
 // The request body is `{ path, filename? }` — a few bytes. The audio itself
 // never passes through a Vercel function, whose 4.5 MB body limit is what used
 // to reject every recording longer than a few minutes.
-export async function startJobFromStorage(req, { tag, allowedExt = null }) {
+export async function startJobFromStorage(req, { tag, allowedExt = null, paidOnly = false }) {
   // Transcription is the largest single cost in the app, so this is the gate
   // that matters most.
   const { supabase, user } = await getServerUser();
@@ -21,6 +23,13 @@ export async function startJobFromStorage(req, { tag, allowedExt = null }) {
   const quota = await usageThisPeriod(supabase, user.id);
   if (quota.status === 'blocked') {
     return NextResponse.json(blockedResponseBody(quota), { status: 402 });
+  }
+  // Importing files is for paying accounts: a trial is for recording a session,
+  // not a free way to push a backlog of audio through. (A file can still be
+  // sent to the live route; the trial's own small limit is what bounds that.)
+  if (paidOnly && quota.allowance?.source === 'trial') {
+    const reason = 'trial_import';
+    return NextResponse.json({ error: blockedMessage(reason), quota: { status: 'blocked', remaining: quota.remaining, reason } }, { status: 402 });
   }
   if (!process.env.ASSEMBLYAI_API_KEY) {
     return NextResponse.json({ error: 'ASSEMBLYAI_API_KEY not configured' }, { status: 500 });
@@ -55,7 +64,7 @@ export async function startJobFromStorage(req, { tag, allowedExt = null }) {
     const createRes = await aaiFetch(`${AAI_BASE}/v2/transcript`, {
       method: 'POST',
       headers: AAI_HEADERS(),
-      body: JSON.stringify({ audio_url: signed.signedUrl, ...TRANSCRIBE_CONFIG }),
+      body: JSON.stringify({ audio_url: signed.signedUrl, ...TRANSCRIBE_CONFIG, ...trialCut(quota) }),
     }, 'Create transcript', tag);
     if (!createRes.ok) {
       const err = await createRes.text();
@@ -69,6 +78,12 @@ export async function startJobFromStorage(req, { tag, allowedExt = null }) {
     console.error(`[${tag}]`, err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
+}
+
+// A trial job stops where the trial's minutes end — see freeTrial.js.
+function trialCut(quota) {
+  const ms = trialAudioLimitMs(quota);
+  return ms === null ? {} : { audio_end_at: ms };
 }
 
 // Remove a settled job's audio. Best effort: a failed delete is logged, never

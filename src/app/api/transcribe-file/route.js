@@ -8,5 +8,5 @@ import { ALLOWED_EXT } from '@/lib/audioUpload';
 export const maxDuration = 60;
 
 export async function POST(req) {
-  return startJobFromStorage(req, { tag: 'transcribe-file', allowedExt: ALLOWED_EXT });
+  return startJobFromStorage(req, { tag: 'transcribe-file', allowedExt: ALLOWED_EXT, paidOnly: true });
 }

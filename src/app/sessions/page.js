@@ -867,6 +867,7 @@ function SessionsPageInner() {
       if (!finalText) await markPendingNoSpeech(pending.id);
       setTranscript(finalText);
       if (!finalText) setSpeechError('No speech detected in the recording.');
+      else if (data.cutShort) setSpeechError('Your free minutes ran out during this recording, so the transcript stops there. Choose a plan on the Billing page to transcribe whole sessions.');
     } catch (err) {
       console.error('[transcribe]', err);
       // The job is done for either way; the audio stays in IndexedDB so the
@@ -890,7 +891,15 @@ function SessionsPageInner() {
   }
 
   // ── Import audio (upload a recording → transcribe → session) ──────────────────
-  async function pickImportFile() { if (await mayRecord()) importInputRef.current?.click(); }
+  // A free trial records live; uploading files is for paid plans (the server
+  // refuses it too — this only says so before the file picker opens).
+  async function pickImportFile() {
+    const u = supabase ? await myUsage(supabase).catch(() => null) : null;
+    if (u?.status === 'blocked') { setLimitReason(u.reason || 'limit'); return; }
+    if (u?.allowance?.source === 'trial') { setLimitReason('trial_import'); return; }
+    setLimitReason(null);
+    importInputRef.current?.click();
+  }
 
   async function handleImportFile(e) {
     const file = e.target.files?.[0];
@@ -1385,11 +1394,14 @@ function SessionsPageInner() {
           {limitReason && (
             <div style={{ margin: '0 14px 10px', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: SURFACE, fontSize: 12, lineHeight: 1.5, color: TEXT }}>
               <div style={{ fontWeight: 600, marginBottom: 2 }}>
-                {limitReason === 'no_plan' ? 'Choose a plan to record' : 'You\u2019ve used all sessions this month'}
+                {limitReason === 'no_plan' ? 'Choose a plan to record'
+                  : limitReason === 'trial_used' ? 'Your free minutes are used'
+                  : limitReason === 'trial_import' ? 'Uploading is part of the paid plans'
+                  : 'You\u2019ve used all sessions this month'}
               </div>
               <div style={{ color: MUTED, marginBottom: 6 }}>{blockedMessage(limitReason)}</div>
               <Link href="/billing" style={{ color: A, fontWeight: 600, textDecoration: 'none' }}>
-                {limitReason === 'no_plan' ? 'See plans →' : 'Upgrade plan →'}
+                {limitReason === 'limit' ? 'Upgrade plan →' : 'See plans →'}
               </Link>
             </div>
           )}
