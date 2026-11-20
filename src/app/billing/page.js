@@ -143,7 +143,7 @@ function BillingInner() {
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 16 }}>
                 {Math.round(usedMinutes)} of {quotaMinutes} minutes
                 {override && active && ' — your account has a custom allowance, which replaces the plan’s'}
-                {trial && ' — once, to try Kevi with a live recording. Uploading files comes with a plan.'}
+                {trial && ' — once, to try Kevi with a live recording. Uploading files comes with a plan. A plan replaces the free minutes; they do not carry over.'}
                 {statusLine && <> · {statusLine}</>}
               </div>
               {active && (
@@ -197,7 +197,7 @@ function BillingInner() {
 
           <p style={{ fontSize: 12, color: MUTED, margin: '20px 0 0', lineHeight: 1.6 }}>
             Prices include VAT where applicable. Billed monthly through Stripe; cancel anytime and keep your plan until the end
-            of the period you paid for. Unused sessions do not carry over. Everything you have already recorded stays readable
+            of the period you paid for. Unused sessions, and unused free trial minutes, do not carry over. Everything you have already recorded stays readable
             with or without a plan.
           </p>
         </div>
