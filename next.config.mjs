@@ -1,3 +1,5 @@
+import { withSentryConfig } from '@sentry/nextjs/config';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // /progress was folded into the dashboard. Kept as a redirect rather than a
@@ -14,4 +16,14 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+// Source maps go to Sentry only when SENTRY_AUTH_TOKEN is set (Vercel builds),
+// so stack traces point at real code; they are not served to browsers.
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  sentryUrl: 'https://de.sentry.io/',
+  silent: !process.env.CI,
+  telemetry: false,
+  widenClientFileUpload: true,
+});

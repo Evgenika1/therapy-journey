@@ -14,12 +14,13 @@ const SUB_PROCESSORS = [
   ['Anthropic',  'AI analysis and chat',     'United States'],
   ['Vercel',     'Hosting',                  'United States'],
   ['Resend',     'Account emails',           '—'],
+  ['Sentry',     'Error reports (no content you create)', 'EU (Germany)'],
   ['Stripe',     'Payment processing, if you subscribe', '—'],
 ];
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy Policy" updated="11 November 2026">
+    <LegalPage title="Privacy Policy" updated="20 November 2026">
       <h2>1. Who we are</h2>
       <p>
         Kevi is a private companion app for therapy and coaching, operated by Newlife app, based in the
@@ -52,6 +53,11 @@ export default function PrivacyPage() {
           sessions.
         </li>
         <li><strong>Technical data:</strong> basic information needed to run the service securely.</li>
+        <li>
+          <strong>Error reports:</strong> when something breaks, a technical report of the error (what failed, on
+          which page, browser and device type). Reports never include your recordings, transcripts, notes or
+          other content, your email address, or your IP address.
+        </li>
       </ul>
       <p>
         Because the content you create can reveal information about your mental and emotional health, it is
@@ -72,6 +78,7 @@ export default function PrivacyPage() {
             <tr><td>Process health-related content you create</td><td>Explicit consent (Art. 9(2)(a) GDPR)</td></tr>
             <tr><td>Take payment and manage subscriptions</td><td>Performance of a contract</td></tr>
             <tr><td>Keep the service secure and prevent abuse</td><td>Legitimate interests</td></tr>
+            <tr><td>Find and fix errors</td><td>Legitimate interests</td></tr>
           </tbody>
         </table>
       </div>
