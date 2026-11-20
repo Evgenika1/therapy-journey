@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, Suspense } from 'react';
+import ChatText from '@/components/ChatText';
 import { useSearchParams, useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
@@ -2173,7 +2174,7 @@ function SessionsPageInner() {
                     color: m.role === 'user' ? '#fff' : TEXT,
                     border: m.role === 'user' ? 'none' : `1px solid ${BORDER}`,
                   }}>
-                    {m.content}
+                    {m.role === 'user' ? <span style={{ whiteSpace: 'pre-wrap' }}>{m.content}</span> : <ChatText text={m.content} />}
                   </div>
                 </div>
               ))}

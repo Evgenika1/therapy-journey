@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
+import ChatText from '@/components/ChatText';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
@@ -205,7 +206,7 @@ export default function AiChatPage() {
                     border: m.role === 'user' ? 'none' : `1px solid ${BORDER}`,
                     fontSize: 15, lineHeight: 1.6,
                   }}>
-                    {m.content}
+                    {m.role === 'user' ? <span style={{ whiteSpace: 'pre-wrap' }}>{m.content}</span> : <ChatText text={m.content} />}
                   </div>
                 </div>
               ))}
