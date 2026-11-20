@@ -27,6 +27,7 @@ import {
 import { CBT_PRESETS } from '@/lib/chatPresets';
 import Link from 'next/link';
 import { myUsage } from '@/lib/usageClient';
+import { setBusy } from '@/lib/busyState';
 import { blockedMessage } from '@/lib/plans';
 import SuggestionList from '@/components/SuggestionList';
 import { proposedTasks, reconcileHomework, describeTask } from '@/lib/sessionHomework';
@@ -252,6 +253,10 @@ function SessionsPageInner() {
   // Set when the account may not record (no plan, or the period's sessions
   // are used up): why, so the notice can say it.
   const [limitReason,      setLimitReason]      = useState(null);
+  // Whether this account is on the free trial, read once on load so the
+  // Upload button can say up front that it is for paid plans. Only a label:
+  // pickImportFile re-checks on click, and the server refuses it either way.
+  const [onTrial,          setOnTrial]          = useState(false);
 
   // Paste an existing transcript (Zoom export, notes, another app) — a session
   // with text but no audio.
@@ -272,6 +277,8 @@ function SessionsPageInner() {
   const [postMoodSaved,      setPostMoodSaved]      = useState(false);
   const [savingMood,         setSavingMood]         = useState(false);
   const [speechError,        setSpeechError]        = useState('');
+  // True while the browser's permission prompt for the mic (or tab) is open.
+  const [awaitingAccess,     setAwaitingAccess]     = useState(false);
   const [saveError,          setSaveError]          = useState('');
 
   // right panel chat
@@ -340,6 +347,20 @@ function SessionsPageInner() {
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
+
+  useEffect(() => {
+    if (!supabase) return;
+    let cancelled = false;
+    myUsage(supabase)
+      .then(u => { if (!cancelled) setOnTrial(u?.allowance?.source === 'trial'); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [supabase]);
+
+  // Keep the "Kevi has been updated" card away while a reload would cost work.
+  const busyNow = isCapturing || isTranscribing || importStage === 'uploading' || importStage === 'processing';
+  useEffect(() => { setBusy(busyNow); }, [busyNow]);
+  useEffect(() => () => setBusy(false), []);
 
   // ── select session ────────────────────────────────────────────────────────────
   function selectSession(s) {
@@ -611,6 +632,7 @@ function SessionsPageInner() {
     chunksRef.current = [];
 
     let stream;
+    setAwaitingAccess(true);
     try {
       if (captureSource === 'tab') {
         // Capture tab/system audio — the correct way to record an online session
@@ -622,6 +644,7 @@ function SessionsPageInner() {
         if (audioTracks.length === 0) {
           display.getTracks().forEach(t => t.stop());
           setSpeechError('Tab audio was not captured — tick "Share tab audio" when choosing the source.');
+          setAwaitingAccess(false);
           startGuardRef.current = false; return;
         }
         display.getVideoTracks().forEach(t => t.stop()); // record audio only, drop video
@@ -636,9 +659,13 @@ function SessionsPageInner() {
       }
     }
     catch {
-      setSpeechError(captureSource === 'tab' ? 'Tab audio access was denied.' : 'Microphone access denied.');
+      setAwaitingAccess(false);
+      setSpeechError(captureSource === 'tab'
+        ? 'Tab audio access was denied.'
+        : 'Microphone access was denied. Allow the microphone for this site in your browser\u2019s address bar or settings, then try again.');
       startGuardRef.current = false; return;
     }
+    setAwaitingAccess(false);
     refreshMicDevices(); // permission is now granted → device labels are available
 
     const mimeType = getSupportedMimeType();
@@ -1410,9 +1437,11 @@ function SessionsPageInner() {
           <input ref={importInputRef} type="file" accept=".mp3,.m4a,.wav,.mp4,audio/*,video/mp4"
             onChange={handleImportFile} style={{ display: 'none' }} />
           <div style={{ padding: '0 14px 12px', display: 'flex', gap: 8 }}>
-            <button onClick={pickImportFile} title="Upload an audio file (mp3, m4a, wav, mp4)"
-              style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
-              ↑ Upload audio
+            <button onClick={pickImportFile}
+              title={onTrial ? 'Uploading files is part of the paid plans' : 'Upload an audio file (mp3, m4a, wav, mp4)'}
+              aria-label={onTrial ? 'Upload audio — paid plans only' : 'Upload audio'}
+              style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: onTrial ? 0.6 : 1 }}>
+              {onTrial ? '🔒 Upload · paid plans' : '↑ Upload audio'}
             </button>
             <button onClick={() => openRecordGuarded()}
               style={{ flex: 1, padding: '8px 0', borderRadius: 999, border: 'none', background: ACCENT_DEEP, color: isDark ? BG : '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
@@ -1424,6 +1453,7 @@ function SessionsPageInner() {
           {/* Paste an existing transcript — no audio involved */}
           <div style={{ padding: '0 14px 12px' }}>
             <button onClick={openPaste}
+              title="Paste a transcript you already have. No audio is transcribed; only its analysis uses a little of your minutes."
               style={{ width: '100%', padding: '8px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: showPaste ? A + '12' : 'transparent', color: showPaste ? A : MUTED, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
               ✎ Paste transcript
             </button>
@@ -1666,6 +1696,34 @@ function SessionsPageInner() {
                       </div>
                     )}
                     <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+                  </div>
+                )}
+
+                {/* Between "Start Recording" and the first second of audio: the
+                    browser's permission prompt is open, or it was refused. Without
+                    this the card was empty in both cases. */}
+                {!showPreMood && !isCapturing && !isTranscribing && !isReview && (awaitingAccess || speechError) && (
+                  <div role="status" style={{ textAlign: 'center', padding: '24px 8px' }}>
+                    {awaitingAccess ? (
+                      <>
+                        <p style={{ fontSize: 15, color: TEXT, margin: '0 0 6px' }}>
+                          {captureSource === 'tab' ? 'Choose the tab to record' : 'Allow microphone access'}
+                        </p>
+                        <p style={{ fontSize: 12.5, color: MUTED, margin: 0, lineHeight: 1.6 }}>
+                          {captureSource === 'tab'
+                            ? 'Pick the tab with your session and tick \u201cShare tab audio\u201d.'
+                            : 'Your browser is asking whether Kevi may use the microphone \u2014 choose Allow.'}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p style={{ fontSize: 13.5, color: A, margin: '0 0 12px', lineHeight: 1.6 }}>{speechError}</p>
+                        <button onClick={() => startRecording()}
+                          style={{ padding: '8px 18px', borderRadius: 9, border: 'none', background: A, color: '#fff', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' }}>
+                          Try again
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
 

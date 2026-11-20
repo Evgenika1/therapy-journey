@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase';
 import { useTheme } from '@/lib/ThemeContext';
 import { canCreateAccount, consentMetadata } from '@/lib/signupConsent';
+import { FREE_TRIAL_MINUTES, PLANS } from '@/lib/plans';
 
 export default function AuthPage() {
   const router     = useRouter();
@@ -21,6 +22,11 @@ export default function AuthPage() {
   const [error,       setError]       = useState('');
   const [info,        setInfo]        = useState('');
   const [consent,     setConsent]     = useState(false);
+  // "Send again" on the check-your-email screen: idle | sending | sent | error.
+  // A mail provider can refuse or delay the first one (iCloud rejects some
+  // mail from young domains outright), so the person needs a way to retry
+  // other than registering again.
+  const [resend,      setResend]      = useState('idle');
 
   const inputStyle = {
     width: '100%', boxSizing: 'border-box',
@@ -108,13 +114,25 @@ export default function AuthPage() {
       if (data.session) {
         router.push('/');
       } else {
-        setInfo('confirm-sent');
+        setResend('idle'); setInfo('confirm-sent');
         setLoading(false);
       }
     } catch (err) {
       setError(err.message);
       setLoading(false);
     }
+  }
+
+  async function resendConfirmation() {
+    if (!supabase || resend === 'sending') return;
+    setResend('sending');
+    const { error: err } = await supabase.auth.resend({
+      type: 'signup',
+      email: email.trim().toLowerCase(),
+      options: { emailRedirectTo: `${window.location.origin}/auth/confirm` },
+    });
+    if (err) console.error('[auth] resend confirmation:', err.message);
+    setResend(err ? 'error' : 'sent');
   }
 
   async function handleForgot(e) {
@@ -173,9 +191,20 @@ export default function AuthPage() {
     <div style={{ textAlign: 'center' }}>
       <div style={{ fontSize: 36, marginBottom: 10 }}>📬</div>
       <h2 style={{ fontSize: 18, fontWeight: 500, color: H1, margin: '0 0 8px' }}>Check your email</h2>
-      <p style={{ fontSize: 13, color: SEC, lineHeight: 1.6, margin: '0 0 24px' }}>
+      <p style={{ fontSize: 13, color: SEC, lineHeight: 1.6, margin: '0 0 16px' }}>
         We sent a confirmation link to <strong style={{ color: BODY }}>{email}</strong>.<br />
         Click the link to activate your account, then sign in.
+      </p>
+      <p style={{ fontSize: 12, color: SEC, lineHeight: 1.6, margin: '0 0 20px' }}>
+        Nothing after a few minutes? Check spam, then{' '}
+        {resend === 'sent' ? <span>we sent it again.</span>
+          : resend === 'sending' ? <span>sending…</span>
+          : <button type="button" onClick={resendConfirmation}
+              style={{ background: 'none', border: 'none', padding: 0, color: CORAL, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+              send it again
+            </button>}
+        .{resend === 'error' && <> That didn’t work — please try again in a minute.</>}
+        <br />Still nothing? Write to <a href="mailto:hi@kevi.online" style={{ color: CORAL }}>hi@kevi.online</a>.
       </p>
       <button onClick={() => { setInfo(''); switchMode('signin'); }} style={{ ...btnStyle(false), marginTop: 0 }}>
         Back to Sign In
@@ -259,6 +288,12 @@ export default function AuthPage() {
           }}>{label}</button>
         ))}
       </div>
+      {mode === 'signup' && (
+        <p style={{ fontSize: 13, color: BODY, textAlign: 'center', margin: '-12px 0 20px', lineHeight: 1.5 }}>
+          Start with <strong>{FREE_TRIAL_MINUTES} free minutes</strong> of recording — no card needed.
+          <br /><span style={{ color: SEC, fontSize: 12 }}>Plans from €{PLANS.starter.priceEur}/month after that.</span>
+        </p>
+      )}
 
       <form onSubmit={mode === 'signin' ? handleSignIn : handleSignUp}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

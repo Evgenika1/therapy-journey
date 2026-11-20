@@ -1,7 +1,8 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useTheme } from '@/lib/ThemeContext';
 import { shouldOfferReload, VERSION_CHECK_MS } from '@/lib/appVersion';
+import { isBusy, subscribeBusy } from '@/lib/busyState';
 
 // "The app has been updated — reload." Shown when the deployed build has moved
 // on since this tab loaded (see src/lib/appVersion.js).
@@ -14,6 +15,9 @@ export default function UpdateBanner() {
   const [loaded,    setLoaded]    = useState(null);
   const [latest,    setLatest]    = useState(null);
   const [dismissed, setDismissed] = useState(false);
+  // Hidden while a recording, transcription or upload is running: the card sat
+  // over the Stop button mid-session. It comes back once the work is done.
+  const busy = useSyncExternalStore(subscribeBusy, isBusy, () => false);
 
   useEffect(() => {
     let live = true;
@@ -37,7 +41,7 @@ export default function UpdateBanner() {
     return () => { live = false; clearInterval(id); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
 
-  if (dismissed || !shouldOfferReload({ loaded, latest })) return null;
+  if (dismissed || busy || !shouldOfferReload({ loaded, latest })) return null;
 
   return (
     <div role="status" style={{
