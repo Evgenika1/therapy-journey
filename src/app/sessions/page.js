@@ -359,7 +359,10 @@ function SessionsPageInner() {
   }, [supabase]);
 
   // Keep the "Kevi has been updated" card away while a reload would cost work.
-  const busyNow = isCapturing || isTranscribing || importStage === 'uploading' || importStage === 'processing';
+  // The whole recording window counts, not just the seconds of capture: the
+  // card also appeared over the microphone-permission step.
+  const busyNow = showModal || isCapturing || isTranscribing || awaitingAccess
+    || importStage === 'uploading' || importStage === 'processing';
   useEffect(() => { setBusy(busyNow); }, [busyNow]);
   useEffect(() => () => setBusy(false), []);
 
