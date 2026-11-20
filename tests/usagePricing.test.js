@@ -68,7 +68,7 @@ test('the dated model id is priced the same as the bare one', () => {
 test('every model the app actually calls has a price', () => {
   // Guards the failure this file exists to prevent: a model swapped in the route
   // and not in the table, which would log tokens at zero cost forever.
-  for (const id of ['claude-haiku-4-5', 'claude-haiku-4-5-20251001']) {
+  for (const id of ['claude-sonnet-5-5', 'claude-haiku-4-5', 'claude-haiku-4-5-20251001']) {
     assert.ok(MODEL_PRICES[id], `${id} is missing from MODEL_PRICES`);
   }
 });
@@ -101,4 +101,12 @@ test('a missing or nonsense duration costs nothing rather than NaN', () => {
   near(audioCost(null), 0, 'null');
   near(audioCost(undefined), 0, 'undefined');
   near(audioCost(-5), 0, 'negative');
+});
+
+test('Sonnet 5.5 uses its own cache rates', () => {
+  const read = claudeCost({ model: 'claude-sonnet-5-5', cache_read_input_tokens: 1_000_000 });
+  const write = claudeCost({ model: 'claude-sonnet-5-5', cache_creation_input_tokens: 1_000_000 });
+  assert.equal(read, 0.10);
+  assert.equal(write, 2.50);
+  assert.equal(claudeCost({ model: 'claude-sonnet-5-5', input_tokens: 1_000_000, output_tokens: 1_000_000 }), 12);
 });

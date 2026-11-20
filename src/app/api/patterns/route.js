@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerUser } from '@/lib/supabaseServer';
 import { usageThisPeriod, recordUsage, blockedResponseBody } from '@/lib/usageLedger';
+import { CLAUDE_MODEL, EFFORT, responseText, isRefusal, REFUSAL_MESSAGE } from '@/lib/claudeModel';
 import { parseAnalysis } from '@/lib/analysisParse';
 import { PATTERNS_SCHEMA, MIN_ANALYSED_SESSIONS } from '@/lib/patternsInput';
 
@@ -81,10 +82,10 @@ ${languageDirective(serialized)}`;
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: CLAUDE_MODEL,
         max_tokens: 16000,
         messages: [{ role: 'user', content: prompt }],
-        output_config: { format: { type: 'json_schema', schema: PATTERNS_SCHEMA } },
+        output_config: { effort: EFFORT.patterns, format: { type: 'json_schema', schema: PATTERNS_SCHEMA } },
       }),
     });
 
@@ -95,13 +96,17 @@ ${languageDirective(serialized)}`;
     }
 
     const data = await res.json();
-    const raw = data.content?.[0]?.text || '';
+    const raw = responseText(data);
     // Shape, not content: this is therapy material and must not reach the log.
     console.log('[patterns] stop_reason:', data.stop_reason,
       '| output_tokens:', data.usage?.output_tokens, '| chars:', raw.length);
 
     await recordUsage(supabase, { userId: user.id, kind: 'patterns', sessionId: null,
-      model: 'claude-haiku-4-5-20251001', usage: data.usage });
+      model: CLAUDE_MODEL, usage: data.usage });
+    if (isRefusal(data)) {
+      console.warn('[patterns] declined:', data.stop_details?.category ?? 'unknown');
+      return NextResponse.json({ error: REFUSAL_MESSAGE }, { status: 422 });
+    }
 
     const analysis = parseAnalysis(raw);
     if (!analysis) {

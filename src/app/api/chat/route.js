@@ -3,8 +3,8 @@ import { getServerUser } from '@/lib/supabaseServer';
 import { usageThisPeriod, recordUsage, blockedResponseBody } from '@/lib/usageLedger';
 import { cachedSystem } from '@/lib/chatPrompts';
 import { SEARCH_SESSIONS_TOOL, searchSessions, formatSearchResult } from '@/lib/sessionSearch';
+import { CLAUDE_MODEL as MODEL, EFFORT, responseText, isRefusal, REFUSAL_MESSAGE } from '@/lib/claudeModel';
 
-const MODEL = 'claude-haiku-4-5-20251001';
 // How many times one answer may search before it has to reply with what it has.
 const MAX_SEARCHES = 3;
 
@@ -67,7 +67,10 @@ export async function POST(req) {
         },
         body: JSON.stringify({
           model: MODEL,
-          max_tokens: 1024,
+          // Thinking counts towards max_tokens, so this leaves room for it on top
+          // of a reply of the old 1024-token length.
+          max_tokens: 4096,
+          output_config: { effort: EFFORT.chat },
           system: cachedSystem(systemPrompt),
           messages: convo,
           tools: [SEARCH_SESSIONS_TOOL],
@@ -87,6 +90,12 @@ export async function POST(req) {
       // already generated and already paid for.
       await recordUsage(supabase, { userId: user.id, kind: 'chat', model: MODEL, usage: data.usage });
 
+      if (isRefusal(data)) {
+        console.warn('[chat] declined:', data.stop_details?.category ?? 'unknown');
+        return NextResponse.json({ content: REFUSAL_MESSAGE });
+      }
+      // data.content goes back unchanged below, thinking blocks included: the
+      // model needs its own reasoning to continue after a search.
       const calls = (data.content || []).filter(b => b.type === 'tool_use');
       if (data.stop_reason !== 'tool_use' || calls.length === 0) break;
 
@@ -107,7 +116,7 @@ export async function POST(req) {
 
     const u = data.usage || {};
     console.log(`[chat] system ${(systemPrompt || '').length} chars; last call: input ${u.input_tokens}, cache read ${u.cache_read_input_tokens ?? 0}, cache write ${u.cache_creation_input_tokens ?? 0} tokens`);
-    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n\n').trim();
+    const text = responseText(data);
     return NextResponse.json({ content: text });
   } catch (err) {
     console.error('[chat]', err);

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerUser } from '@/lib/supabaseServer';
 import { usageThisPeriod, recordUsage, blockedResponseBody } from '@/lib/usageLedger';
+import { CLAUDE_MODEL, EFFORT, responseText, isRefusal, REFUSAL_MESSAGE } from '@/lib/claudeModel';
 import { parseAnalysis } from '@/lib/analysisParse';
 import { schemaForKind } from '@/lib/analysisFormat';
 import { normalizeKind } from '@/lib/sessionKind';
@@ -110,14 +111,14 @@ ${languageDirective(transcript)}`;
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: CLAUDE_MODEL,
         // A 10-section analysis of a 90-minute session is genuinely long. At 4096
         // a dense transcript could be cut off mid-object, and a truncated object
         // has no closing brace — which is exactly how this surfaced as an
         // unhelpful "Could not parse Claude response".
         max_tokens: 16000,
         messages: [{ role: 'user', content: prompt }],
-        output_config: { format: { type: 'json_schema', schema: schemaForKind(kind) } },
+        output_config: { effort: EFFORT.analyze, format: { type: 'json_schema', schema: schemaForKind(kind) } },
       }),
     });
 
@@ -128,14 +129,18 @@ ${languageDirective(transcript)}`;
     }
 
     const data = await res.json();
-    const raw = data.content?.[0]?.text || '';
+    const raw = responseText(data);
     // Log the shape, not the content: this is therapy material, and the whole
     // analysis was previously written to the server log on every success.
     console.log('[analyze] stop_reason:', data.stop_reason,
       '| output_tokens:', data.usage?.output_tokens, '| chars:', raw.length);
 
     await recordUsage(supabase, { userId: user.id, kind: 'analyze', sessionId: sessionId,
-      model: 'claude-haiku-4-5-20251001', usage: data.usage });
+      model: CLAUDE_MODEL, usage: data.usage });
+    if (isRefusal(data)) {
+      console.warn('[analyze] declined:', data.stop_details?.category ?? 'unknown');
+      return NextResponse.json({ error: REFUSAL_MESSAGE }, { status: 422 });
+    }
 
     const analysis = parseAnalysis(raw);
     if (!analysis) {

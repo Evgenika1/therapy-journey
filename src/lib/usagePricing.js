@@ -24,9 +24,14 @@ export const ASSEMBLYAI_USD_PER_HOUR = 0.23;
 // USD per 1M tokens. The routes currently send the dated snapshot id, so both
 // spellings are listed — a model id missing here throws rather than billing at
 // zero, and the test suite pins that every id the app actually sends is present.
-const HAIKU_4_5 = { input: 1.00, output: 5.00 };
+// cacheRead / cacheWrite, when given, are the model's own rates; otherwise the
+// multipliers below apply. Sonnet 5.5 reads its cache at $0.10, 1/20 of input.
+const HAIKU_4_5   = { input: 1.00, output: 5.00 };
+const SONNET_5_5  = { input: 2.00, output: 10.00, cacheRead: 0.10, cacheWrite: 2.50 };
 
 export const MODEL_PRICES = {
+  'claude-sonnet-5-5':         SONNET_5_5,
+  // Kept so ledger rows written before the switch still price correctly.
   'claude-haiku-4-5':          HAIKU_4_5,
   'claude-haiku-4-5-20251001': HAIKU_4_5,
 };
@@ -56,8 +61,8 @@ export function claudeCost({
 
   return perMillion(input_tokens,  price.input)
        + perMillion(output_tokens, price.output)
-       + perMillion(cache_read_input_tokens,     price.input * CACHE_READ_MULTIPLIER)
-       + perMillion(cache_creation_input_tokens, price.input * CACHE_WRITE_MULTIPLIER);
+       + perMillion(cache_read_input_tokens,     price.cacheRead  ?? price.input * CACHE_READ_MULTIPLIER)
+       + perMillion(cache_creation_input_tokens, price.cacheWrite ?? price.input * CACHE_WRITE_MULTIPLIER);
 }
 
 // Duration comes from AssemblyAI's own `audio_duration`, never from the browser:
