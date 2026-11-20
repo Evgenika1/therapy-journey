@@ -1722,10 +1722,16 @@ function SessionsPageInner() {
                     ) : (
                       <>
                         <p style={{ fontSize: 13.5, color: A, margin: '0 0 12px', lineHeight: 1.6 }}>{speechError}</p>
-                        <button onClick={() => startRecording()}
-                          style={{ padding: '8px 18px', borderRadius: 9, border: 'none', background: A, color: '#fff', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' }}>
-                          Try again
-                        </button>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                          <button onClick={closeModal}
+                            style={{ padding: '8px 18px', borderRadius: 9, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 12.5, cursor: 'pointer' }}>
+                            Cancel
+                          </button>
+                          <button onClick={() => startRecording()}
+                            style={{ padding: '8px 18px', borderRadius: 9, border: 'none', background: A, color: '#fff', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' }}>
+                            Try again
+                          </button>
+                        </div>
                       </>
                     )}
                   </div>
