@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerUser } from '@/lib/supabaseServer';
 import { getStripe, serviceSupabase, appOrigin, automaticTax } from '@/lib/stripeServer';
 import { isPlan, priceIdFor, subscriptionGrants } from '@/lib/plans';
+import { consentMetadata } from '@/lib/withdrawalConsent';
 
 // Start a subscription: a Stripe Checkout Session for one plan.
 //
@@ -18,6 +19,9 @@ export async function POST(req) {
     try { body = await req.json(); } catch { body = null; }
     const plan = body?.plan;
     if (!isPlan(plan)) return NextResponse.json({ error: 'Unknown plan.' }, { status: 400 });
+    if (body?.withdrawalConsent !== true) {
+      return NextResponse.json({ error: 'Please confirm the box above the plans to continue.' }, { status: 400 });
+    }
     const price = priceIdFor(plan);
     if (!price) return NextResponse.json({ error: `No Stripe price configured for ${plan}.` }, { status: 500 });
 
@@ -56,7 +60,7 @@ export async function POST(req) {
       line_items: [{ price, quantity: 1 }],
       // The webhook finds the account from either of these.
       metadata: { user_id: user.id, plan },
-      subscription_data: { metadata: { user_id: user.id } },
+      subscription_data: { metadata: { user_id: user.id, ...consentMetadata() } },
       success_url: `${origin}/billing?checkout=success`,
       cancel_url: `${origin}/billing?checkout=cancel`,
       ...(automaticTax() ? { automatic_tax: { enabled: true }, customer_update: { address: 'auto' } } : {}),

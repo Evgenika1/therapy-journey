@@ -1,5 +1,6 @@
 'use client';
 import { Suspense, useCallback, useEffect, useState } from 'react';
+import { WITHDRAWAL_CONSENT_TEXT } from '@/lib/withdrawalConsent';
 import { useSearchParams } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
@@ -31,6 +32,7 @@ function BillingInner() {
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(null); // plan id or 'portal' while a redirect is being prepared
   const [error, setError] = useState('');
+  const [consent, setConsent] = useState(false);
   const [waiting, setWaiting] = useState(returnedFromCheckout);
 
   const load = useCallback(async () => {
@@ -156,6 +158,16 @@ function BillingInner() {
             </div>
           )}
 
+          {/* Consent before paying (EU right of withdrawal — see Terms §
+              "Refunds and the right of withdrawal"). Only matters for a new
+              subscription; switching plans goes through the Stripe portal. */}
+          {loaded && !active && (
+            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, color: TEXT, lineHeight: 1.5, margin: '0 0 16px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} style={{ marginTop: 3 }} />
+              <span>{WITHDRAWAL_CONSENT_TEXT} <a href="/terms#refunds" target="_blank" rel="noreferrer" style={{ color: CORAL }}>How refunds work</a></span>
+            </label>
+          )}
+
           {/* Plans */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 16 }}>
             {PLAN_ORDER.map(id => {
@@ -186,7 +198,7 @@ function BillingInner() {
                       {busy === 'portal' ? 'Opening…' : `Switch to ${p.name}`}
                     </button>
                   ) : (
-                    <button onClick={() => go('/api/stripe/checkout', { plan: id }, id)} disabled={!!busy || !loaded} style={primaryBtn(!!busy || !loaded)}>
+                    <button onClick={() => go('/api/stripe/checkout', { plan: id, withdrawalConsent: consent }, id)} disabled={!!busy || !loaded || !consent} style={primaryBtn(!!busy || !loaded || !consent)} title={consent ? undefined : 'Tick the box above the plans first'}>
                       {busy === id ? 'Redirecting…' : 'Subscribe'}
                     </button>
                   )}

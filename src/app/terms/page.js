@@ -11,7 +11,7 @@ const Mail = () => <a href={`mailto:${EMAIL}`}>{EMAIL}</a>;
 
 export default function TermsPage() {
   return (
-    <LegalPage title="Terms of Service" updated="11 November 2026">
+    <LegalPage title="Terms of Service" updated="21 November 2026">
       <p>
         Welcome to Kevi. These Terms of Service are an agreement between you and Newlife app, the operator of
         Kevi, based in the Netherlands. By creating an account or using Kevi, you agree to these Terms. If you
@@ -85,9 +85,29 @@ export default function TermsPage() {
       </p>
       <p>
         Subscriptions renew automatically each billing period unless you cancel before renewal. You can cancel
-        at any time, effective at the end of the current period. Except where the law requires otherwise,
-        payments already made are non-refundable. We may change prices or plans and will give reasonable notice
-        of changes that affect you.
+        at any time, effective at the end of the current period. Refunds work as set out below. We may change
+        prices or plans and will give reasonable notice of changes that affect you.
+      </p>
+      <h3 id="refunds">Refunds and the right of withdrawal</h3>
+      <p>
+        If you live in the European Union you have the right to withdraw from a subscription within 14 days
+        of paying for it, without giving a reason. To withdraw, write to <a href="mailto:hi@kevi.online">hi@kevi.online</a> from
+        the email address of your account and say that you want to withdraw; the 14 days end on the 14th
+        calendar day after the payment.
+      </p>
+      <p>
+        When you subscribe, you ask us to start your plan right away. If you then withdraw within the 14 days,
+        we refund the part of your payment for the minutes you have not used, in proportion to your plan:
+        for example, if you used 100 of 400 minutes, we refund three quarters of what you paid. Your plan ends
+        when the refund is made.
+      </p>
+      <p>
+        After the 14 days, payments are not refunded: you can cancel and keep your plan until the end of the
+        period you paid for. If a recording could not be transcribed or analysed because of a fault on our
+        side, write to us and we will refund the payment in full, whenever it happened.
+      </p>
+      <p>
+        Refunds go back to the card or account you paid with, normally within 5–10 days.
       </p>
 
       <h2>8. Availability</h2>

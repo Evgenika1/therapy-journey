@@ -16,6 +16,7 @@ import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
 import { allUsage, amIAdmin, setUserQuota } from '@/lib/usageClient';
+import RefundPanel from '@/components/RefundPanel';
 import { MONTHLY_MINUTES, USD_PER_MINUTE, MAX_QUOTA_MINUTES } from '@/lib/usageQuota';
 import { ASSEMBLYAI_USD_PER_HOUR } from '@/lib/usagePricing';
 
@@ -189,6 +190,8 @@ export default function AdminPage() {
                 60 for the audio, ~8 for the analysis. A chat reply costs roughly 0.7–2.4,
                 depending on its length.
               </p>
+
+              <RefundPanel />
             </>
           )}
         </div>
