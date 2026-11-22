@@ -29,7 +29,7 @@ import { CBT_PRESETS } from '@/lib/chatPresets';
 import Link from 'next/link';
 import { myUsage } from '@/lib/usageClient';
 import { setBusy } from '@/lib/busyState';
-import { blockedMessage } from '@/lib/plans';
+import { blockedMessage, mayStartRecording } from '@/lib/plans';
 import SuggestionList from '@/components/SuggestionList';
 import { proposedTasks, reconcileHomework, describeTask } from '@/lib/sessionHomework';
 import { aiTopics, reconcileTopics } from '@/lib/sessionTopics';
@@ -500,7 +500,8 @@ function SessionsPageInner() {
   // session; the server's gate is still there.
   async function mayRecord() {
     const u = supabase ? await myUsage(supabase).catch(() => null) : null;
-    if (u?.status === 'blocked') { setLimitReason(u.reason || 'limit'); return false; }
+    const start = mayStartRecording(u);
+    if (!start.ok) { setLimitReason(start.reason); return false; }
     setLimitReason(null);
     return true;
   }

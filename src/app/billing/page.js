@@ -135,7 +135,7 @@ function BillingInner() {
                 </div>
                 <div style={{ fontSize: 14, color: TEXT }}>
                   {trial
-                    ? <><strong>{Math.min(quotaMinutes, Math.round(usedMinutes))}</strong> of {quotaMinutes} minutes used</>
+                    ? <><strong>{Math.round(usedMinutes)}</strong> of {quotaMinutes} minutes used</>
                     : <><strong>{fmtSessions(usedSessions)}</strong> of {fmtSessions(totalSessions)} sessions used</>}
                 </div>
               </div>
@@ -143,7 +143,10 @@ function BillingInner() {
                 <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, background: usage?.status === 'ok' ? CORAL : ERR }} />
               </div>
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 16 }}>
-                {Math.round(usedMinutes)} of {quotaMinutes} minutes
+                {!trial && <>{Math.round(usedMinutes)} of {quotaMinutes} minutes</>}
+                {trial && (usedMinutes > quotaMinutes
+                  ? 'The session that ran past your free minutes was finished and kept'
+                  : 'Free minutes')}
                 {override && active && ' — your account has a custom allowance, which replaces the plan’s'}
                 {trial && ' — once, to try Kevi with a live recording. Uploading files comes with a plan. A plan replaces the free minutes; they do not carry over.'}
                 {statusLine && <> · {statusLine}</>}

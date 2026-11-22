@@ -135,3 +135,23 @@ test('a used-up trial says so, and points to the plans', () => {
   assert.match(blockedMessage('trial_used'), /free 30 minutes.*Billing/);
   assert.match(blockedMessage('trial_import'), /paid plans/);
 });
+
+import { mayStartRecording } from '../src/lib/plans.js';
+
+test('a used-up trial cannot start a new recording, even inside the overdraft', () => {
+  const q = { status: 'warn', remaining: -3, allowance: { source: 'trial' } };
+  assert.deepEqual(mayStartRecording(q), { ok: false, reason: 'trial_used' });
+});
+
+test('a trial with minutes left can start', () => {
+  assert.equal(mayStartRecording({ status: 'warn', remaining: 2, allowance: { source: 'trial' } }).ok, true);
+});
+
+test('a paid plan inside the overdraft can still start; blocked cannot', () => {
+  assert.equal(mayStartRecording({ status: 'warn', remaining: -3, allowance: { source: 'plan' } }).ok, true);
+  assert.deepEqual(mayStartRecording({ status: 'blocked', reason: 'limit', remaining: -20, allowance: { source: 'plan' } }), { ok: false, reason: 'limit' });
+});
+
+test('unknown usage never blocks', () => {
+  assert.equal(mayStartRecording(null).ok, true);
+});

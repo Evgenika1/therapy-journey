@@ -124,6 +124,17 @@ export function allowanceStatus(allowance, usedMinutes) {
   return { ...state, reason: allowance.source === 'trial' ? 'trial_used' : 'limit' };
 }
 
+// Whether a NEW recording may start. The overdraft in quotaState lets a
+// session that began inside the allowance finish (and be analysed); it is not
+// a second, smaller allowance. On a paid plan that slack is harmless, but a
+// free trial that is used up must stop here, or every trial is 45 minutes.
+export function mayStartRecording(quota) {
+  if (!quota) return { ok: true, reason: null };
+  if (quota.status === 'blocked') return { ok: false, reason: quota.reason || 'limit' };
+  if (quota.allowance?.source === 'trial' && !(quota.remaining > 0)) return { ok: false, reason: 'trial_used' };
+  return { ok: true, reason: null };
+}
+
 export function sessionsFromMinutes(minutes) {
   return Math.max(0, minutes) / MINUTES_PER_SESSION;
 }

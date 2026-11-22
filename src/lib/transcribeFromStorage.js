@@ -6,7 +6,7 @@ import { AAI_BASE, AAI_HEADERS, TRANSCRIBE_CONFIG } from '@/lib/transcribeJob';
 import { AUDIO_BUCKET, AUDIO_URL_TTL_SECONDS, isOwnAudioPath } from '@/lib/audioStorage';
 import { extOf, unsupportedTypeMessage } from '@/lib/audioUpload';
 import { trialAudioLimitMs } from '@/lib/freeTrial';
-import { blockedMessage } from '@/lib/plans';
+import { blockedMessage, mayStartRecording } from '@/lib/plans';
 
 // Start a transcription job for audio the browser has already put in Storage.
 // Shared by /api/transcribe (a live recording) and /api/transcribe-file (an
@@ -23,6 +23,13 @@ export async function startJobFromStorage(req, { tag, allowedExt = null, paidOnl
   const quota = await usageThisPeriod(supabase, user.id);
   if (quota.status === 'blocked') {
     return NextResponse.json(blockedResponseBody(quota), { status: 402 });
+  }
+  // A used-up trial starts no new job, even inside the overdraft (see
+  // mayStartRecording). A recording made while minutes were left is posted
+  // before its own minutes are counted, so it still goes through.
+  const start = mayStartRecording(quota);
+  if (!start.ok) {
+    return NextResponse.json({ error: blockedMessage(start.reason), quota: { status: 'blocked', remaining: quota.remaining, reason: start.reason } }, { status: 402 });
   }
   // Importing files is for paying accounts: a trial is for recording a session,
   // not a free way to push a backlog of audio through. (A file can still be
