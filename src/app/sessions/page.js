@@ -30,6 +30,7 @@ import Link from 'next/link';
 import { myUsage } from '@/lib/usageClient';
 import { setBusy } from '@/lib/busyState';
 import { holdScreenAwake } from '@/lib/wakeLock';
+import { mixAudioStreams } from '@/lib/mixAudio';
 import { blockedMessage, mayStartRecording } from '@/lib/plans';
 import SuggestionList from '@/components/SuggestionList';
 import { proposedTasks, reconcileHomework, describeTask } from '@/lib/sessionHomework';
@@ -158,8 +159,8 @@ function AudioLevelMeter({ stream, source, paused, A, MUTED, TEXT }) {
     };
   }, [stream]);
   const active = bars.some(b => b > 0.08);
-  const warning = source === 'tab'
-    ? '⚠️ No audio coming through — check that tab audio sharing is on'
+  const warning = source === 'online'
+    ? '⚠️ No sound coming through — check that the call\u2019s tab is shared with audio and your microphone works'
     : '⚠️ The microphone is picking up nothing — check the right one is selected';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, width: '100%' }}>
@@ -238,7 +239,8 @@ function SessionsPageInner() {
   const [saved,              setSaved]              = useState(false);
   const [showPreMood,        setShowPreMood]        = useState(false);
   const [preRecordMoodIdx,   setPreRecordMoodIdx]   = useState(null);
-  const [captureSource,      setCaptureSource]      = useState('mic'); // 'mic' | 'tab'
+  const [captureSource,      setCaptureSource]      = useState('mic'); // 'mic' (in the room) | 'online' (call tab + mic)
+  const mixRef = useRef(null); // the mixer of an online session, so stop can end its source tracks
   const [micDevices,         setMicDevices]         = useState([]);
   const [selectedMicId,      setSelectedMicId]      = useState('');
 
@@ -645,23 +647,38 @@ function SessionsPageInner() {
     chunksRef.current = [];
 
     let stream;
+    mixRef.current?.stop(); mixRef.current = null; // never inherit a previous session's mixer
     setAwaitingAccess(true);
     try {
-      if (captureSource === 'tab') {
-        // Capture tab/system audio — the correct way to record an online session
-        // (Zoom etc.) where the other person is heard through headphones/speakers
-        // and never reaches the mic. Chrome requires video:true to offer the
-        // "Share tab audio" checkbox in its picker.
+      if (captureSource === 'online') {
+        // An online session: the call's tab (the other person) and the mic
+        // (you), mixed. With headphones neither alone has both voices. Chrome
+        // needs video:true to offer "Share tab audio"; the video is dropped.
         const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-        const audioTracks = display.getAudioTracks();
-        if (audioTracks.length === 0) {
+        const tabTracks = display.getAudioTracks();
+        display.getVideoTracks().forEach(t => t.stop());
+        if (tabTracks.length === 0) {
           display.getTracks().forEach(t => t.stop());
-          setSpeechError('Tab audio was not captured — tick "Share tab audio" when choosing the source.');
+          setSpeechError('The call\u2019s sound was not shared \u2014 choose the tab with the call and tick \u201cShare tab audio\u201d.');
           setAwaitingAccess(false);
           startGuardRef.current = false; return;
         }
-        display.getVideoTracks().forEach(t => t.stop()); // record audio only, drop video
-        stream = new MediaStream(audioTracks);
+        let mic;
+        try {
+          // Echo cancellation ON here, unlike in the room: with speakers instead
+          // of headphones the mic would otherwise record the call a second time.
+          const audio = { echoCancellation: true, noiseSuppression: false, autoGainControl: true };
+          if (selectedMicId) audio.deviceId = { exact: selectedMicId };
+          mic = await navigator.mediaDevices.getUserMedia({ audio });
+        } catch {
+          tabTracks.forEach(t => t.stop());
+          setSpeechError('Microphone access was denied, so your own voice would not be recorded. Allow the microphone for this site, then try again.');
+          setAwaitingAccess(false);
+          startGuardRef.current = false; return;
+        }
+        const mix = mixAudioStreams([new MediaStream(tabTracks), mic]);
+        mixRef.current = { ...mix, tabTracks, micTracks: mic.getAudioTracks() };
+        stream = mix.stream;
       } else {
         // Microphone. echoCancellation/noiseSuppression OFF (Chrome's AEC distorted
         // the built-in mic to noise; NS gated quiet speech); autoGainControl ON to
@@ -673,8 +690,8 @@ function SessionsPageInner() {
     }
     catch {
       setAwaitingAccess(false);
-      setSpeechError(captureSource === 'tab'
-        ? 'Tab audio access was denied.'
+      setSpeechError(captureSource === 'online'
+        ? 'Sharing the call\u2019s tab was cancelled or denied. Choose the tab with the call and tick \u201cShare tab audio\u201d.'
         : 'Microphone access was denied. Allow the microphone for this site in your browser\u2019s address bar or settings, then try again.');
       startGuardRef.current = false; return;
     }
@@ -709,10 +726,14 @@ function SessionsPageInner() {
     };
     mr.onerror = (e) => stopOnItsOwn(
       `Recording stopped because of an error (${e?.error?.message || 'unknown'}). Everything recorded until then was kept.`);
-    stream.getAudioTracks().forEach(t => t.addEventListener('ended', () => stopOnItsOwn(
-      captureSource === 'tab'
-        ? 'Tab sharing ended, so recording stopped. Everything recorded until then was kept. (This happens if sharing is stopped in Chrome, the shared tab is closed, or the computer locks or sleeps.)'
-        : 'The microphone was disconnected, so recording stopped. Everything recorded until then was kept.')));
+    // Listen on the real sources: for an online session that is the call's tab
+    // and the mic behind the mixer, whose own output track never ends by itself.
+    const TAB_ENDED = 'Sharing the call\u2019s tab ended, so recording stopped. Everything recorded until then was kept. (This happens if sharing is stopped in Chrome, the shared tab is closed, or the computer locks or sleeps.)';
+    const MIC_ENDED = 'The microphone was disconnected, so recording stopped. Everything recorded until then was kept.';
+    const tabTracks = mixRef.current?.tabTracks ?? [];
+    const micTracks = mixRef.current ? mixRef.current.micTracks : stream.getAudioTracks();
+    tabTracks.forEach(t => t.addEventListener('ended', () => stopOnItsOwn(TAB_ENDED)));
+    micTracks.forEach(t => t.addEventListener('ended', () => stopOnItsOwn(MIC_ENDED)));
     setConfirmStop(false);
     mr.start(1000);
     setIsCapturing(true); setIsPaused(false); setSeconds(0);
@@ -759,6 +780,7 @@ function SessionsPageInner() {
     // Safe on a recorder the browser already stopped — see stopRecorder.
     await stopRecorder(mr);
     mr.stream.getTracks().forEach(t => t.stop());
+    mixRef.current?.stop(); mixRef.current = null;
 
     const mimeType = mr.mimeType || 'audio/webm';
     const chunks = chunksRef.current.slice();
@@ -1657,8 +1679,8 @@ function SessionsPageInner() {
                       <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Audio source</p>
                       <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
                         {[
-                          { id: 'mic', label: '🎤 Microphone', hint: 'recording in person' },
-                          { id: 'tab', label: '🔊 Tab audio', hint: 'Zoom / online' },
+                          { id: 'mic', label: '🎤 In the room', hint: 'microphone — session in person' },
+                          { id: 'online', label: '💻 Online call', hint: 'the call + your microphone' },
                         ].map(opt => {
                           const on = captureSource === opt.id;
                           return (
@@ -1671,7 +1693,7 @@ function SessionsPageInner() {
                           );
                         })}
                       </div>
-                      {captureSource === 'mic' && micDevices.length > 0 && (
+                      {micDevices.length > 0 && (
                         <select value={selectedMicId} onChange={e => setSelectedMicId(e.target.value)}
                           style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}>
                           <option value="">Default microphone</option>
@@ -1680,9 +1702,11 @@ function SessionsPageInner() {
                           ))}
                         </select>
                       )}
-                      {captureSource === 'tab' && (
-                        <p style={{ fontSize: 11.5, color: MUTED, margin: 0, lineHeight: 1.5 }}>
-                          A picker will open — choose the tab with the call and tick "Share tab audio".
+                      {captureSource === 'online' && (
+                        <p style={{ fontSize: 11.5, color: MUTED, margin: '8px 0 0', lineHeight: 1.5 }}>
+                          A picker will open — choose the tab with the call and tick “Share tab audio”. Works with
+                          headphones: both voices are recorded. Using the Zoom app? Join the call in your browser
+                          instead (“Join from your browser”) — Kevi can only hear calls in a browser tab.
                         </p>
                       )}
                     </div>
@@ -1721,11 +1745,11 @@ function SessionsPageInner() {
                     {awaitingAccess ? (
                       <>
                         <p style={{ fontSize: 15, color: TEXT, margin: '0 0 6px' }}>
-                          {captureSource === 'tab' ? 'Choose the tab to record' : 'Allow microphone access'}
+                          {captureSource === 'online' ? 'Choose the call\u2019s tab' : 'Allow microphone access'}
                         </p>
                         <p style={{ fontSize: 12.5, color: MUTED, margin: 0, lineHeight: 1.6 }}>
-                          {captureSource === 'tab'
-                            ? 'Pick the tab with your session and tick \u201cShare tab audio\u201d.'
+                          {captureSource === 'online'
+                            ? 'Pick the tab with your call and tick \u201cShare tab audio\u201d. Then allow the microphone, so your own voice is recorded too.'
                             : 'Your browser is asking whether Kevi may use the microphone \u2014 choose Allow.'}
                         </p>
                       </>
