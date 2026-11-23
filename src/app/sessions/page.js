@@ -507,6 +507,7 @@ function SessionsPageInner() {
   // session; the server's gate is still there.
   async function mayRecord() {
     const u = supabase ? await myUsage(supabase).catch(() => null) : null;
+    if (u) setOnTrial(u.allowance?.source === 'trial');
     const start = mayStartRecording(u);
     if (!start.ok) { setLimitReason(start.reason); return false; }
     setLimitReason(null);
@@ -935,6 +936,7 @@ function SessionsPageInner() {
   async function pickImportFile() {
     const u = supabase ? await myUsage(supabase).catch(() => null) : null;
     if (u?.status === 'blocked') { setLimitReason(u.reason || 'limit'); return; }
+    if (u) setOnTrial(u.allowance?.source === 'trial');
     if (u?.allowance?.source === 'trial') { setLimitReason('trial_import'); return; }
     setLimitReason(null);
     importInputRef.current?.click();
