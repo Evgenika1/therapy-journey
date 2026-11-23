@@ -1759,23 +1759,35 @@ function SessionsPageInner() {
 
                     {/* Audio source */}
                     <div style={{ marginBottom: 24 }}>
-                      <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Audio source</p>
-                      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                        {[
-                          { id: 'online', label: '💻 Online session', hint: 'the call and your voice' },
-                          { id: 'mic', label: '🎙 Just me', hint: 'a voice note — no call, only you' },
-                        ].map(opt => {
-                          const on = captureSource === opt.id;
-                          return (
-                            <button key={opt.id} onClick={() => setCaptureSource(opt.id)}
-                              style={{ flex: 1, padding: '10px 12px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
-                                       border: `1.5px solid ${on ? A : BORDER}`, background: on ? A + '12' : 'transparent' }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: on ? A : TEXT }}>{opt.label}</div>
-                              <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>{opt.hint}</div>
-                            </button>
-                          );
-                        })}
-                      </div>
+                      {/* One clear default — the call and you — and, as a quiet
+                          link, the voice-note case. Two equal cards ("Online
+                          call" / "Microphone", then "Online session" / "Just
+                          me") read as a puzzle: both use the microphone. */}
+                      {captureSource === 'online' ? (
+                        <div style={{ marginBottom: 10 }}>
+                          <p style={{ fontSize: 13.5, color: TEXT, margin: '0 0 4px', lineHeight: 1.5 }}>
+                            <strong>Records your session call and your microphone</strong> — both voices, headphones or not.
+                          </p>
+                          <p style={{ fontSize: 12, color: MUTED, margin: '0 0 6px', lineHeight: 1.5 }}>
+                            Next, choose the browser tab with your call and tick “Share tab audio”. Using the Zoom app?
+                            Join the call in your browser instead (“Join from your browser”).
+                          </p>
+                          <button type="button" onClick={() => setCaptureSource('mic')}
+                            style={{ background: 'none', border: 'none', padding: 0, color: A, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                            Record only my voice instead (a voice note, no call) →
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ marginBottom: 10 }}>
+                          <p style={{ fontSize: 13.5, color: TEXT, margin: '0 0 6px', lineHeight: 1.5 }}>
+                            <strong>Records only your microphone</strong> — a voice note, for example your thoughts after a session.
+                          </p>
+                          <button type="button" onClick={() => setCaptureSource('online')}
+                            style={{ background: 'none', border: 'none', padding: 0, color: A, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                            ← Record a session call instead
+                          </button>
+                        </div>
+                      )}
                       {micDevices.length > 0 && (
                         <select value={selectedMicId} onChange={e => setSelectedMicId(e.target.value)}
                           style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: BG, color: TEXT, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}>
@@ -1784,13 +1796,6 @@ function SessionsPageInner() {
                             <option key={d.deviceId || i} value={d.deviceId}>{d.label || `Microphone ${i + 1}`}</option>
                           ))}
                         </select>
-                      )}
-                      {captureSource === 'online' && (
-                        <p style={{ fontSize: 11.5, color: MUTED, margin: '8px 0 0', lineHeight: 1.5 }}>
-                          A picker will open — choose the tab with the call and tick “Share tab audio”. Works with
-                          headphones: both voices are recorded. Using the Zoom app? Join the call in your browser
-                          instead (“Join from your browser”) — Kevi can only hear calls in a browser tab.
-                        </p>
                       )}
                     </div>
 
