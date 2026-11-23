@@ -5,6 +5,7 @@ import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/lib/ThemeContext';
 import { useRouter } from 'next/navigation';
+import { collectMyData, exportFileName } from '@/lib/dataExport';
 
 export default function AccountPage() {
   const { supabase, user } = useAuth();
@@ -22,6 +23,27 @@ export default function AccountPage() {
   const [loadingEmail,   setLoadingEmail]   = useState(false);
   const [loadingPass,    setLoadingPass]    = useState(false);
   const [loadingDelete,  setLoadingDelete]  = useState(false);
+  const [exportMsg,      setExportMsg]      = useState(null);
+  const [loadingExport,  setLoadingExport]  = useState(false);
+
+  // Builds the file in the browser and hands it over; nothing is sent anywhere.
+  async function handleExport() {
+    setLoadingExport(true); setExportMsg(null);
+    try {
+      const data = await collectMyData(supabase);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = exportFileName();
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setExportMsg(data.errors
+        ? { err: true, text: `Downloaded, but some parts could not be read (${Object.keys(data.errors).join(', ')}). Write to hi@kevi.online and we will send them.` }
+        : { err: false, text: 'Downloaded. The file is on your device; keep it somewhere safe — it holds your session transcripts.' });
+    } catch (e) {
+      setExportMsg({ err: true, text: `Could not prepare your data: ${e?.message || 'unknown error'}.` });
+    } finally { setLoadingExport(false); }
+  }
 
   const inputStyle = {
     width: '100%', boxSizing: 'border-box',
@@ -130,6 +152,20 @@ export default function AccountPage() {
                 </button>
               </div>
             </form>
+          ))}
+
+          {section('Your Data', (
+            <div>
+              <p style={{ fontSize: 13, color: MUTED, margin: '0 0 14px', lineHeight: 1.6 }}>
+                Download everything Kevi stores about you — sessions, transcripts, analyses, homework,
+                diary and journal entries, emotions, chats and billing records — as one JSON file.
+                Audio recordings are listed in the file; write to hi@kevi.online to receive the audio itself.
+              </p>
+              <button onClick={handleExport} disabled={loadingExport} style={btnStyle(false)}>
+                {loadingExport ? 'Preparing…' : 'Download my data'}
+              </button>
+              {exportMsg && <p style={{ fontSize: 12.5, color: exportMsg.err ? ERR : MUTED, margin: '10px 0 0', lineHeight: 1.5 }}>{exportMsg.text}</p>}
+            </div>
           ))}
 
           {section('Delete Account', (

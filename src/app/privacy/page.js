@@ -20,7 +20,7 @@ const SUB_PROCESSORS = [
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy Policy" updated="20 November 2026">
+    <LegalPage title="Privacy Policy" updated="23 November 2026">
       <h2>1. Who we are</h2>
       <p>
         Kevi is a private companion app for therapy and coaching, operated by Newlife app, based in the
@@ -126,7 +126,7 @@ export default function PrivacyPage() {
       <h2>9. Your rights</h2>
       <p>Under the GDPR you can:</p>
       <ul>
-        <li>access the data we hold about you;</li>
+        <li>access the data we hold about you (you can download all of it yourself under Account → Your Data);</li>
         <li>rectify wrong data;</li>
         <li>erase your data (delete your account at any time);</li>
         <li>restrict or object to certain processing;</li>
