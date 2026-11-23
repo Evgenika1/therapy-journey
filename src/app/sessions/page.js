@@ -35,7 +35,7 @@ import { blockedMessage, mayStartRecording } from '@/lib/plans';
 import SuggestionList from '@/components/SuggestionList';
 import { proposedTasks, reconcileHomework, describeTask } from '@/lib/sessionHomework';
 import { aiTopics, reconcileTopics } from '@/lib/sessionTopics';
-import { readLastKind, kindOf, normalizeKind, SESSION_KINDS, KIND_LABELS } from '@/lib/sessionKind';
+import { readLastKind, rememberKind, kindOf, normalizeKind, SESSION_KINDS, KIND_LABELS } from '@/lib/sessionKind';
 import { previousGoals, GOAL_STATUS_LABELS } from '@/lib/coachingGoals';
 import { sessionChatIntro, suggestionsForKind, GENERAL_CHAT_INTRO, historyContextBlock } from '@/lib/chatPrompts';
 
@@ -240,6 +240,10 @@ function SessionsPageInner() {
   const [showPreMood,        setShowPreMood]        = useState(false);
   const [preRecordMoodIdx,   setPreRecordMoodIdx]   = useState(null);
   const [captureSource,      setCaptureSource]      = useState('online'); // 'online' (call tab + mic, the usual case) | 'mic' (microphone only)
+  // Therapy or coaching, chosen in the record window too (it used to be only on
+  // the Dashboard, and a recording started here silently took the last one).
+  // rememberKind stores it, and saving reads it back with readLastKind.
+  const [recKind,            setRecKind]            = useState('therapy');
   const mixRef = useRef(null); // the mixer of an online session, so stop can end its source tracks
   const [micDevices,         setMicDevices]         = useState([]);
   const [selectedMicId,      setSelectedMicId]      = useState('');
@@ -360,6 +364,8 @@ function SessionsPageInner() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [supabase]);
+
+  useEffect(() => { if (showPreMood) setRecKind(readLastKind()); }, [showPreMood]);
 
   // Keep the screen on for as long as a recording runs (see wakeLock.js).
   useEffect(() => {
@@ -1672,6 +1678,19 @@ function SessionsPageInner() {
                           {m.emoji}
                         </button>
                       ))}
+                    </div>
+
+                    {/* Session type */}
+                    <div role="radiogroup" aria-label="Session type" style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 20 }}>
+                      {SESSION_KINDS.map(k => {
+                        const on = recKind === k;
+                        return (
+                          <button key={k} role="radio" aria-checked={on} onClick={() => setRecKind(rememberKind(k))}
+                            style={{ padding: '6px 16px', borderRadius: 999, border: `1px solid ${on ? A : BORDER}`, background: on ? A + '18' : 'transparent', color: on ? A : MUTED, fontSize: 12.5, fontWeight: on ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+                            {KIND_LABELS[k]}
+                          </button>
+                        );
+                      })}
                     </div>
 
                     {/* Audio source */}
