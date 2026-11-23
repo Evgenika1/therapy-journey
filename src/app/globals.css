@@ -165,8 +165,8 @@ body {
    a link from our emails opens (.auth-link-shell): people confirm an account
    or reset a password from the phone they read their mail on. */
 @media (max-width: 800px) and (pointer: coarse) {
-  .app-shell:has(.legal-shell, .auth-link-shell)        { display: block; }
-  body:has(.legal-shell, .auth-link-shell) .mobile-gate { display: none; }
+  .app-shell:has(.legal-shell, .auth-link-shell, .landing-shell)        { display: block; }
+  body:has(.legal-shell, .auth-link-shell, .landing-shell) .mobile-gate { display: none; }
 }
 
 /* ── Design refresh: time-of-day palette, serif headings, ritual glow ─────────
@@ -470,4 +470,72 @@ h1 em, h2 em, .serif-em { font-style: italic; font-weight: 400; }
   .legal { padding: 28px 22px; border-radius: 18px; }
   .legal h1 { font-size: 30px; }
   .legal h2 { font-size: 19px; }
+}
+
+/* ── Welcome page (/welcome) — what an ad lands on ───────────────────────────── */
+.landing-shell { min-height: 100vh; background: var(--bg); color: var(--text); font-family: var(--font-sans); }
+.lp-header { display: flex; align-items: center; justify-content: space-between; max-width: 1040px; margin: 0 auto; padding: 22px 24px; }
+.lp-logo { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; color: var(--text); }
+.lp-header-nav { display: flex; gap: 18px; align-items: center; font-size: 14px; }
+.lp-header-nav a { color: var(--text); text-decoration: none; }
+.landing { max-width: 1040px; margin: 0 auto; padding: 0 24px 40px; }
+.lp-btn { display: inline-block; background: var(--accent); color: #fff !important; text-decoration: none; padding: 14px 24px; border-radius: 999px; font-weight: 600; font-size: 15px; box-shadow: 0 6px 24px var(--glow); }
+.lp-btn:hover { filter: brightness(1.06); }
+.lp-btn-small { padding: 8px 16px; font-size: 13.5px; box-shadow: none; }
+.lp-hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center; padding: 40px 0 56px; }
+.lp-hero h1 { font-family: var(--font-serif); font-weight: 400; font-size: 52px; line-height: 1.08; margin: 0 0 18px; letter-spacing: -0.01em; }
+.lp-hero h1 em { color: var(--accent); }
+.lp-lead { font-size: 17px; line-height: 1.65; color: var(--text-muted); margin: 0 0 26px; }
+
+
+.lp-phone-note { display: none; font-size: 13px; color: var(--text-muted); margin: 12px 0 0; }
+.lp-section { padding: 44px 0; border-top: 1px solid var(--border); }
+.lp-section h2, .lp-final h2 { font-family: var(--font-serif); font-weight: 400; font-size: 32px; margin: 0 0 20px; }
+.lp-muted { color: var(--text-muted); }
+.lp-small { font-size: 13px; }
+.lp-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding: 0; margin: 0; list-style: none; counter-reset: s; }
+.lp-steps li { counter-increment: s; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 22px; line-height: 1.6; font-size: 15px; }
+.lp-steps li::before { content: counter(s); display: inline-flex; width: 28px; height: 28px; border-radius: 50%; background: var(--nav-active); color: var(--accent); font-weight: 700; align-items: center; justify-content: center; margin-bottom: 10px; }
+.lp-steps strong { display: block; margin-bottom: 4px; }
+.lp-features { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; }
+.lp-feature h3 { font-family: var(--font-serif); font-weight: 400; font-size: 26px; margin: 0 0 8px; }
+.lp-feature > p { color: var(--text-muted); line-height: 1.6; margin: 0 0 18px; }
+.lp-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 22px; }
+.lp-mock { box-shadow: 0 12px 40px var(--glow); font-size: 14px; }
+.lp-mock-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 14px; }
+.lp-mock-h { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin: 14px 0 6px; }
+.lp-mock-p { margin: 0; line-height: 1.55; }
+.lp-mock-muted { color: var(--text-muted); margin-top: 14px; font-size: 13px; }
+.lp-mock-ul { margin: 0; padding-left: 18px; line-height: 1.55; }
+.lp-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.lp-chips span { background: var(--nav-active); color: var(--accent); border-radius: 999px; padding: 4px 10px; font-size: 12.5px; }
+.lp-bar-row { display: grid; grid-template-columns: 1fr 90px 34px; gap: 10px; align-items: center; margin: 8px 0; font-size: 13.5px; }
+.lp-bar { height: 8px; background: var(--nav-active); border-radius: 999px; overflow: hidden; }
+.lp-bar span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.lp-bar-n { color: var(--text-muted); font-size: 12px; text-align: right; }
+.lp-check { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; line-height: 1.5; }
+.lp-box { flex: none; width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; margin-top: 2px; }
+.lp-box-on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.lp-privacy ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 28px; }
+.lp-privacy li { padding-left: 26px; position: relative; line-height: 1.55; }
+.lp-privacy li::before { content: '✓'; position: absolute; left: 0; color: var(--ok); font-weight: 700; }
+.lp-plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 18px 0 12px; }
+.lp-plan-name { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+.lp-plan-price { font-family: var(--font-serif); font-size: 36px; margin: 8px 0 4px; }
+.lp-plan-price span { font-family: var(--font-sans); font-size: 14px; color: var(--text-muted); }
+.lp-plan-sessions { font-weight: 600; }
+.lp-faq details { border-bottom: 1px solid var(--border); padding: 14px 0; }
+.lp-faq summary { cursor: pointer; font-weight: 600; font-size: 16px; }
+.lp-faq p { color: var(--text-muted); line-height: 1.65; margin: 10px 0 0; }
+.lp-final { text-align: center; padding: 56px 0 24px; border-top: 1px solid var(--border); }
+
+@media (max-width: 820px) {
+  .lp-hero { grid-template-columns: 1fr; padding-top: 16px; }
+  .lp-hero h1 { font-size: 38px; }
+  .lp-steps, .lp-features, .lp-plans, .lp-privacy ul { grid-template-columns: 1fr; }
+  .lp-header-nav a:not(.lp-btn) { display: none; }
+}
+/* Phones can read the page, but the app itself is for a computer for now. */
+@media (pointer: coarse) and (max-width: 820px) {
+  .lp-phone-note { display: block; }
 }

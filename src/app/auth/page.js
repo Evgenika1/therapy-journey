@@ -45,7 +45,10 @@ export default function AuthPage() {
 
   // "Send a new reset link" on /auth/confirm opens straight onto the form.
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('mode') === 'forgot') setMode('forgot');
+    const wanted = new URLSearchParams(window.location.search).get('mode');
+    if (wanted === 'forgot') setMode('forgot');
+    // "Start free" on the welcome page opens straight on Create Account.
+    if (wanted === 'signup') setMode('signup');
   }, []);
 
   useEffect(() => {

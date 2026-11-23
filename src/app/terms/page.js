@@ -11,7 +11,7 @@ const Mail = () => <a href={`mailto:${EMAIL}`}>{EMAIL}</a>;
 
 export default function TermsPage() {
   return (
-    <LegalPage title="Terms of Service" updated="21 November 2026">
+    <LegalPage title="Terms of Service" updated="23 November 2026">
       <p>
         Welcome to Kevi. These Terms of Service are an agreement between you and Newlife app, the operator of
         Kevi, based in the Netherlands. By creating an account or using Kevi, you agree to these Terms. If you
@@ -55,9 +55,11 @@ export default function TermsPage() {
         Policy</Link>.
       </p>
       <p>
-        <strong>Recording others:</strong> if you record a session that includes another person, you are
-        responsible for having any consent the law requires where you and they are located. Recording people
-        without a lawful basis may be illegal. Kevi is not responsible for recordings you make.
+        <strong>Recording others:</strong> if you record a session that includes another person — your
+        therapist or coach included — you are responsible for having any consent the law requires where you
+        and they are located. We ask you to tell your therapist or coach before you record, whether or not
+        the law requires it. Recording people without a lawful basis may be illegal. Kevi is not responsible
+        for recordings you make.
       </p>
 
       <h2>5. Acceptable use</h2>

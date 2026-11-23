@@ -40,7 +40,9 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (loading) return;
-    if (!user && !isPublicPath(pathname)) router.replace('/auth');
+    // A visitor without an account who opens kevi.online sees what Kevi is
+    // first (/welcome); any other app page still goes to sign-in.
+    if (!user && !isPublicPath(pathname)) router.replace(pathname === '/' ? '/welcome' : '/auth');
     if (user && pathname === '/auth') router.replace('/');
   }, [user, loading, pathname, router]);
 

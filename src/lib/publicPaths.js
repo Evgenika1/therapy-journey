@@ -5,7 +5,7 @@
 // account yet. /auth/confirm is where links from our emails land, opened by
 // someone who is not signed in yet.
 
-export const PUBLIC_PATHS = ['/auth', '/auth/confirm', '/privacy', '/terms'];
+export const PUBLIC_PATHS = ['/welcome', '/auth', '/auth/confirm', '/privacy', '/terms'];
 
 export function isPublicPath(pathname) {
   return PUBLIC_PATHS.includes(pathname);
