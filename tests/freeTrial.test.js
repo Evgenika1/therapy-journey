@@ -31,3 +31,18 @@ test('cut short only when the file ran past the cut-off', () => {
   assert.equal(wasCutShort({ audio_duration: 600, audio_end_at: 45 * 60_000 }), false);
   assert.equal(wasCutShort({ audio_duration: 7200 }), false);
 });
+
+import { cutPointSeconds, recordingWasCut, cutNote } from '../src/lib/freeTrial.js';
+
+test('the cut is seen from the recording length, not AssemblyAI duration', () => {
+  // Live: a 48:07 recording came back with audio_duration 2700 and audio_end_at 2700000.
+  const t = { audio_duration: 2700, audio_end_at: 2_700_000 };
+  assert.equal(cutPointSeconds(t), 2700);
+  assert.equal(recordingWasCut(2887, cutPointSeconds(t)), true);
+  assert.equal(recordingWasCut(1981, cutPointSeconds(t)), false);
+  assert.equal(recordingWasCut(2887, null), false);
+});
+
+test('the note names where it stops', () => {
+  assert.match(cutNote(2700), /stops at 45:00/);
+});

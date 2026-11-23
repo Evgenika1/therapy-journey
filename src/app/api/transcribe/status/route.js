@@ -7,7 +7,7 @@ import {
   shouldRetryForcedRu, isNoSpeech, completedPayload,
 } from '@/lib/transcribeJob';
 import { deleteStoredAudio } from '@/lib/transcribeFromStorage';
-import { billedAudioSeconds, wasCutShort } from '@/lib/freeTrial';
+import { billedAudioSeconds, wasCutShort, cutPointSeconds } from '@/lib/freeTrial';
 
 // One poll of a transcription job. GET /api/transcribe/status?job_id=…[&path=…]
 //
@@ -66,7 +66,7 @@ export async function GET(req) {
         audioSeconds: billedAudioSeconds(transcript),
       });
       await settle();
-      return NextResponse.json({ ...completedPayload(transcript), cutShort: wasCutShort(transcript) });
+      return NextResponse.json({ ...completedPayload(transcript), cutShort: wasCutShort(transcript), cutAtSeconds: cutPointSeconds(transcript) });
     }
 
     if (transcript.status === 'error') {

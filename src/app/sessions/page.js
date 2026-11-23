@@ -30,6 +30,7 @@ import Link from 'next/link';
 import { myUsage } from '@/lib/usageClient';
 import { setBusy } from '@/lib/busyState';
 import { holdScreenAwake } from '@/lib/wakeLock';
+import { recordingWasCut, cutNote } from '@/lib/freeTrial';
 import { mixAudioStreams } from '@/lib/mixAudio';
 import { blockedMessage, mayStartRecording } from '@/lib/plans';
 import SuggestionList from '@/components/SuggestionList';
@@ -926,7 +927,12 @@ function SessionsPageInner() {
       // The server already strips hallucination boilerplate (per-utterance when
       // the audio is diarized), so use its text verbatim — re-stripping here
       // would collapse the "Speaker A:" block separators into one paragraph.
-      const finalText = data.text || '';
+      // A trial job cut at the end of the free minutes: say so at the end of
+      // the text itself, so the saved session carries the reason.
+      const cut = data.cutShort || recordingWasCut(Math.max(seconds, chunksRef.current.length), data.cutAtSeconds);
+      const finalText = data.text && cut && data.cutAtSeconds
+        ? `${data.text}\n\n${cutNote(data.cutAtSeconds)}`
+        : (data.text || '');
       forgetPendingJob(); // settled — nothing left to rejoin
       // Hold the text BEFORE showing it. A 99-minute transcript was lost this
       // way: it sat on screen waiting for "Save Session", the tab went away,
@@ -935,7 +941,7 @@ function SessionsPageInner() {
       if (!finalText) await markPendingNoSpeech(pending.id);
       setTranscript(finalText);
       if (!finalText) setSpeechError('No speech detected in the recording.');
-      else if (data.cutShort) setSpeechError('Your free minutes ran out during this recording, so the transcript stops there. Choose a plan on the Billing page to transcribe whole sessions.');
+      else if (cut) setSpeechError('Your free minutes ran out during this recording, so the transcript stops there. Choose a plan on the Billing page to transcribe whole sessions.');
     } catch (err) {
       console.error('[transcribe]', err);
       // The job is done for either way; the audio stays in IndexedDB so the

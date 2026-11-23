@@ -33,3 +33,26 @@ export function wasCutShort(transcript) {
   const endMs = Number(transcript?.audio_end_at);
   return Number.isFinite(endMs) && endMs > 0 && (Number(transcript?.audio_duration) || 0) > endMs / 1000 + 1;
 }
+
+// Where a trial job was cut, in seconds, or null when it was not limited.
+// AssemblyAI reports audio_duration for the transcribed range only once
+// audio_end_at is set (a 48-minute recording came back as 2700 s), so
+// wasCutShort alone cannot see the cut; the browser, which knows how long the
+// recording really was, compares against this.
+export function cutPointSeconds(transcript) {
+  const endMs = Number(transcript?.audio_end_at);
+  return Number.isFinite(endMs) && endMs > 0 ? Math.round(endMs / 1000) : null;
+}
+
+// Whether a recording of `recordedSeconds` was cut at `cutAtSeconds`.
+export function recordingWasCut(recordedSeconds, cutAtSeconds) {
+  return Number.isFinite(cutAtSeconds) && Number.isFinite(recordedSeconds) && recordedSeconds > cutAtSeconds + 2;
+}
+
+const mmss = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+
+// The line added to the end of a cut transcript, so the reason travels with
+// the saved session and not only with the screen it was first shown on.
+export function cutNote(cutAtSeconds) {
+  return `— Transcript stops at ${mmss(cutAtSeconds)}: your free minutes ran out during this recording. Choose a plan on the Billing page to transcribe whole sessions. —`;
+}
