@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { passwordProblem } from '@/lib/passwordPolicy';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase';
@@ -96,7 +97,7 @@ export default function AuthPage() {
     if (!supabase)            { setError('Supabase is not configured.'); return; }
     if (!email.trim())        { setError('Please enter your email.'); return; }
     if (!password)            { setError('Please enter a password.'); return; }
-    if (password.length < 6)  { setError('Password must be at least 6 characters.'); return; }
+    if (passwordProblem(password)) { setError(passwordProblem(password)); return; }
     if (password !== confirm) { setError('Passwords do not match.'); return; }
     // The disabled button is the main guard; this catches a submit by Enter.
     if (!canCreateAccount({ consent })) { setError('Please confirm the checkbox to create an account.'); return; }
@@ -161,7 +162,7 @@ export default function AuthPage() {
     e.preventDefault();
     setError('');
     if (!newPassword)               { setError('Please enter a new password.'); return; }
-    if (newPassword.length < 6)     { setError('Password must be at least 6 characters.'); return; }
+    if (passwordProblem(newPassword)) { setError(passwordProblem(newPassword)); return; }
     if (newPassword !== newConfirm) { setError('Passwords do not match.'); return; }
     setLoading(true);
     try {
@@ -241,7 +242,7 @@ export default function AuthPage() {
         <form onSubmit={handleResetPassword}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
-              placeholder="New password (min 6 characters)" autoFocus autoComplete="new-password" style={inputStyle} />
+              placeholder="New password (min 10 characters)" autoFocus autoComplete="new-password" style={inputStyle} />
             <input type="password" value={newConfirm} onChange={e => setNewConfirm(e.target.value)}
               placeholder="Confirm new password" autoComplete="new-password" style={inputStyle} />
           </div>
@@ -303,7 +304,7 @@ export default function AuthPage() {
           <input type="email" value={email} onChange={e => setEmail(e.target.value)}
             placeholder="you@example.com" autoFocus autoComplete="email" style={inputStyle} />
           <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-            placeholder={mode === 'signup' ? 'Password (min 6 characters)' : 'Password'}
+            placeholder={mode === 'signup' ? 'Password (min 10 characters)' : 'Password'}
             autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} style={inputStyle} />
           {mode === 'signup' && (
             <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)}

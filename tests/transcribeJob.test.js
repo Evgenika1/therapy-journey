@@ -362,3 +362,14 @@ test('a remembered job names the recording it is transcribing', async () => {
   forgetPendingJob({ storage });
   assert.equal(loadPendingRecordingId({ storage }), null);
 });
+
+import { forgetTranscriptAtProvider } from '../src/lib/transcribeClient.js';
+
+test('forgetting a transcript posts its job id and never throws', async () => {
+  const calls = [];
+  const ok = await forgetTranscriptAtProvider('job-123456', { fetchImpl: async (url, init) => { calls.push([url, init.body]); return { ok: true }; } });
+  assert.equal(ok, true);
+  assert.deepEqual(calls, [['/api/transcribe/forget', JSON.stringify({ job_id: 'job-123456' })]]);
+  assert.equal(await forgetTranscriptAtProvider('job-123456', { fetchImpl: async () => { throw new Error('offline'); } }), false);
+  assert.equal(await forgetTranscriptAtProvider(null), false);
+});

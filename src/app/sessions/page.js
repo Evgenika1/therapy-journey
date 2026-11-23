@@ -14,7 +14,7 @@ import {
 } from '@/lib/recordingStore';
 import { finishRecording, shouldClearHeldAudioOnClose, shouldAutoOpenRecordModal, stopRecorder, needsStopConfirmation, SHORT_STOP_SECONDS } from '@/lib/recordingOutcome';
 import {
-  uploadToStorage, startTranscription, pollTranscript, TranscribeError,
+  uploadToStorage, startTranscription, pollTranscript, TranscribeError, forgetTranscriptAtProvider,
   rememberPendingJob, forgetPendingJob, loadPendingJob, loadPendingAudioPath, loadPendingRecordingId,
 } from '@/lib/transcribeClient';
 import { AUDIO_BUCKET, audioPath as newAudioPath, storageContentType } from '@/lib/audioStorage';
@@ -961,6 +961,7 @@ function SessionsPageInner() {
       // and the only copy went with it — after AssemblyAI had billed for it.
       await savePendingTranscript(pending.id, finalText);
       if (!finalText) await markPendingNoSpeech(pending.id);
+      forgetTranscriptAtProvider(job_id); // the text is safe on this device now
       setTranscript(finalText);
       if (!finalText) setSpeechError('No speech detected in the recording.');
       else if (cut) setSpeechError('Your free minutes ran out during this recording, so the transcript stops there. Choose a plan on the Billing page to transcribe whole sessions.');
@@ -1032,6 +1033,7 @@ function SessionsPageInner() {
       const data = await pollTranscript(job_id, { audioPath: path });
 
       const saved = await sessionsApi.save(supabase, { transcript: data.text || '', title: null, kind: readLastKind() });
+      forgetTranscriptAtProvider(job_id); // saved in the session row
       setSessions(list => [saved, ...list]);
       setImportStage('done');
       setSelectedSession(saved);
@@ -1067,6 +1069,7 @@ function SessionsPageInner() {
         settleKeptAudio(data, resumedCut, resumedAudioPath);
         const finalText = data.text && resumedCut && data.cutAtSeconds ? `${data.text}\n\n${cutNote(data.cutAtSeconds)}` : (data.text || '');
         await savePendingTranscript(resumedRecordingId, finalText);
+        forgetTranscriptAtProvider(jobId);
         if (!finalText) await markPendingNoSpeech(resumedRecordingId);
         setTranscript(finalText);
         if (!finalText) setSpeechError('No speech detected in the recording.');
@@ -1208,6 +1211,7 @@ function SessionsPageInner() {
       const text = data.text || '';
       if (!text) throw new Error('No speech came back from the full recording.');
       const updated = await sessionsApi.update(supabase, s.id, { transcript: text, full_audio_path: null, full_audio_kept_at: null });
+      forgetTranscriptAtProvider(job_id);
       setSelectedSession(updated);
       setSessions(list => list.map(x => (x.id === updated.id ? updated : x)));
       setTranscriptDraft(text);

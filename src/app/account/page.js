@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { passwordProblem } from '@/lib/passwordPolicy';
 import Link from 'next/link';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
@@ -74,7 +75,7 @@ export default function AccountPage() {
     e.preventDefault();
     setPassMsg(null);
     if (!newPass) { setPassMsg({ err: true, text: 'Enter a new password.' }); return; }
-    if (newPass.length < 6) { setPassMsg({ err: true, text: 'Password must be at least 6 characters.' }); return; }
+    if (passwordProblem(newPass)) { setPassMsg({ err: true, text: passwordProblem(newPass) }); return; }
     if (newPass !== confirmPass) { setPassMsg({ err: true, text: 'Passwords do not match.' }); return; }
     setLoadingPass(true);
     const { error } = await supabase.auth.updateUser({ password: newPass });
@@ -142,7 +143,7 @@ export default function AccountPage() {
           {section('Change Password', (
             <form onSubmit={handlePasswordChange} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)}
-                placeholder="New password (min 6 characters)" autoComplete="new-password" style={inputStyle} />
+                placeholder="New password (min 10 characters)" autoComplete="new-password" style={inputStyle} />
               <input type="password" value={confirmPass} onChange={e => setConfirmPass(e.target.value)}
                 placeholder="Confirm new password" autoComplete="new-password" style={inputStyle} />
               {msg(passMsg)}

@@ -213,3 +213,13 @@ export function loadPendingRecordingId({ storage = safeStorage() } = {}) {
 function safeStorage() {
   try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
 }
+
+// Ask the server to delete AssemblyAI's copy of a finished transcript. Call it
+// only once the text is safe here (held on the device or saved in a session).
+// Best effort: a failure leaves the copy until a later cleanup, never an error.
+export function forgetTranscriptAtProvider(jobId, { fetchImpl = (...a) => fetch(...a) } = {}) {
+  if (!jobId) return Promise.resolve(false);
+  return fetchImpl('/api/transcribe/forget', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: jobId }),
+  }).then(r => r.ok).catch(() => false);
+}

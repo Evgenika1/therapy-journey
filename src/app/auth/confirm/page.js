@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { passwordProblem } from '@/lib/passwordPolicy';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/components/AuthProvider';
@@ -74,7 +75,7 @@ export default function ConfirmPage() {
     e.preventDefault();
     setFormError('');
     if (!newPassword)               { setFormError('Please enter a new password.'); return; }
-    if (newPassword.length < 6)     { setFormError('Password must be at least 6 characters.'); return; }
+    if (passwordProblem(newPassword)) { setFormError(passwordProblem(newPassword)); return; }
     if (newPassword !== newConfirm) { setFormError('Passwords do not match.'); return; }
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ password: newPassword });
@@ -129,7 +130,7 @@ export default function ConfirmPage() {
       <form onSubmit={savePassword}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 10 }}>
           <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
-            placeholder="New password (min 6 characters)" autoFocus autoComplete="new-password" style={inputStyle} />
+            placeholder="New password (min 10 characters)" autoFocus autoComplete="new-password" style={inputStyle} />
           <input type="password" value={newConfirm} onChange={e => setNewConfirm(e.target.value)}
             placeholder="Confirm new password" autoComplete="new-password" style={inputStyle} />
         </div>
