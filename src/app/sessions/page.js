@@ -239,7 +239,7 @@ function SessionsPageInner() {
   const [saved,              setSaved]              = useState(false);
   const [showPreMood,        setShowPreMood]        = useState(false);
   const [preRecordMoodIdx,   setPreRecordMoodIdx]   = useState(null);
-  const [captureSource,      setCaptureSource]      = useState('mic'); // 'mic' (in the room) | 'online' (call tab + mic)
+  const [captureSource,      setCaptureSource]      = useState('online'); // 'online' (call tab + mic, the usual case) | 'mic' (microphone only)
   const mixRef = useRef(null); // the mixer of an online session, so stop can end its source tracks
   const [micDevices,         setMicDevices]         = useState([]);
   const [selectedMicId,      setSelectedMicId]      = useState('');
@@ -1679,8 +1679,8 @@ function SessionsPageInner() {
                       <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Audio source</p>
                       <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
                         {[
-                          { id: 'mic', label: '🎤 In the room', hint: 'microphone — session in person' },
                           { id: 'online', label: '💻 Online call', hint: 'the call + your microphone' },
+                          { id: 'mic', label: '🎤 Microphone', hint: 'only your voice, e.g. reflecting after a session' },
                         ].map(opt => {
                           const on = captureSource === opt.id;
                           return (
