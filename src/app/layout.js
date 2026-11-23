@@ -4,13 +4,17 @@ import { AuthProvider } from '@/components/AuthProvider';
 import MobileGate from '@/components/MobileGate';
 
 export const metadata = {
+  // Absolute URLs for the share image and links, wherever the build runs.
+  metadataBase: new URL('https://www.kevi.online'),
   title: 'Kevi — Session Journal',
-  description: 'Your private companion for therapy and coaching',
+  description: 'Remember every therapy session: transcripts and gentle summaries of your online sessions.',
   openGraph: {
-    title: 'Kevi',
-    description: 'Your private companion for therapy and coaching',
+    title: 'Kevi — remember every therapy session',
+    description: 'Transcripts and gentle summaries of your online therapy sessions. 30 free minutes, no card.',
     type: 'website',
+    siteName: 'Kevi',
   },
+  twitter: { card: 'summary_large_image' },
 };
 
 export default function RootLayout({ children }) {
