@@ -29,6 +29,7 @@ import { CBT_PRESETS } from '@/lib/chatPresets';
 import Link from 'next/link';
 import { myUsage } from '@/lib/usageClient';
 import { setBusy } from '@/lib/busyState';
+import { holdScreenAwake } from '@/lib/wakeLock';
 import { blockedMessage, mayStartRecording } from '@/lib/plans';
 import SuggestionList from '@/components/SuggestionList';
 import { proposedTasks, reconcileHomework, describeTask } from '@/lib/sessionHomework';
@@ -357,6 +358,12 @@ function SessionsPageInner() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [supabase]);
+
+  // Keep the screen on for as long as a recording runs (see wakeLock.js).
+  useEffect(() => {
+    if (!isCapturing) return;
+    return holdScreenAwake();
+  }, [isCapturing]);
 
   // Keep the "Kevi has been updated" card away while a reload would cost work.
   // The whole recording window counts, not just the seconds of capture: the
@@ -703,7 +710,7 @@ function SessionsPageInner() {
       `Recording stopped because of an error (${e?.error?.message || 'unknown'}). Everything recorded until then was kept.`);
     stream.getAudioTracks().forEach(t => t.addEventListener('ended', () => stopOnItsOwn(
       captureSource === 'tab'
-        ? 'Tab sharing ended, so recording stopped. Everything recorded until then was kept.'
+        ? 'Tab sharing ended, so recording stopped. Everything recorded until then was kept. (This happens if sharing is stopped in Chrome, the shared tab is closed, or the computer locks or sleeps.)'
         : 'The microphone was disconnected, so recording stopped. Everything recorded until then was kept.')));
     setConfirmStop(false);
     mr.start(1000);
