@@ -65,8 +65,13 @@ export async function GET(req) {
         userId: user.id, kind: 'transcribe', externalId: jobId,
         audioSeconds: billedAudioSeconds(transcript),
       });
-      await settle();
-      return NextResponse.json({ ...completedPayload(transcript), cutShort: wasCutShort(transcript), cutAtSeconds: cutPointSeconds(transcript) });
+      // A trial job (audio_end_at set) keeps its audio: if the recording ran
+      // past the free minutes, the browser attaches it to the session for a
+      // full transcript after a plan is chosen; if not, it deletes it at once
+      // (DELETE /api/audio). The browser knows the real length; we don't.
+      const cutAt = cutPointSeconds(transcript);
+      if (cutAt == null) await settle();
+      return NextResponse.json({ ...completedPayload(transcript), cutShort: wasCutShort(transcript), cutAtSeconds: cutAt, audioKept: cutAt != null && !!audioPath });
     }
 
     if (transcript.status === 'error') {

@@ -85,6 +85,12 @@ export const sessions = {
       notes:       session.notes       || null,
       kind:        normalizeKind(session.kind),
     };
+    // A trial recording cut at the end of the free minutes keeps its audio, so
+    // the whole session can be transcribed after a plan is chosen (028).
+    if (session.full_audio_path) {
+      insert.full_audio_path = session.full_audio_path;
+      insert.full_audio_kept_at = new Date().toISOString();
+    }
     // A session saved from a held recording is dated when it was recorded
     // (ms since epoch or ISO). Anything unreadable falls back to now.
     const recordedAt = session.created_at == null ? null : new Date(session.created_at);
@@ -92,10 +98,14 @@ export const sessions = {
       insert.created_at = recordedAt.toISOString();
     }
     let { data, error } = await supabase.from('sessions').insert(insert).select();
-    // Migration 023 adds kind. Without it every row is therapy anyway, so a
-    // recording must not be lost for want of a column that says so.
-    if (error && isMissingColumn(error) && missingColumnName(error) === 'kind') {
-      delete insert.kind;
+    // Optional columns (023 kind, 028 full audio): a recording must never be
+    // lost for want of one. Drop the missing column and try again.
+    const OPTIONAL = ['kind', 'full_audio_path', 'full_audio_kept_at'];
+    for (let i = 0; i < OPTIONAL.length && error && isMissingColumn(error); i++) {
+      const col = missingColumnName(error);
+      if (!OPTIONAL.includes(col)) break;
+      delete insert[col];
+      if (col === 'full_audio_path') delete insert.full_audio_kept_at;
       ({ data, error } = await supabase.from('sessions').insert(insert).select());
     }
     console.log('[Save] result data:', data, 'error:', error);

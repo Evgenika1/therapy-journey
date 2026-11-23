@@ -122,6 +122,11 @@ export default function PrivacyPage() {
         deleted. Some limited records we are legally required to keep (such as payment records) may be retained
         for the period the law requires, and backups cycle out on a rolling basis.
       </p>
+      <p>
+        Session audio is kept only as long as it is needed: it is deleted as soon as its transcript is made.
+        One exception: if a recording runs past your free trial minutes, its audio is kept for up to 30 days so
+        you can have the whole session transcribed after choosing a plan; then it is deleted automatically.
+      </p>
 
       <h2>9. Your rights</h2>
       <p>Under the GDPR you can:</p>

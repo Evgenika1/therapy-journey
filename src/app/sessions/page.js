@@ -248,7 +248,13 @@ function SessionsPageInner() {
   const mixRef = useRef(null);
   // Free minutes left when this recording started (trial accounts only), so
   // the screen can say when the recording runs past them. null otherwise.
-  const trialLeftRef = useRef(null); // the mixer of an online session, so stop can end its source tracks
+  const trialLeftRef = useRef(null);
+  // Storage path of a cut trial recording's audio, kept for a full transcript
+  // once a plan is chosen; saved with the session.
+  const fullAudioRef = useRef(null);
+  // "Transcribe the whole session" on a cut trial session: idle | running | error.
+  const [fullTx,             setFullTx]             = useState('idle');
+  const [fullTxMsg,          setFullTxMsg]          = useState(''); // the mixer of an online session, so stop can end its source tracks
   const [micDevices,         setMicDevices]         = useState([]);
   const [selectedMicId,      setSelectedMicId]      = useState('');
 
@@ -405,6 +411,7 @@ function SessionsPageInner() {
     setTranscriptError('');
     setChatMessages([]);
     setSessionChatId(null);
+    setFullTx('idle'); setFullTxMsg('');
   }
 
   // ── load persisted chat for selected session ─────────────────────────────────
@@ -589,6 +596,7 @@ function SessionsPageInner() {
     if (shouldClearHeldAudioOnClose({ saved })) {
       const savedId = pendingAudioRef.current?.id;
       pendingAudioRef.current = null;
+      fullAudioRef.current = null;
       forgetPendingJob();
       clearPendingRecording(savedId);
       return;
@@ -644,6 +652,15 @@ function SessionsPageInner() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A trial job's audio is kept by the server. If the recording ran past the
+  // free minutes it is attached to the session for a full transcript later;
+  // otherwise it is not needed and goes now (session audio is health data).
+  function settleKeptAudio(data, cut, path) {
+    if (!data?.audioKept || !path) return;
+    if (cut) { fullAudioRef.current = path; return; }
+    fetch('/api/audio', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path }) }).catch(() => {});
+  }
 
   async function startRecording() {
     // Re-entry guard, set synchronously BEFORE any await. A second call during
@@ -934,6 +951,7 @@ function SessionsPageInner() {
       // A trial job cut at the end of the free minutes: say so at the end of
       // the text itself, so the saved session carries the reason.
       const cut = data.cutShort || recordingWasCut(Math.max(seconds, chunksRef.current.length), data.cutAtSeconds);
+      settleKeptAudio(data, cut, path);
       const finalText = data.text && cut && data.cutAtSeconds
         ? `${data.text}\n\n${cutNote(data.cutAtSeconds)}`
         : (data.text || '');
@@ -1044,7 +1062,10 @@ function SessionsPageInner() {
         const data = await pollTranscript(jobId, { isCancelled: () => cancelled, audioPath: resumedAudioPath });
         if (cancelled) return;
         forgetPendingJob();
-        const finalText = data.text || '';
+        const heldRec = await loadPendingRecording(resumedRecordingId).catch(() => null);
+        const resumedCut = data.cutShort || recordingWasCut(heldRec?.seconds, data.cutAtSeconds);
+        settleKeptAudio(data, resumedCut, resumedAudioPath);
+        const finalText = data.text && resumedCut && data.cutAtSeconds ? `${data.text}\n\n${cutNote(data.cutAtSeconds)}` : (data.text || '');
         await savePendingTranscript(resumedRecordingId, finalText);
         if (!finalText) await markPendingNoSpeech(resumedRecordingId);
         setTranscript(finalText);
@@ -1134,6 +1155,7 @@ function SessionsPageInner() {
         mood_before: preRecordMoodIdx  !== null ? SESSION_MOODS[preRecordMoodIdx].intensity  : null,
         mood_after:  postRecordMoodIdx !== null ? SESSION_MOODS[postRecordMoodIdx].intensity : null,
         kind: readLastKind(),
+        full_audio_path: fullAudioRef.current,
         // Saved from a recovery banner: date it when it was recorded, not
         // when someone finally pressed Save — that can be a week later.
         created_at: pendingAudioRef.current?.fromRecovery ? pendingAudioRef.current.recordedAt : null,
@@ -1164,6 +1186,38 @@ function SessionsPageInner() {
       console.error('[Sessions] save error:', err?.message, err?.code);
       setSaveError('Failed to save: ' + (err?.message || 'unknown'));
     } finally { setSaving(false); }
+  }
+
+  // ── transcribe the whole of a cut trial session ──────────────────────────────
+  // Its audio was kept (full_audio_path). With a plan, transcribe it again
+  // without a cut; the status route deletes the audio once the job settles.
+  async function transcribeWhole() {
+    const s = selectedSession;
+    if (!s?.full_audio_path || fullTx === 'running') return;
+    setFullTxMsg('');
+    const u = supabase ? await myUsage(supabase).catch(() => null) : null;
+    if (!u || u.allowance?.source === 'trial' || u.allowance?.source === 'none') {
+      setLimitReason('trial_used'); setFullTx('idle');
+      setFullTxMsg('Choose a plan on the Billing page first — then come back and press this again.');
+      return;
+    }
+    setFullTx('running');
+    try {
+      const { job_id } = await startTranscription('/api/transcribe', { path: s.full_audio_path });
+      const data = await pollTranscript(job_id, { audioPath: s.full_audio_path });
+      const text = data.text || '';
+      if (!text) throw new Error('No speech came back from the full recording.');
+      const updated = await sessionsApi.update(supabase, s.id, { transcript: text, full_audio_path: null, full_audio_kept_at: null });
+      setSelectedSession(updated);
+      setSessions(list => list.map(x => (x.id === updated.id ? updated : x)));
+      setTranscriptDraft(text);
+      setFullTx('idle');
+      setFullTxMsg('Done — the whole session is transcribed. Run Re-analyze to update the summary.');
+    } catch (e) {
+      console.error('[Sessions] full transcript:', e?.message);
+      setFullTx('error');
+      setFullTxMsg(`Could not transcribe the whole session: ${e?.message || 'unknown error'}. Your audio is still kept — try again.`);
+    }
   }
 
   // ── analyse session ──────────────────────────────────────────────────────────
@@ -2019,6 +2073,26 @@ function SessionsPageInner() {
                   ))}
                 </div>
               </div>
+
+              {/* A cut trial session: its audio is kept for a full transcript. */}
+              {(selectedSession.full_audio_path || fullTxMsg) && (
+                <div style={{ margin: '0 24px', padding: '12px 14px', borderRadius: 12, border: `1px solid ${A}55`, background: A + '10', fontSize: 13, color: TEXT, lineHeight: 1.55 }}>
+                  {selectedSession.full_audio_path && (
+                    <>
+                      <strong>This transcript stops where your free minutes ran out.</strong> The whole recording is kept
+                      for 30 days — transcribe all of it with a plan.
+                      <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                        <button onClick={transcribeWhole} disabled={fullTx === 'running'}
+                          style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: A, color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                          {fullTx === 'running' ? 'Transcribing the whole session…' : 'Transcribe the whole session'}
+                        </button>
+                        <Link href="/billing" style={{ alignSelf: 'center', color: A, fontSize: 12.5, fontWeight: 600, textDecoration: 'none' }}>See plans →</Link>
+                      </div>
+                    </>
+                  )}
+                  {fullTxMsg && <div style={{ marginTop: selectedSession.full_audio_path ? 8 : 0, color: fullTx === 'error' ? '#DC2626' : TEXT }}>{fullTxMsg}</div>}
+                </div>
+              )}
 
               {/* Tab content */}
               <div style={{ flex: 1, overflowY: 'auto', padding: 28 }}>

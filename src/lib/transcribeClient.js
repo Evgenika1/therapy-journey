@@ -76,6 +76,7 @@ export async function pollTranscript(jobId, {
         // A free trial's minutes ran out partway: the text stops there.
         cutShort: !!body.cutShort,
         cutAtSeconds: Number.isFinite(body.cutAtSeconds) ? body.cutAtSeconds : null,
+        audioKept: !!body.audioKept,
       };
     }
     if (body.status === 'error') throw new TranscribeError(body.error || 'transcription failed');
