@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getStripe, serviceSupabase } from '@/lib/stripeServer';
-import { subscriptionRow, shouldReplace } from '@/lib/plans';
+import { subscriptionRow, shouldReplace, PLANS, isPlan } from '@/lib/plans';
+import { sendEmail, purchaseEmail } from '@/lib/email';
 
 // Stripe → subscriptions table.
 //
@@ -40,6 +41,13 @@ export async function POST(req) {
     const obj = event.data.object;
     if (event.type === 'checkout.session.completed' && obj.mode === 'subscription' && obj.subscription) {
       await sync(stripe, obj.subscription, obj.client_reference_id || obj.metadata?.user_id);
+      // The purchase confirmation, carrying the consent to start at once (ACM).
+      // Keyed on the session, so a retried webhook does not send it twice.
+      const plan = obj.metadata?.plan;
+      if (isPlan(plan)) {
+        const mail = purchaseEmail({ planName: PLANS[plan].name, priceEur: PLANS[plan].priceEur, sessions: PLANS[plan].sessions, startedAt: new Date((obj.created || Date.now() / 1000) * 1000).toISOString() });
+        await sendEmail({ to: obj.customer_details?.email || obj.customer_email, ...mail, idempotencyKey: `purchase-${obj.id}` });
+      }
     } else if (SUBSCRIPTION_EVENTS.has(event.type)) {
       await sync(stripe, obj.id, obj.metadata?.user_id);
     }

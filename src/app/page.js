@@ -82,6 +82,8 @@ export default function HomePage() {
     // Failing to read the balance must not blank the dashboard, so this is its
     // own effect and its own catch: the card falls back to a dash.
     if (supabase) myUsage(supabase).then(setUsage).catch(e => console.error('[Dashboard] usage:', e?.message));
+    // Welcome email, once per account (the server keeps the mark).
+    if (user && !user.app_metadata?.welcome_sent) fetch('/api/welcome', { method: 'POST' }).catch(() => {});
     if (!supabase) return;
     // moodPairs joins the former /progress page's data to this one: the whole
     // dashboard now loads in a single round of requests rather than two screens'
