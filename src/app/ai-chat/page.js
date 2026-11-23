@@ -140,9 +140,9 @@ export default function AiChatPage() {
 
   return (
     <AppLayout>
-      <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+      <div className="ai-chat-frame" style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
         {/* Chat list sidebar */}
-        <div style={{ width: 220, flexShrink: 0, borderRight: `1px solid ${BORDER}`, background: SURFACE, display: 'flex', flexDirection: 'column' }}>
+        <div className="ai-chat-list" style={{ width: 220, flexShrink: 0, borderRight: `1px solid ${BORDER}`, background: SURFACE, display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '16px 12px', borderBottom: `1px solid ${BORDER}` }}>
             <button onClick={newChat}
               style={{ width: '100%', padding: '9px', borderRadius: 10, border: `1px solid ${BORDER}`, background: 'transparent', color: A, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>

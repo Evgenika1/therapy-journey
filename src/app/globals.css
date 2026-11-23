@@ -78,6 +78,48 @@ body {
   overflow: hidden;
 }
 
+/* ── Narrow desktop windows (< 640px): the sidebar becomes a top bar ───────────
+   A browser with a side panel open can leave ~450px; a 200px sidebar then
+   left the page ~250px and text ran one word per line. The nav turns into a
+   single row that scrolls sideways, and the page gets the full width. The
+   inline styles in AppLayout are overridden here, hence !important. */
+@media (max-width: 640px) {
+  .app-frame { flex-direction: column !important; }
+  .app-nav {
+    width: 100% !important;
+    flex-direction: row !important;
+    align-items: center;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    border-right: none !important;
+    flex-shrink: 0;
+  }
+  .app-nav-logo { padding: 8px 12px !important; }
+  .app-nav-logo span { font-size: 20px !important; }
+  .app-nav-links, .app-nav-bottom {
+    display: flex !important;
+    flex: none !important;
+    padding: 0 !important;
+    border-top: none !important;
+  }
+  .app-nav-links a, .app-nav-bottom a, .app-nav-bottom button {
+    white-space: nowrap;
+    padding: 12px 10px !important;
+    border-left: none !important;
+    width: auto !important;
+  }
+  .app-nav-email, .app-nav-legal { display: none !important; }
+
+  /* AI Chat: the list of chats goes above the conversation, short. */
+  .ai-chat-frame { flex-direction: column !important; }
+  .ai-chat-list {
+    width: 100% !important;
+    max-height: 26vh;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border, rgba(127,127,127,0.25));
+  }
+}
+
 /* Shown only in single-column mode. */
 .sessions-back { display: none; }
 

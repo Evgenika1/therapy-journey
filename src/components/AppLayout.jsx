@@ -41,7 +41,7 @@ export default function AppLayout({ children }) {
   }
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: BG, fontFamily: '"Plus Jakarta Sans", sans-serif', overflow: 'hidden' }}>
+    <div className="app-frame" style={{ display: 'flex', height: '100vh', background: BG, fontFamily: '"Plus Jakarta Sans", sans-serif', overflow: 'hidden' }}>
       {/* Sidebar */}
       <nav className="app-nav" style={{ background: SURFACE, borderRight: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
         {/* Logo. Just the word, lowercase, in the app's own sans at semibold —
@@ -49,7 +49,7 @@ export default function AppLayout({ children }) {
             it darkens in the morning and lightens for the evening palette along
             with everything else, and it is the one link home from every other
             screen. */}
-        <div style={{ padding: '20px 20px 16px', display: 'flex', alignItems: 'center' }}>
+        <div className="app-nav-logo" style={{ padding: '20px 20px 16px', display: 'flex', alignItems: 'center' }}>
           <Link href="/" aria-label="Kevi — go to Dashboard"
             style={{ textDecoration: 'none', display: 'inline-block', cursor: 'pointer', transition: 'opacity 0.12s' }}
             onMouseEnter={e => { e.currentTarget.style.opacity = '0.72'; }}
@@ -70,7 +70,7 @@ export default function AppLayout({ children }) {
         </div>
 
         {/* Nav links */}
-        <div style={{ flex: 1, padding: '8px 0' }}>
+        <div className="app-nav-links" style={{ flex: 1, padding: '8px 0' }}>
           {links.map(({ href, label }) => {
             const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
             return (
@@ -93,13 +93,13 @@ export default function AppLayout({ children }) {
         </div>
 
         {/* Bottom */}
-        <div style={{ padding: '12px 0', borderTop: `1px solid ${BORDER}` }}>
+        <div className="app-nav-bottom" style={{ padding: '12px 0', borderTop: `1px solid ${BORDER}` }}>
           {/* The light/dark toggle is gone: the palette follows the clock
               (src/lib/timeTheme.js). Deliberately unlabelled — the shift is
               meant to be felt, not announced, so nothing here names the hour. */}
           {user && (
             <>
-              <div style={{ padding: '4px 20px 8px' }}>
+              <div className="app-nav-email" style={{ padding: '4px 20px 8px' }}>
                 <p style={{ fontSize: 11, color: MUTED, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</p>
               </div>
               {/* /account exists but had no link anywhere, so changing a password
@@ -121,7 +121,7 @@ export default function AppLayout({ children }) {
               </button>
             </>
           )}
-          <div style={{ display: 'flex', gap: 14, padding: '10px 20px 2px', fontSize: 11 }}>
+          <div className="app-nav-legal" style={{ display: 'flex', gap: 14, padding: '10px 20px 2px', fontSize: 11 }}>
             <Link href="/privacy" style={{ color: MUTED, textDecoration: 'none' }}>Privacy</Link>
             <Link href="/terms" style={{ color: MUTED, textDecoration: 'none' }}>Terms</Link>
           </div>
