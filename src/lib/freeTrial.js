@@ -7,14 +7,17 @@
 // cut off where the trial ends: AssemblyAI's audio_end_at transcribes only up to
 // that point and bills only that range.
 
-import { OVERDRAFT_MINUTES } from './usageQuota.js';
 
 // How much audio a trial account may still have transcribed, in milliseconds,
-// or null when the account is not on a trial. Never under a minute: the gate
-// has already let the job through, and a few seconds of transcript is useless.
+// or null when the account is not on a trial. Exactly what is left of the
+// free minutes — the overdraft that lets a paid session finish is not part of
+// a trial, which promises 30 minutes. The recording itself is not stopped:
+// the whole session is kept, and transcribed in full once a plan is chosen.
+// Never under a minute: the gate has already let the job through, and a few
+// seconds of transcript is useless.
 export function trialAudioLimitMs(quota) {
   if (quota?.allowance?.source !== 'trial') return null;
-  const minutes = Number.isFinite(quota.remaining) ? quota.remaining + OVERDRAFT_MINUTES : 0;
+  const minutes = Number.isFinite(quota.remaining) ? quota.remaining : 0;
   return Math.round(Math.max(1, minutes) * 60_000);
 }
 

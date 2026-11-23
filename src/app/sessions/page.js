@@ -245,7 +245,10 @@ function SessionsPageInner() {
   // the Dashboard, and a recording started here silently took the last one).
   // rememberKind stores it, and saving reads it back with readLastKind.
   const [recKind,            setRecKind]            = useState('therapy');
-  const mixRef = useRef(null); // the mixer of an online session, so stop can end its source tracks
+  const mixRef = useRef(null);
+  // Free minutes left when this recording started (trial accounts only), so
+  // the screen can say when the recording runs past them. null otherwise.
+  const trialLeftRef = useRef(null); // the mixer of an online session, so stop can end its source tracks
   const [micDevices,         setMicDevices]         = useState([]);
   const [selectedMicId,      setSelectedMicId]      = useState('');
 
@@ -517,6 +520,7 @@ function SessionsPageInner() {
   async function mayRecord() {
     const u = supabase ? await myUsage(supabase).catch(() => null) : null;
     if (u) setOnTrial(u.allowance?.source === 'trial');
+    trialLeftRef.current = u?.allowance?.source === 'trial' && Number.isFinite(u.remaining) ? Math.max(0, u.remaining) : null;
     const start = mayStartRecording(u);
     if (!start.ok) { setLimitReason(start.reason); return false; }
     setLimitReason(null);
@@ -1831,7 +1835,13 @@ function SessionsPageInner() {
 
                       {/* Breathing equaliser — the same AudioLevelMeter, restyled */}
                       <div style={{ width: '100%', maxWidth: 340, padding: '10px 0 2px', display: 'flex', justifyContent: 'center' }}>
-                        <AudioLevelMeter stream={mediaRef.current?.stream} source={captureSource} paused={isPaused} A={A} MUTED={MUTED} TEXT={TEXT} />
+                        {trialLeftRef.current != null && seconds >= trialLeftRef.current * 60 && (
+                  <div role="status" style={{ margin: '0 0 14px', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER}`, background: A + '10', fontSize: 12.5, color: TEXT, lineHeight: 1.5, textAlign: 'left' }}>
+                    <strong>Your free minutes are used.</strong> Kevi keeps recording the whole session; the transcript will
+                    cover the first {Math.round(trialLeftRef.current)} minutes. Choose a plan afterwards to transcribe all of it.
+                  </div>
+                )}
+                <AudioLevelMeter stream={mediaRef.current?.stream} source={captureSource} paused={isPaused} A={A} MUTED={MUTED} TEXT={TEXT} />
                       </div>
 
                       {/* Pill controls */}

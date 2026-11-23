@@ -8,14 +8,15 @@ import assert from 'node:assert/strict';
 import { trialAudioLimitMs, billedAudioSeconds, wasCutShort } from '../src/lib/freeTrial.js';
 import { OVERDRAFT_MINUTES } from '../src/lib/usageQuota.js';
 
-test('only a trial gets a cut-off, at what is left plus the overdraft', () => {
+test('only a trial gets a cut-off, at exactly what is left of it', () => {
   assert.equal(trialAudioLimitMs({ allowance: { source: 'plan' }, remaining: 5 }), null);
   assert.equal(trialAudioLimitMs({ allowance: { source: 'override' }, remaining: 5 }), null);
-  assert.equal(trialAudioLimitMs({ allowance: { source: 'trial' }, remaining: 30 }), (30 + OVERDRAFT_MINUTES) * 60_000);
+  assert.equal(trialAudioLimitMs({ allowance: { source: 'trial' }, remaining: 30 }), 30 * 60_000);
+  assert.equal(trialAudioLimitMs({ allowance: { source: 'trial' }, remaining: 28.7 }), Math.round(28.7 * 60_000));
 });
 
 test('the cut-off is never under a minute, nor nonsense on a bad number', () => {
-  assert.equal(trialAudioLimitMs({ allowance: { source: 'trial' }, remaining: -OVERDRAFT_MINUTES }), 60_000);
+  assert.equal(trialAudioLimitMs({ allowance: { source: 'trial' }, remaining: -3 }), 60_000);
   assert.equal(trialAudioLimitMs({ allowance: { source: 'trial' }, remaining: NaN }), 60_000);
 });
 
