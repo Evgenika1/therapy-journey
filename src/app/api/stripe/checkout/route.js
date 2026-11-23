@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerUser } from '@/lib/supabaseServer';
 import { getStripe, serviceSupabase, appOrigin, automaticTax } from '@/lib/stripeServer';
 import { isPlan, priceIdFor, subscriptionGrants } from '@/lib/plans';
-import { consentMetadata } from '@/lib/withdrawalConsent';
+import { consentMetadata, INVOICE_FOOTER } from '@/lib/withdrawalConsent';
 
 // Start a subscription: a Stripe Checkout Session for one plan.
 //
@@ -52,6 +52,11 @@ export async function POST(req) {
         .insert({ user_id: user.id, stripe_customer_id: customer, status: 'incomplete' });
       if (insErr) throw insErr;
     }
+
+    // The invoice is the purchase confirmation the customer receives: it must
+    // carry the consent given above (ACM). Set on the customer, so renewals
+    // carry it too.
+    await stripe.customers.update(customer, { invoice_settings: { footer: INVOICE_FOOTER } });
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',

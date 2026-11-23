@@ -13,3 +13,11 @@ export const WITHDRAWAL_CONSENT_TEXT =
 export function consentMetadata(now = new Date()) {
   return { withdrawal_consent: WITHDRAWAL_CONSENT_VERSION, withdrawal_consent_at: now.toISOString() };
 }
+
+// Printed on every invoice for this customer (Stripe invoice footer), so the
+// confirmation of the purchase carries the consent, as the ACM asks: the
+// request to start at once and its consequence, then the way to withdraw.
+export const INVOICE_FOOTER =
+  'You asked Kevi to start your plan right away. If you withdraw within 14 days of paying, ' +
+  'you get back the part of your payment for the minutes you have not used. ' +
+  'To withdraw, write to hi@kevi.online. Full terms: https://www.kevi.online/terms#refunds';
