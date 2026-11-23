@@ -219,7 +219,7 @@ export default function HomePage() {
               <p style={{ fontSize: 12.5, color: MUTED, margin: '0 0 12px' }}>Tell your therapist you’d like to record — most are glad you want to remember the session.</p>
               <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13.5, color: TEXT, lineHeight: 1.7 }}>
                 <li><strong>Open your session in the browser</strong> — Google Meet, or Zoom / Teams via “Join from your browser”.</li>
-                <li><strong>Here, press the microphone below</strong> and keep <em>Online call</em> selected. Headphones are fine.</li>
+                <li><strong>Here, press the microphone below</strong> and keep <em>Online session</em> selected. Headphones are fine.</li>
                 <li><strong>Choose the tab with your call</strong> and tick “Share tab audio”. When the session ends, press Stop — the transcript and summary follow.</li>
               </ol>
             </div>

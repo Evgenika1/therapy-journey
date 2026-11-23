@@ -1708,8 +1708,8 @@ function SessionsPageInner() {
                       <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Audio source</p>
                       <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
                         {[
-                          { id: 'online', label: '💻 Online call', hint: 'the call + your microphone' },
-                          { id: 'mic', label: '🎤 Microphone', hint: 'only your voice, e.g. reflecting after a session' },
+                          { id: 'online', label: '💻 Online session', hint: 'the call and your voice' },
+                          { id: 'mic', label: '🎙 Just me', hint: 'a voice note — no call, only you' },
                         ].map(opt => {
                           const on = captureSource === opt.id;
                           return (
