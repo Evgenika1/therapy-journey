@@ -64,12 +64,12 @@ export function welcomeEmail({ trialMinutes }) {
     p(`You have <strong>${esc(trialMinutes)} free minutes</strong> to try Kevi with a real session. Here is how to record an online one:`) +
     `<ol style="font-size:15px;line-height:1.7;margin:0 0 14px;padding-left:20px">
 <li>Tell your therapist you’d like to record — most are glad you want to remember the session.</li>
-<li>Open the session in your browser: Google Meet, or Zoom / Teams via “Join from your browser”.</li>
-<li>In Kevi, press <strong>Record</strong>, then choose the tab with your call and tick “Share tab audio”. Headphones are fine.</li>
+<li>Join your call as usual (Zoom, Meet, Teams) and use your speakers, not headphones, so both voices are recorded.</li>
+<li>In Kevi, press <strong>Record</strong> and allow the microphone.</li>
 <li>When the session ends, press Stop. The transcript and a gentle summary follow.</li>
 </ol>` +
     btn('https://www.kevi.online/', 'Open Kevi') +
     p('Kevi is a journal for the therapy you already have — not a replacement for it. If you are in crisis, please contact a local crisis line or emergency services.'));
-  const text = `Welcome to Kevi. You have ${trialMinutes} free minutes.\n\n1. Tell your therapist you'd like to record.\n2. Open the session in your browser (Meet, or Zoom/Teams via "Join from your browser").\n3. In Kevi press Record, choose the call's tab and tick "Share tab audio".\n4. Press Stop when the session ends.\n\nhttps://www.kevi.online/`;
+  const text = `Welcome to Kevi. You have ${trialMinutes} free minutes.\n\n1. Tell your therapist you'd like to record.\n2. Join your call as usual and use your speakers, not headphones.\n3. In Kevi press Record and allow the microphone.\n4. Press Stop when the session ends.\n\nhttps://www.kevi.online/`;
   return { subject, html, text };
 }

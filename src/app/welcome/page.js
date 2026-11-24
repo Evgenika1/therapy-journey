@@ -20,7 +20,7 @@ const FAQ = [
   ['Do I need my therapist’s permission to record?',
    'Please ask first. Most therapists are glad you want to remember the session, and asking keeps the trust between you. In some places their consent is also required by law, and it is your responsibility to have it.'],
   ['Which sessions can Kevi record?',
-   'Online sessions in your browser — Google Meet, Zoom, Teams and others opened in a browser tab. Kevi records the call and your microphone together, so both voices are there, with or without headphones. If you use the Zoom app, join the call from your browser instead.'],
+   'Online sessions on Zoom, Google Meet, Teams and others. Kevi records through your microphone: use your speakers and both voices are there, whichever app the call is in. With headphones, open the call in your browser and Kevi records its tab together with your microphone.'],
   ['Which languages does it understand?',
    'Kevi detects the language of the session by itself. English, Russian, Dutch, German, Spanish, French and many more work.'],
   ['Who can see my sessions?',
@@ -106,7 +106,7 @@ export default function WelcomePage() {
         <section className="lp-section">
           <h2>How it works</h2>
           <ol className="lp-steps">
-            <li><strong>Record the call.</strong> Start Kevi next to your Meet or Zoom session in the browser. Both voices are captured, headphones or not.</li>
+            <li><strong>Record the call.</strong> Press Record in Kevi when your Zoom or Meet session starts. Both voices are captured.</li>
             <li><strong>Read what came up.</strong> A transcript and a calm summary: topics, key theme, emotions, breakthroughs.</li>
             <li><strong>Carry it forward.</strong> Small practices for the week, and notes to bring to your next session.</li>
           </ol>

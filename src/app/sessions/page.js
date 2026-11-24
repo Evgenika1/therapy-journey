@@ -240,7 +240,7 @@ function SessionsPageInner() {
   const [saved,              setSaved]              = useState(false);
   const [showPreMood,        setShowPreMood]        = useState(false);
   const [preRecordMoodIdx,   setPreRecordMoodIdx]   = useState(null);
-  const [captureSource,      setCaptureSource]      = useState('online'); // 'online' (call tab + mic, the usual case) | 'mic' (microphone only)
+  const [captureSource,      setCaptureSource]      = useState('mic'); // 'mic' (microphone: one click, works with the Zoom app on speakers) | 'online' (call tab + mic, for headphones)
   // Therapy or coaching, chosen in the record window too (it used to be only on
   // the Dashboard, and a recording started here silently took the last one).
   // rememberKind stores it, and saving reads it back with readLastKind.
@@ -1763,32 +1763,34 @@ function SessionsPageInner() {
 
                     {/* Audio source */}
                     <div style={{ marginBottom: 24 }}>
-                      {/* One clear default — the call and you — and, as a quiet
-                          link, the voice-note case. Two equal cards ("Online
-                          call" / "Microphone", then "Online session" / "Just
-                          me") read as a puzzle: both use the microphone. */}
-                      {captureSource === 'online' ? (
+                      {/* The simple default is the microphone: one click, and with
+                          speakers it hears both voices, whatever app the call is in
+                          (Zoom app included). The tab + mic mix is only needed with
+                          headphones, so it is a quiet link, not an equal choice. */}
+                      {captureSource === 'mic' ? (
                         <div style={{ marginBottom: 10 }}>
                           <p style={{ fontSize: 13.5, color: TEXT, margin: '0 0 4px', lineHeight: 1.5 }}>
-                            <strong>Records your session call and your microphone</strong> — both voices, headphones or not.
+                            <strong>Kevi records through your microphone.</strong>
                           </p>
                           <p style={{ fontSize: 12, color: MUTED, margin: '0 0 6px', lineHeight: 1.5 }}>
-                            Next, choose the browser tab with your call and tick “Share tab audio”. Using the Zoom app?
-                            Join the call in your browser instead (“Join from your browser”).
+                            On a Zoom or video call, use your speakers, not headphones, so both voices are recorded.
                           </p>
-                          <button type="button" onClick={() => setCaptureSource('mic')}
+                          <button type="button" onClick={() => setCaptureSource('online')}
                             style={{ background: 'none', border: 'none', padding: 0, color: A, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
-                            Record only my voice instead (a voice note, no call) →
+                            Wearing headphones? Record the call from a browser tab →
                           </button>
                         </div>
                       ) : (
                         <div style={{ marginBottom: 10 }}>
-                          <p style={{ fontSize: 13.5, color: TEXT, margin: '0 0 6px', lineHeight: 1.5 }}>
-                            <strong>Records only your microphone</strong> — a voice note, for example your thoughts after a session.
+                          <p style={{ fontSize: 13.5, color: TEXT, margin: '0 0 4px', lineHeight: 1.5 }}>
+                            <strong>Records the call’s browser tab and your microphone</strong> — for headphones.
                           </p>
-                          <button type="button" onClick={() => setCaptureSource('online')}
+                          <p style={{ fontSize: 12, color: MUTED, margin: '0 0 6px', lineHeight: 1.5 }}>
+                            The call must be open in your browser (in Zoom: “Join from your browser”). Next, pick its tab and tick “Share tab audio”.
+                          </p>
+                          <button type="button" onClick={() => setCaptureSource('mic')}
                             style={{ background: 'none', border: 'none', padding: 0, color: A, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
-                            ← Record a session call instead
+                            ← Just use my microphone
                           </button>
                         </div>
                       )}

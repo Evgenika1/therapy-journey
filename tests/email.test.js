@@ -13,10 +13,10 @@ test('purchase email carries the consent and how to withdraw', () => {
   }
 });
 
-test('welcome email names the free minutes and the online-call steps', () => {
+test('welcome email names the free minutes and the recording steps', () => {
   const e = welcomeEmail({ trialMinutes: 30 });
   assert.match(e.html, /30 free minutes/);
-  assert.match(e.html, /Share tab audio/);
+  assert.match(e.html, /use your speakers/);
 });
 
 test('without a key nothing is sent and nothing throws', async () => {
