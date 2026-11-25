@@ -59,3 +59,16 @@ const mmss = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2
 export function cutNote(cutAtSeconds) {
   return `— Transcript stops at ${mmss(cutAtSeconds)}: your free minutes ran out during this recording. Choose a plan on the Billing page to transcribe whole sessions. —`;
 }
+
+// The seconds a cut trial session's transcript already covered, read from the
+// note at its end ("Transcript stops at 30:00"), or 0. Transcribing the whole
+// session later bills only what goes past this: the first part was paid for by
+// the trial. The note is in text the user can edit, so it is capped at the
+// trial itself and can never credit more than the free minutes.
+export function alreadyTranscribedSeconds(text, trialMinutes) {
+  const m = /Transcript stops at (\d+):(\d{2})/.exec(String(text ?? ''));
+  if (!m) return 0;
+  const sec = Number(m[1]) * 60 + Number(m[2]);
+  const cap = Math.max(0, Number(trialMinutes) || 0) * 60;
+  return Math.min(sec, cap);
+}

@@ -7,7 +7,8 @@ import {
   shouldRetryForcedRu, isNoSpeech, completedPayload,
 } from '@/lib/transcribeJob';
 import { deleteStoredAudio } from '@/lib/transcribeFromStorage';
-import { billedAudioSeconds, wasCutShort, cutPointSeconds } from '@/lib/freeTrial';
+import { billedAudioSeconds, wasCutShort, cutPointSeconds, alreadyTranscribedSeconds } from '@/lib/freeTrial';
+import { FREE_TRIAL_MINUTES } from '@/lib/plans';
 
 // One poll of a transcription job. GET /api/transcribe/status?job_id=…[&path=…]
 //
@@ -61,9 +62,17 @@ export async function GET(req) {
       // what its tab believes happened, and anyone wanting free transcription
       // can edit it. externalId makes the write idempotent, so the re-poll after
       // a reload cannot bill the same audio twice.
+      // "Transcribe the whole session" on a cut trial session: the first part
+      // was already transcribed on the trial, so only the rest is billed.
+      let credit = 0;
+      if (audioPath && cutPointSeconds(transcript) == null) {
+        const { data: kept } = await supabase.from('sessions').select('transcript')
+          .eq('user_id', user.id).eq('full_audio_path', audioPath).maybeSingle();
+        if (kept) credit = alreadyTranscribedSeconds(kept.transcript, FREE_TRIAL_MINUTES);
+      }
       await recordUsage(supabase, {
         userId: user.id, kind: 'transcribe', externalId: jobId,
-        audioSeconds: billedAudioSeconds(transcript),
+        audioSeconds: Math.max(0, billedAudioSeconds(transcript) - credit),
       });
       // A trial job (audio_end_at set) keeps its audio: if the recording ran
       // past the free minutes, the browser attaches it to the session for a

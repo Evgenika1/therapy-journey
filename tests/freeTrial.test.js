@@ -47,3 +47,12 @@ test('the cut is seen from the recording length, not AssemblyAI duration', () =>
 test('the note names where it stops', () => {
   assert.match(cutNote(2700), /stops at 45:00/);
 });
+
+import { alreadyTranscribedSeconds } from '../src/lib/freeTrial.js';
+test('a whole-session transcript is billed only past the trial cut, capped at the trial', () => {
+  assert.equal(alreadyTranscribedSeconds('…\n\n— Transcript stops at 30:00: your free minutes ran out —', 30), 1800);
+  assert.equal(alreadyTranscribedSeconds('— Transcript stops at 21:15: … —', 30), 1275);
+  assert.equal(alreadyTranscribedSeconds('— Transcript stops at 99:00: … —', 30), 1800); // edited note
+  assert.equal(alreadyTranscribedSeconds('no note here', 30), 0);
+  assert.equal(alreadyTranscribedSeconds(null, 30), 0);
+});
