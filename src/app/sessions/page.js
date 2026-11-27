@@ -271,6 +271,7 @@ function SessionsPageInner() {
   // Set when the account may not record (no plan, or the period's sessions
   // are used up): why, so the notice can say it.
   const [limitReason,      setLimitReason]      = useState(null);
+  const [checkingRec,      setCheckingRec]      = useState(false); // the allowance read before Record opens
   // Whether this account is on the free trial, read once on load so the
   // Upload button can say up front that it is for paid plans. Only a label:
   // pickImportFile re-checks on click, and the server refuses it either way.
@@ -534,8 +535,13 @@ function SessionsPageInner() {
     return true;
   }
 
+  // The allowance read takes a moment; the button says so, so a first click
+  // does not look ignored and get a second one.
   async function openRecordGuarded(...args) {
-    if (await mayRecord()) openRecordModal(...args);
+    if (checkingRec) return;
+    setCheckingRec(true);
+    try { if (await mayRecord()) openRecordModal(...args); }
+    finally { setCheckingRec(false); }
   }
 
   function openRecordModal(preMoodIntensity, title = '') {
@@ -1553,10 +1559,13 @@ function SessionsPageInner() {
               style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: MUTED, fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: onTrial ? 0.6 : 1 }}>
               {onTrial ? '🔒 Upload · paid plans' : '↑ Upload audio'}
             </button>
-            <button onClick={() => openRecordGuarded()}
-              style={{ flex: 1, padding: '8px 0', borderRadius: 999, border: 'none', background: ACCENT_DEEP, color: isDark ? BG : '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="3.5" fill="white" opacity="0.35"/><circle cx="5" cy="5" r="2" fill="white"/></svg>
-              Record
+            {/* Out of minutes: Record looks locked, like Upload, instead of a
+                live button that only shows the notice above. */}
+            <button onClick={() => openRecordGuarded()} disabled={checkingRec}
+              title={limitReason ? 'Your minutes are used — see plans above' : undefined}
+              style={{ flex: 1, padding: '8px 0', borderRadius: 999, border: 'none', background: ACCENT_DEEP, color: isDark ? BG : '#fff', fontSize: 12, fontWeight: 600, cursor: checkingRec ? 'wait' : 'pointer', opacity: limitReason ? 0.45 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+              {limitReason ? '🔒' : <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="3.5" fill="white" opacity="0.35"/><circle cx="5" cy="5" r="2" fill="white"/></svg>}
+              {checkingRec ? 'Opening…' : 'Record'}
             </button>
           </div>
 
