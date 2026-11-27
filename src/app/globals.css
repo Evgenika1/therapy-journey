@@ -519,6 +519,7 @@ h1 em, h2 em, .serif-em { font-style: italic; font-weight: 400; }
 .lp-privacy ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 28px; }
 .lp-privacy li { padding-left: 26px; position: relative; line-height: 1.55; }
 .lp-privacy li::before { content: '✓'; position: absolute; left: 0; color: var(--ok); font-weight: 700; }
+.lp-adhd-lead { color: var(--text-muted); line-height: 1.65; font-size: 16px; max-width: 680px; margin: -6px 0 20px; }
 .lp-plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 18px 0 12px; }
 .lp-plan-name { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
 .lp-plan-price { font-family: var(--font-serif); font-size: 36px; margin: 8px 0 4px; }

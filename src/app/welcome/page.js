@@ -112,6 +112,22 @@ export default function WelcomePage() {
           </ol>
         </section>
 
+        {/* Kevi's main audience. Worded from the situation, never as help with
+            ADHD itself: Kevi is a journal, not a treatment (Terms, section 1). */}
+        <section className="lp-section lp-privacy lp-adhd">
+          <h2>Especially helpful if you have ADHD</h2>
+          <p className="lp-adhd-lead">
+            A good session can be gone by the evening — the insight, the thing you agreed to try, what you
+            meant to say next time. Kevi holds on to it, so your head doesn’t have to.
+          </p>
+          <ul>
+            <li><strong>Nothing to keep in your head.</strong> The whole session is written down, ready when you need it.</li>
+            <li><strong>One short list for the week.</strong> The practices you agreed on, in one place — not lost in a notebook.</li>
+            <li><strong>Pick up where you left off.</strong> A note of what to bring up, waiting before your next call.</li>
+            <li><strong>No extra effort.</strong> Press Record once; Kevi does the rest after the call.</li>
+          </ul>
+        </section>
+
         <section className="lp-section lp-features">
           <div className="lp-feature">
             <h3>See the patterns</h3>
